@@ -69,7 +69,9 @@ function getInitialData(lineUserId) {
       const gen = allGenres.find(g => g.genre_id === sub.genre_id);
       return {
         ...sub,
-        genre_name: gen ? gen.genre_name : "その他"
+        genre_id: gen ? gen.genre_id : null,
+        genre_name: gen ? gen.genre_name : "その他",
+        color: gen ? gen.color : null
       };
       
     }).filter(s => s); // 存在する教科のみ抽出
@@ -84,7 +86,8 @@ function getInitialData(lineUserId) {
       currentExam: currentExam,
       subjects: subjects,
       scores: scores,
-      history: sortedExams
+      history: sortedExams,
+      genres: allGenres
     };
 
     return stringifyDates(response);

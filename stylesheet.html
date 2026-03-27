@@ -14,7 +14,7 @@
   }
 
   body {
-    font-family: sans-serif;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
     padding: 20px;
     background: var(--bg-color);
     color: #333;
@@ -84,6 +84,24 @@
     border: none;
   }
 
+  /* ジャンルの区画（カード形式） */
+  .genre-container {
+    min-width: 15%;
+    border: 1px solid;
+    border-radius: 11px;
+    padding: 19px;
+    margin-bottom: 24px;
+  }
+
+  .genre-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin: 0 0 15px 0;
+    border-bottom: 1px solid;
+    border-bottom-color: inherit;
+    padding-bottom: 9px;
+  }
+
   .subject-box {
     background: white;
     margin-bottom: 10px;
@@ -104,7 +122,7 @@
   /* 教科ごとのグリッド配置 */
   .subject-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     /* レスポンシブな自動列 */
     gap: 15px;
   }
@@ -186,24 +204,6 @@
     font-weight: bold;
   }
 
-  /* ジャンルの区画（カード形式） */
-  .genre-container {
-    background: #ffffff;
-    border: 1px solid #dee2e6;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  }
-
-  .genre-title {
-    font-size: 1.1rem;
-    font-weight: bold;
-    color: #007bff;
-    margin-bottom: 15px;
-    border-bottom: 2px solid #f0f0f0;
-    padding-bottom: 8px;
-  }
 
   /* 入力項目のスタック表示（縦並び） */
   .stack-group {
