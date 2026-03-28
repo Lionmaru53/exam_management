@@ -12,12 +12,29 @@ function hexToRgba(hex, alpha = 0.1) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+テスト用のLine IDを使用して、サーバーから初期データを取得し、UIを構築する関数を呼び出す
+*/
 window.onload = function() {
   const testLineId = "U1234567890abcdef";
   google.script.run
     .withSuccessHandler(renderApp)
     .getInitialData(testLineId);
 };
+
+let scoreOptionsCache = "";
+let rankOptionsCache = "";
+
+function prepareOptions() {
+  scoreOptionsCache = '<option value="">未</option>';
+  for (let i = 0; i <= 100; i++) {
+    scoreOptionsCache += `<option value="${i}">${i}</option>`;
+  }
+  rankOptionsCache = '<option value="">未</option>';
+  for (let i = 1; i <= 400; i++) {
+    rankOptionsCache += `<option value="${i}">${i}</option>`;
+  }
+}
 
 /**
  * 受け取ったデータを元にUIを構築する関数
@@ -75,13 +92,18 @@ function renderApp(data) {
     // ジャンル内の教科をカード形式で表示
     genre.subjects.forEach(sub => {
       const s = data.scores.find(x => x.subject_id === sub.subject_id) || {};
+      
+      const s0pt = scoreOptionsCache.replace(`value="${s.score}"`, `value="${s.score}" selected`);
+      const gr0pt = rankOptionsCache.replace(`value="${s.grade_rank}"`, `value="${s.grade_rank}" selected`);
+      const cr0pt = rankOptionsCache.replace(`value="${s.class_rank}"`, `value="${s.class_rank}" selected`);
+      
       listHtml += `
         <div class="subject-card">
           <span class="subject-label">${sub.subject_name}</span>
           <div class="stack-group">
-            <div class="stack-item"><span>点数</span> <select id="s_${sub.subject_id}">${createOptions(0, 100, s.score)}</select></div>
-            <div class="stack-item"><span>学年順位</span> <select id="gr_${sub.subject_id}">${createOptions(1, 400, s.grade_rank)}</select></div>
-            <div class="stack-item"><span>クラス順位</span> <select id="cr_${sub.subject_id}">${createOptions(1, 100, s.class_rank)}</select></div>
+            <div class="stack-item"><span>点数</span> <select id="s_${sub.subject_id}">${s0pt}</select></div>
+            <div class="stack-item"><span>学年順位</span> <select id="gr_${sub.subject_id}">${gr0pt}</select></div>
+            <div class="stack-item"><span>クラス順位</span> <select id="cr_${sub.subject_id}">${cr0pt}</select></div>
           </div>
         </div>
       `;
