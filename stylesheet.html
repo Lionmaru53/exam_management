@@ -53,6 +53,7 @@
     font-size: 14px;
     border: 1px solid #ddd;
   }
+
   #admin-content {
     background: #fff;
     padding: 20px;
@@ -124,8 +125,10 @@
     border-radius: 12px;
     padding: 15px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
-    flex: 1 1 100%; /* デフォルトは全幅 */
-    max-width: 100%; /* 画面幅に応じて最大幅を調整 */
+    flex: 1 1 100%;
+    /* デフォルトは全幅 */
+    max-width: 100%;
+    /* 画面幅に応じて最大幅を調整 */
     min-width: 320px;
   }
 
@@ -281,6 +284,27 @@
     margin-bottom: 0;
   }
 
+  .admin-nav {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    background: #333;
+    padding: 10px;
+    border-radius: 5px;
+  }
+
+  .admin-nav button {
+    background: none;
+    border: 1px solid #fff;
+    color: #fff;
+    cursor: pointer;
+    padding: 5px 10px;
+  }
+
+  .admin-nav button:hover {
+    background: #555;
+  }
+
   /* モーダルの背景 */
   .modal-overlay {
     position: fixed;
@@ -294,6 +318,7 @@
     justify-content: center;
     align-items: center;
   }
+
   /* モーダルのカード */
   .modal-card {
     background: white;
@@ -303,15 +328,18 @@
     max-width: 400px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   }
+
   .form-group {
     margin-bottom: 15px;
   }
+
   .form-group label {
     display: block;
     font-size: 12px;
     font-weight: bold;
     margin-bottom: 5px;
   }
+
   .admin-input,
   .admin-select {
     width: 100%;
@@ -319,6 +347,7 @@
     border: 1px solid #ccc;
     border-radius: 4px;
   }
+
   .btn-save-admin {
     flex: 1;
     background: #28a745;
@@ -328,6 +357,7 @@
     border-radius: 4px;
     cursor: pointer;
   }
+
   .btn-cancel-admin {
     flex: 1;
     background: #6c757d;

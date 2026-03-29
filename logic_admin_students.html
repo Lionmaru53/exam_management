@@ -1,62 +1,139 @@
 <script>
-/**
- * 生徒管理セクションの読み込み
- */
-function loadSection(type) {
-  if (type !== 'students') return;
-  
-  const content = document.getElementById('admin-content');
-  content.innerHTML = '<p>読み込み中...</p>';
+  let masterData = null; // 学校やコースのマスターデータを格納
 
-  google.script.run
-    .withSuccessHandler(renderStudentManager)
-    .getAdminInitialData();
-}
+  /**
+   * 生徒管理セクションの読み込み
+   */
+  function loadSection(type) {
+    const content = document.getElementById('admin-content');
+    content.innerHTML = '<p>読み込み中...</p>';
+    google.script.run.withSuccessHandler(function(json) {
+      masterData = json; // マスターデータを保存;
+    }).getAdminInitialData(); // 初期データを取得してから描画
+    if (type === 'students') {
+      google.script.run
+        .withSuccessHandler(function(json) {
+          masterData = json; // マスターデータを保存
+          renderStudentManager(json);
+        })
+        .getAdminInitialData();
+    } else if (type === 'exams') {
+      google.script.run
+        .withSuccessHandler(function(json) {
+          masterData = json; // マスターデータを保存
+          renderExamManager(json);
+        })
+        .getAdminInitialData();
+    }
+  }
 
-/**
- * 生徒一覧の描画
- */
-function renderStudentManager(json) {
-  const data = JSON.parse(json);
-  const content = document.getElementById('admin-content');
-  
-  let html = `
+  /**
+   * 生徒一覧の描画
+   */
+  function renderStudentManager(data) {
+    const content = document.getElementById('admin-content');
+
+    let html = `
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <h3>生徒マスター管理</h3>
-      <button onclick="showStudentForm()" style="background:#28a745; color:white; padding:5px 15px; border:none; border-radius:3px;">+ 新規追加</button>
+      <button onclick="openStudentModal()" style="background:#28a745; color:white; padding:5px 15px; border:none; border-radius:3px;">+ 新規追加</button>
     </div>
     <table border="1" style="width:100%; border-collapse: collapse; margin-top:10px; background:white;">
       <tr style="background:#eee;">
         <th>ID</th><th>氏名</th><th>学校</th><th>コース</th><th>操作</th>
       </tr>`;
 
-  data.students.forEach(st => {
-    const school = data.schools.find(s => s.school_id === st.school_id);
-    const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
-    
-    html += `
+    data.students.forEach(st => {
+      const school = data.schools.find(s => s.school_id === st.school_id);
+      const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
+
+      html += `
       <tr>
         <td>${st.student_id}</td>
         <td>${st.name}</td>
         <td>${school ? school.abbreviation || school.school_name : '-'}</td>
         <td>${course ? course.course_name : '-'}</td>
         <td>
-          <button onclick="editStudent('${st.student_id}')">編集</button>
+          <button onclick="openStudentModal('${st.student_id}')">編集</button>
         </td>
       </tr>`;
-  });
+    });
 
-  html += `</table>`;
-  content.innerHTML = html;
-}
+    html += `</table>`;
+    content.innerHTML = html;
+  }
 
-/**
- * 編集/新規登録フォームの表示（簡易版）
- */
-function showStudentForm(studentId = null) {
-  // ここにモーダル表示または入力フォームの表示ロジックを実装します
-  alert(studentId ? "編集機能（準備中）: " + studentId : "新規登録（準備中）");
-}
+  function openStudentModal(studentId = null) {
+    console.log('Opening student modal for ID:', studentId);
+    console.log(masterData)
+    if (!masterData.schools || !masterData.schoolCourses) {
+      showMessage('マスターデータの読み込みに失敗しました。', 'error');
+      return;
+    }
 
+    const modal = document.getElementById('student-modal');
+    const schoolSelect = document.getElementById('edit-school');
+    const courseSelect = document.getElementById('edit-school-course');
+
+    schoolSelect.innerHTML = masterData.schools.map(s => `<option value="${s.school_id}">${s.abbreviation || s.school_name}</option>`).join('');
+    courseSelect.innerHTML = masterData.schoolCourses.map(c => `<option value="${c.school_course_id}">${c.course_name}</option>`).join('');
+
+    if (studentId) {
+      const st = masterData.students.find(s => s.student_id === studentId);
+      document.getElementById('modal-title').innerText = '生徒情報の編集';
+      document.getElementById('edit-student-id').value = st.student_id;
+      document.getElementById('edit-name').value = st.name;
+      document.getElementById('edit-school').value = st.school_id;
+      document.getElementById('edit-school-course').value = st.school_course_id;
+      document.getElementById('edit-grade').value = st.grade;
+    } else {
+      document.getElementById('modal-title').innerText = '生徒情報の新規登録';
+      document.getElementById('edit-student-id').value = '';
+      document.getElementById('edit-name').value = '';
+      document.getElementById('edit-grade').value = '';
+    }
+    modal.style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('student-modal').style.display = 'none';
+  }
+
+  function saveStudent() {
+    const studentId = document.getElementById('edit-student-id').value;
+    const name = document.getElementById('edit-name').value;
+    const schoolId = document.getElementById('edit-school').value;
+    const courseId = document.getElementById('edit-school-course').value;
+    const grade = document.getElementById('edit-grade').value;
+
+    if (!name || !schoolId || !courseId || !grade) {
+      showMessage('全ての項目を入力してください', 'error');
+      return;
+    }
+
+    const btn = event.target;
+    btn.disabled = true;
+
+    const studentData = {
+      student_id: studentId,
+      name: name,
+      school_id: schoolId,
+      school_course_id: courseId,
+      grade: parseInt(grade)
+    };
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        btn.disabled = false;
+        if (response.success) {
+          showMessage('生徒情報が正常に更新されました。', 'success');
+          closeModal();
+          loadSection('students');
+        } else {
+          showMessage(response.error, 'error');
+        }
+      })
+      .updateStudentMaster(studentData);
+  }
 
 </script>
