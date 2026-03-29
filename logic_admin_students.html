@@ -1,0 +1,62 @@
+<script>
+/**
+ * 生徒管理セクションの読み込み
+ */
+function loadSection(type) {
+  if (type !== 'students') return;
+  
+  const content = document.getElementById('admin-content');
+  content.innerHTML = '<p>読み込み中...</p>';
+
+  google.script.run
+    .withSuccessHandler(renderStudentManager)
+    .getAdminInitialData();
+}
+
+/**
+ * 生徒一覧の描画
+ */
+function renderStudentManager(json) {
+  const data = JSON.parse(json);
+  const content = document.getElementById('admin-content');
+  
+  let html = `
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3>生徒マスター管理</h3>
+      <button onclick="showStudentForm()" style="background:#28a745; color:white; padding:5px 15px; border:none; border-radius:3px;">+ 新規追加</button>
+    </div>
+    <table border="1" style="width:100%; border-collapse: collapse; margin-top:10px; background:white;">
+      <tr style="background:#eee;">
+        <th>ID</th><th>氏名</th><th>学校</th><th>コース</th><th>操作</th>
+      </tr>`;
+
+  data.students.forEach(st => {
+    const school = data.schools.find(s => s.school_id === st.school_id);
+    const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
+    
+    html += `
+      <tr>
+        <td>${st.student_id}</td>
+        <td>${st.name}</td>
+        <td>${school ? school.abbreviation || school.school_name : '-'}</td>
+        <td>${course ? course.course_name : '-'}</td>
+        <td>
+          <button onclick="editStudent('${st.student_id}')">編集</button>
+        </td>
+      </tr>`;
+  });
+
+  html += `</table>`;
+  content.innerHTML = html;
+}
+
+/**
+ * 編集/新規登録フォームの表示（簡易版）
+ */
+function showStudentForm(studentId = null) {
+  // ここにモーダル表示または入力フォームの表示ロジックを実装します
+  alert(studentId ? "編集機能（準備中）: " + studentId : "新規登録（準備中）");
+}
+
+
+</script>

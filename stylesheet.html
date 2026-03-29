@@ -1,4 +1,8 @@
 <style>
+  * {
+    box-sizing: border-box;
+  }
+
   :root {
     --primary-color: #007bff;
     --bg-color: #f8f9fa;
@@ -21,17 +25,39 @@
   }
 
   select {
-    touch-action: manipulation;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.5rem center;
-    background-size: 1em;
-    width: 40px;
-    height: 30px;
-    border-radius: 5px;
-    padding: 3px;
+    /* 短い文字(点数等)に最適化した幅と余白 */
+    padding: 5px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    height: 36px;
+    font-size: 14px;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+
+  select:invalid,
+  select:has(option[value=""]:checked) {
+    color: #ccc;
+  }
+
+  select option {
+    color: #333;
+  }
+
+  /* 管理画面用テーブルスタイル */
+  table th,
+  table td {
+    padding: 10px;
+    text-align: left;
+    font-size: 14px;
+    border: 1px solid #ddd;
+  }
+  #admin-content {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   }
 
   #app {
@@ -84,13 +110,39 @@
     border: none;
   }
 
+  #subject-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    width: 100%;
+  }
+
   /* ジャンルの区画（カード形式） */
   .genre-container {
-    min-width: 15%;
-    border: 1px solid;
-    border-radius: 11px;
-    padding: 19px;
-    margin-bottom: 24px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+    flex: 1 1 100%; /* デフォルトは全幅 */
+    max-width: 100%; /* 画面幅に応じて最大幅を調整 */
+    min-width: 320px;
+  }
+
+  @media (min-width: 768px) {
+    .genre-container {
+      /* 2列並びを優先 */
+      flex: 1 1 calc(50% - 10px);
+      max-width: calc(50% - 10px);
+    }
+  }
+
+  @media (min-width: 1200px) {
+    .genre-container {
+      /* 3列並びに */
+      flex: 1 1 calc(33.33% - 14px);
+      max-width: calc(33.33% - 14px);
+    }
   }
 
   .genre-title {
@@ -121,10 +173,10 @@
 
   /* 教科ごとのグリッド配置 */
   .subject-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    /* レスポンシブな自動列 */
-    gap: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    width: 100%;
   }
 
   /* 教科ごとの独立した枠（カード） */
@@ -133,15 +185,20 @@
     border: 1px solid #eee;
     border-radius: 10px;
     padding: 15px;
+    flex: 0 1 calc(50% - 6px);
+    max-width: 100%;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    /* 軽い影 */
-    transition: transform 0.2s;
   }
 
   .subject-card:hover {
     transform: translateY(-2px);
-    /* 少し浮き上がる演出 */
-    border-color: #007bff;
+  }
+
+  /* カードのホバー演出（transform）が重い原因になるので、スマホでは無効化 */
+  @media (hover: none) {
+    .subject-card:hover {
+      transform: none;
+    }
   }
 
   .subject-label {
@@ -164,7 +221,6 @@
     max-width: 300px;
     border: 1px solid #e9ecef;
   }
-
 
   .btn-save {
     width: 100%;
@@ -204,7 +260,6 @@
     font-weight: bold;
   }
 
-
   /* 入力項目のスタック表示（縦並び） */
   .stack-group {
     display: flex;
@@ -216,7 +271,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 6px;
     font-size: 0.85rem;
+    gap: 10px;
     color: #666;
   }
 
@@ -224,11 +281,60 @@
     margin-bottom: 0;
   }
 
-
-  /* カードのホバー演出（transform）が重い原因になるので、スマホでは無効化 */
-  @media (hover: none) {
-    .subject-card:hover {
-      transform: none;
-    }
+  /* モーダルの背景 */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  /* モーダルのカード */
+  .modal-card {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  }
+  .form-group {
+    margin-bottom: 15px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+  .admin-input,
+  .admin-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  .btn-save-admin {
+    flex: 1;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-cancel-admin {
+    flex: 1;
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
   }
 </style>

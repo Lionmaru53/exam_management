@@ -26,14 +26,25 @@ let scoreOptionsCache = "";
 let rankOptionsCache = "";
 
 function prepareOptions() {
-  scoreOptionsCache = '<option value="">未</option>';
-  for (let i = 0; i <= 100; i++) {
+  scoreOptionsCache = '<option value="" disabled selected hidden>点数</option>';
+  for (let i = 100; i >= 0; i--) {
     scoreOptionsCache += `<option value="${i}">${i}</option>`;
   }
-  rankOptionsCache = '<option value="">未</option>';
+  rankOptionsCache = '<option value="" disabled selected hidden>順位</option>';
   for (let i = 1; i <= 400; i++) {
     rankOptionsCache += `<option value="${i}">${i}</option>`;
   }
+}
+
+function getOptionsHtml(cache,selectedValue) {
+  //　値が空の場合は、そのまま返す
+  if (selectedValue === undefined || selectedValue === null || selectedValue === "") {
+    return cache;
+  }
+  // 値がある場合は、プレースホルダーの selected を外し、該当の数字に selected を付ける
+  cache = cache.replace('disabled selected hidden', 'selected'); // プレースホルダーの selected を外す
+  cache = cache.replace(`value="${selectedValue}"`, `value="${selectedValue}" selected`);
+  return cache;
 }
 
 /**
@@ -47,6 +58,7 @@ function renderApp(data) {
     document.getElementById('loading').innerText = "エラー: " + data.error;
     return;
   }
+  prepareOptions(); // 選択肢のキャッシュを準備
 
   document.getElementById('loading').style.display = "none";
   document.getElementById('app').style.display = "block";
@@ -74,8 +86,6 @@ function renderApp(data) {
     return acc;
   }, {});
 
-  //console.log("Grouped subjects:", groupedSubjects); // デバッグ用ログ
-
   // 2. ジャンルごとにHTMLを生成
   let listHtml = "";
   for (const genreName in groupedSubjects) {
@@ -93,17 +103,17 @@ function renderApp(data) {
     genre.subjects.forEach(sub => {
       const s = data.scores.find(x => x.subject_id === sub.subject_id) || {};
       
-      const s0pt = scoreOptionsCache.replace(`value="${s.score}"`, `value="${s.score}" selected`);
-      const gr0pt = rankOptionsCache.replace(`value="${s.grade_rank}"`, `value="${s.grade_rank}" selected`);
-      const cr0pt = rankOptionsCache.replace(`value="${s.class_rank}"`, `value="${s.class_rank}" selected`);
+      const s0pt = getOptionsHtml(scoreOptionsCache, s.score);
+      const gr0pt = getOptionsHtml(rankOptionsCache, s.grade_rank);
+      const cr0pt = getOptionsHtml(rankOptionsCache, s.class_rank);
       
       listHtml += `
         <div class="subject-card">
           <span class="subject-label">${sub.subject_name}</span>
           <div class="stack-group">
             <div class="stack-item"><span>点数</span> <select id="s_${sub.subject_id}">${s0pt}</select></div>
-            <div class="stack-item"><span>学年順位</span> <select id="gr_${sub.subject_id}">${gr0pt}</select></div>
-            <div class="stack-item"><span>クラス順位</span> <select id="cr_${sub.subject_id}">${cr0pt}</select></div>
+            <div class="stack-item"><span>学年<br>順位</span> <select id="gr_${sub.subject_id}">${gr0pt}</select></div>
+            <div class="stack-item"><span>クラス<br>順位</span> <select id="cr_${sub.subject_id}">${cr0pt}</select></div>
           </div>
         </div>
       `;
@@ -118,18 +128,6 @@ function renderApp(data) {
       一括保存する
     </button>
   `;
-}
-
-/**
- * 0〜100点、1〜400位の選択肢を生成するヘルパー関数
- */
-function createOptions(start, end, selectedValue) {
-  let options = '<option value="">未</option>'; // 未入力状態を許容
-  for (let i = start; i <= end; i++) {
-    const selected = (i == selectedValue) ? 'selected' : '';
-    options += `<option value="${i}" ${selected}>${i}</option>`;
-  }
-  return options;
 }
 
 </script>
