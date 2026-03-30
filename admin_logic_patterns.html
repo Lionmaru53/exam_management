@@ -9,7 +9,7 @@
 
     // 学校/コースごとに試験パターンをグループ化して表示
     const grouped = data.patterns.reduce((acc, p) => {
-      const key = `${p.school_name} / ${data.schoolCourses.find((c) => c.school_course_id === p.school_course_id)?.course_name || "不明"}`;
+      const key = `${p.school_name} / ${data.schoolCourses.find((c) => c.school_course_id === p.school_course_id)?.school_course_name || "不明"}`;
       if (!acc[key]) acc[key] = [];
       acc[key].push(p);
       return acc;

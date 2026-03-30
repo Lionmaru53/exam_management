@@ -13,24 +13,19 @@ function getInitialData(lineUserId) {
 
     // 学校名とコース名の紐付け
     const school = getRowsData(ss.getSheetByName('schools_master'))
-      .find(s => s.school_id === studentRaw.school_id);
-
-    // 略称があれば採用、なければ正式名称を表示
-    const schoolDisplayName = (school && school.abbreviation) ? school.abbreviation : (school ? school.school_name : "不明な学校");
+      .find(s => s.school_name === studentRaw.school_name);
 
     const sCourse = getRowsData(ss.getSheetByName('school_courses'))
       .find(c => c.school_course_id === studentRaw.school_course_id);
 
     const student = {
       ...studentRaw,
-      school_name: schoolDisplayName,
-      school_course_name: sCourse ? sCourse.course_name : "不明なコース"
+      school_course_name: sCourse ? sCourse.school_course_name : "不明なコース"
     };
 
     // 2. 該当する試験パターン(exam_patterns)の取得
     const patterns = getRowsData(ss.getSheetByName('exam_patterns'))
       .filter(p => p.school_name === student.school_name && p.school_course_id === student.school_course_id);
-
     if (patterns.length === 0) return JSON.stringify({ error: '該当する試験パターンがありません。' });
 
     // 3. 全試験データ(exam_data)から、該当パターンのものを抽出

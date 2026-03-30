@@ -33,7 +33,8 @@ function getAdminInitialData() {
       const g = results.genres.find(g => g.genre_id === s.genre_id);
       return { ...s, genre_name: g ? g.genre_name : "未設定" };
     });
-    } catch (e) {
+    return results;
+  } catch (e) {
     console.error(e);
     return JSON.stringify({ error: e.message });
   }

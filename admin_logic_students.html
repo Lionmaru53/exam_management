@@ -7,23 +7,28 @@
   function loadSection(type) {
     const content = document.getElementById('admin-content');
     content.innerHTML = '<p>読み込み中...</p>';
-    google.script.run.withSuccessHandler(function(json) {
+
+    if (!masterData) {
+    google.script.run.withSuccessHandler(function (json) {
       masterData = json; // マスターデータを保存;
+      console.log("取得したマスターデータ:", masterData);
+      if (type === 'students') {
+        renderStudentManager(masterData);
+      } else if (type === 'exams') {
+        renderExamManager(masterData);
+      } else if (type === 'patterns') {
+        renderPatternManager(masterData);
+      }
     }).getAdminInitialData(); // 初期データを取得してから描画
-    if (type === 'students') {
-      google.script.run
-        .withSuccessHandler(function(json) {
-          masterData = json; // マスターデータを保存
-          renderStudentManager(json);
-        })
-        .getAdminInitialData();
-    } else if (type === 'exams') {
-      google.script.run
-        .withSuccessHandler(function(json) {
-          masterData = json; // マスターデータを保存
-          renderExamManager(json);
-        })
-        .getAdminInitialData();
+    } else {
+      // 既にマスターデータがある場合はそれを使って描画
+      if (type === 'students') {
+        renderStudentManager(masterData);
+      } else if (type === 'exams') {
+        renderExamManager(masterData);
+      } else if (type === 'patterns') {
+        renderPatternManager(masterData);
+      }
     }
   }
 
@@ -52,7 +57,7 @@
         <td>${st.student_id}</td>
         <td>${st.name}</td>
         <td>${school ? school.abbreviation || school.school_name : '-'}</td>
-        <td>${course ? course.course_name : '-'}</td>
+        <td>${course ? course.school_course_name : '-'}</td>
         <td>
           <button onclick="openStudentModal('${st.student_id}')">編集</button>
         </td>
@@ -74,7 +79,7 @@
     const courseSelect = document.getElementById('edit-school-course');
 
     schoolSelect.innerHTML = masterData.schools.map(s => `<option value="${s.school_name}">${s.abbreviation || s.school_name}</option>`).join('');
-    courseSelect.innerHTML = masterData.schoolCourses.map(c => `<option value="${c.school_course_id}">${c.course_name}</option>`).join('');
+    courseSelect.innerHTML = masterData.schoolCourses.map(c => `<option value="${c.school_course_id}">${c.school_course_name}</option>`).join('');
 
     if (studentId) {
       const st = masterData.students.find(s => s.student_id === studentId);
@@ -126,6 +131,13 @@
         if (response.success) {
           showMessage('生徒情報が正常に更新されました。', 'success');
           closeModal();
+          // masterData.students内のstudent_idが一致する生徒データを上書き、なければ差し込み
+          const index = masterData.students.findIndex(s => s.student_id === studentData.student_id);
+          if (index !== -1) {
+            masterData.students[index] = studentData;
+          } else {
+            masterData.students.push(studentData);
+          }
           loadSection('students');
         } else {
           showMessage(response.error, 'error');

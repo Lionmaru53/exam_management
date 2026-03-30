@@ -53,7 +53,7 @@ function getOptionsHtml(cache,selectedValue) {
  */
 function renderApp(data) {
   // デバッグ用ログ
-  //console.log("Received data:", data);
+  console.log("Received data:", data);
   if (data.error) {
     document.getElementById('loading').innerText = "エラー: " + data.error;
     return;

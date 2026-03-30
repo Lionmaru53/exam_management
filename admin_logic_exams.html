@@ -12,7 +12,7 @@
       const course = data.schoolCourses.find(
         (c) => c.school_course_id === p.school_course_id,
       );
-      const cName = course ? course.course_name : "不明コース";
+      const cName = course ? course.school_course_name : "不明コース";
       const groupKey = `${sDisplayName} / ${cName}`;
 
       if (!acc[groupKey]) {
@@ -57,7 +57,7 @@
             ${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}
           </td>
           <td>
-            <button onclick="openExamModal('${p.pattern_id}', '${exam ? exam.exam_id : ""}')">
+            <button onclick="openExamModal('${exam ? exam.exam_id : ""}')">
               ${exam ? "期間修正" : "期間設定"}
             </button>
           </td>
@@ -88,7 +88,7 @@
       ? masterData.exams.find((e) => e.exam_id === examId)
       : null;
     const pattern = masterData.patterns.find((p) =>
-      exam ? p.pattern_id === exam.pattern_id : p.pattern_id === examId,
+      exam ? p.pattern_id === exam.pattern_id : p.exam_id === examId,
     );
     const school = masterData.patterns.find(
       (p) => p.pattern_id === (exam ? exam.pattern_id : examId),
