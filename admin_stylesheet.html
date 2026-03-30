@@ -1,0 +1,130 @@
+<style>
+  #admin-content {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  .admin-nav {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    background: #333;
+    padding: 10px;
+    border-radius: 5px;
+  }
+
+  .admin-nav button {
+    background: none;
+    border: 1px solid #fff;
+    color: #fff;
+    cursor: pointer;
+    padding: 5px 10px;
+  }
+
+  .admin-nav button:hover {
+    background: #555;
+  }
+
+  /* モーダルの背景 */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* モーダルのカード */
+  .modal-card {
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  }
+
+  .form-group {
+    margin-bottom: 15px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  .admin-input,
+  .admin-select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+
+  .btn-save-admin {
+    flex: 1;
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .btn-cancel-admin {
+    flex: 1;
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  /* 管理画面用テーブルスタイル */
+  table.admin-table th,
+  table.admin-table td {
+    padding: 10px;
+    text-align: left;
+    font-size: 14px;
+    border: 1px solid #ddd;
+  }
+
+  .admin-genre-container {
+    margin-bottom: 30px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .admin-genre-title {
+    background: #f4f4f4;
+    margin: 0;
+    padding: 10px 15px;
+    border-bottom: 1px solid #ddd;
+  }
+  .admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+  }
+  .admin-table th,
+  .admin-table td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+  }
+  .admin-table th {
+    font-size: 0.8rem;
+    color: #888;
+    text-transform: uppercase;
+  }
+</style>

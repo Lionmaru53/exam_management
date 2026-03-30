@@ -1,0 +1,106 @@
+<script>
+  /**
+   * 教科パターン管理セクションの描画
+   */
+  function renderPatternManager(data) {
+    const content = document.getElementById("admin-content");
+
+    let html = `<h3>教科パターンの紐付け管理</h3>`;
+
+    // 学校/コースごとに試験パターンをグループ化して表示
+    const grouped = data.patterns.reduce((acc, p) => {
+      const key = `${p.school_name} / ${data.schoolCourses.find((c) => c.school_course_id === p.school_course_id)?.course_name || "不明"}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(p);
+      return acc;
+    }, {});
+
+    for (const groupName in grouped) {
+      html += `<div class="admin-genre-container"><h4 class="admin-genre-title">${groupName}</h4><table class="admin-table">`;
+      grouped[groupName].forEach((p) => {
+        const test = data.termTests.find(
+          (t) => t.term_test_id === p.term_test_id,
+        );
+        const subjects = data.patternSubjects
+          .filter((ps) => ps.pattern_id === p.pattern_id)
+          .map(
+            (ps) =>
+              data.subjects.find((s) => s.subject_id === ps.subject_id)
+                ?.subject_name,
+          )
+          .join(", ");
+
+        html += `<tr>
+        <td style="width:30%"><strong>${test ? test.test_name : "未設定"}</strong></td>
+        <td style="font-size:0.85rem; color:#666;">${subjects || "教科未設定"}</td>
+        <td style="width:100px;"><button onclick="openPatternSubjectModal('${p.pattern_id}')">教科編集</button></td>
+      </tr>`;
+      });
+      html += `</table></div>`;
+    }
+    content.innerHTML = html;
+  }
+
+  /**
+   * 教科選択モーダルの表示
+   */
+  function openPatternSubjectModal(patternId) {
+    const modal = document.getElementById("student-modal");
+    const body = document.querySelector(".modal-card");
+    const currentSubjectIds = masterData.patternSubjects
+      .filter((ps) => ps.pattern_id === patternId)
+      .map((ps) => ps.subject_id);
+
+    // ジャンルごとに教科をグループ化
+    const groupedSubs = masterData.subjects.reduce((acc, s) => {
+      const gName = s.genre_name || "その他";
+      if (!acc[gName]) acc[gName] = [];
+      acc[gName].push(s);
+      return acc;
+    }, {});
+
+    let subHtml = `<h4>教科の紐付け設定</h4><div style="max-height:400px; overflow-y:auto; margin-bottom:15px;">`;
+
+    for (const gName in groupedSubs) {
+      subHtml += `<p style="font-weight:bold; background:#f0f0f0; padding:5px; margin-top:10px;">${gName}</p>`;
+      groupedSubs[gName].forEach((s) => {
+        const checked = currentSubjectIds.includes(s.subject_id)
+          ? "checked"
+          : "";
+        subHtml += `<label style="display:block; padding:3px 10px;">
+        <input type="checkbox" name="subject_check" value="${s.subject_id}" ${checked}> ${s.subject_name}
+      </label>`;
+      });
+    }
+
+    subHtml += `
+    <p style="font-weight:bold; border-top:1px solid #ccc; margin-top:15px; padding-top:10px;">マスターにない教科を追加</p>
+    <input type="text" id="new-subject-name" placeholder="新しい教科名を入力" class="admin-input">
+  </div>
+  <div style="display:flex; gap:10px;">
+    <button onclick="savePatternSubjects('${patternId}')" class="btn-save-admin">保存</button>
+    <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
+  </div>`;
+
+    body.innerHTML = subHtml;
+    modal.style.display = "flex";
+  }
+
+  /**
+   * 保存実行
+   */
+  function savePatternSubjects(patternId) {
+    const selectedIds = Array.from(
+      document.querySelectorAll('input[name="subject_check"]:checked'),
+    ).map((cb) => cb.value);
+    const newSubjectName = document.getElementById("new-subject-name").value;
+
+    google.script.run
+      .withSuccessHandler(() => {
+        closeModal();
+        showMessage("教科設定を更新しました", "success");
+        loadSection("patterns");
+      })
+      .updatePatternSubjects(patternId, selectedIds, newSubjectName);
+  }
+</script>

@@ -1,106 +1,214 @@
 <script>
-    /**
-     * 試験日程セクションの描画
-     */
-    function renderExamManager(data) {
-        const content = document.getElementById('admin-content');
+  function renderExamManager(data) {
+    const content = document.getElementById("admin-content");
 
-        let html = `
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h3>試験日程（実施回）管理</h3>
-      <button onclick="openExamModal()" style="background:#28a745; color:white; padding:5px 15px; border:none; border-radius:3px;">+ 新規試験作成</button>
-    </div>
-    <table border="1" style="width:100%; border-collapse: collapse; margin-top:10px; background:white;">
-      <tr style="background:#eee;">
-        <th>ID</th><th>学校名</th><th>テスト名</th><th>期間</th><th>操作</th>
-      </tr>`;
+    // 1. データを「学校名 / コース」でグループ化
+    const groupedPatterns = data.patterns.reduce((acc, p) => {
+      // school_name で直接マスターを検索
+      const school = data.schools.find((s) => s.school_name === p.school_name);
+      const sDisplayName = school
+        ? school.abbreviation || school.school_name
+        : p.school_name;
+      const course = data.schoolCourses.find(
+        (c) => c.school_course_id === p.school_course_id,
+      );
+      const cName = course ? course.course_name : "不明コース";
+      const groupKey = `${sDisplayName} / ${cName}`;
 
-        data.exams.forEach(ex => {
-            // pattern_id から学校名とテスト名を紐付け（事前に用意した masterData を活用）
-            const pattern = data.patterns.find(p => p.pattern_id === ex.pattern_id);
-            const school = pattern ? data.schools.find(s => s.school_name === pattern.school_name) : null;
-            const test = pattern ? data.termTests.find(t => t.term_test_id === pattern.term_test_id) : null;
+      if (!acc[groupKey]) {
+        acc[groupKey] = {
+          // ボタンに渡すための情報（IDではなく名前を使用）
+          info: {
+            school_name: p.school_name,
+            school_course_id: p.school_course_id,
+          },
+          items: [],
+        };
+      }
+      acc[groupKey].items.push(p);
+      return acc;
+    }, {});
 
-            html += `
-      <tr>
-        <td>${ex.exam_id}</td>
-        <td>${school ? (school.abbreviation || school.school_name) : '-'}</td>
-        <td>${test ? test.test_name : '-'}</td>
-        <td>${ex.start_date} ~ ${ex.end_date}</td>
-        <td>
-          <button onclick="openExamModal('${ex.exam_id}')">編集</button>
-          <button onclick="deleteExam('${ex.exam_id}')" style="color:red; margin-left:5px;">削除</button>
-        </td>
-      </tr>`;
-        });
+    let html = `<h3>試験日程・実施期間の一覧管理</h3>`;
 
-        html += `</table>`;
-        content.innerHTML = html;
+    for (const groupName in groupedPatterns) {
+      const group = groupedPatterns[groupName];
+      html += `
+      <div class="admin-genre-container">
+        <h4 class="admin-genre-title">${groupName}</h4>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>テスト区分</th><th>実施期間（開始 ～ 終了）</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+      group.items.forEach((p) => {
+        const test = data.termTests.find(
+          (t) => t.term_test_id === p.term_test_id,
+        );
+        const exam = data.exams.find((e) => e.pattern_id === p.pattern_id);
+
+        html += `
+        <tr>
+          <td><strong>${test ? test.test_name : "不明なテスト"}</strong></td>
+          <td>
+            ${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}
+          </td>
+          <td>
+            <button onclick="openExamModal('${p.pattern_id}', '${exam ? exam.exam_id : ""}')">
+              ${exam ? "期間修正" : "期間設定"}
+            </button>
+          </td>
+        </tr>`;
+      });
+
+      // 最下行に追加ボタン（IDではなくschool_nameを渡す）
+      html += `
+        <tr style="background: #f9f9f9;">
+          <td colspan="3" style="text-align: center; padding: 10px;">
+            <button onclick="openAddPatternModal('${group.info.school_name}', '${group.info.school_course_id}')" 
+                    style="background:#007bff; color:white; border:none; padding:5px 15px; border-radius:3px; cursor:pointer;">
+              + このグループに新しいテスト区分を追加
+            </button>
+          </td>
+        </tr>
+      </tbody></table></div>`;
+    }
+    content.innerHTML = html;
+  }
+
+  /**
+   * 試験作成モーダルの表示
+   */
+  function openExamModal(examId = null) {
+    const modal = document.getElementById("student-modal");
+    const exam = examId
+      ? masterData.exams.find((e) => e.exam_id === examId)
+      : null;
+    const pattern = masterData.patterns.find((p) =>
+      exam ? p.pattern_id === exam.pattern_id : p.pattern_id === examId,
+    );
+    const school = masterData.patterns.find(
+      (p) => p.pattern_id === (exam ? exam.pattern_id : examId),
+    );
+    const test = masterData.termTests.find(
+      (t) => t.term_test_id === pattern.term_test_id,
+    );
+
+    // モーダル中身を試験用に書き換え
+    const body = document.querySelector(".modal-card");
+    body.innerHTML = `
+      <h4>試験期間の設定</h4>
+      <p style="font-size:0.9rem; margin-bottom:15px; color:#666;">
+        ${school.abbreviation || school.school_name} : ${test.test_name}
+      </p>
+      <input type="hidden" id="edit-exam-id" value="${examId}">
+      <input type="hidden" id="edit-exam-pattern" value="${patternId}">
+
+      <div class="form-group">
+        <label>開始日</label>
+        <input type="date" id="edit-exam-start" class="admin-input" value="${exam ? exam.start_date : ""}">
+      </div>
+      <div class="form-group">
+        <label>終了日</label>
+        <input type="date" id="edit-exam-end" class="admin-input" value="${exam ? exam.end_date : ""}">
+      </div>
+
+      <div style="margin-top:20px; display:flex; gap:10px;">
+        <button onclick="saveExam()" class="btn-save-admin">保存</button>
+        <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
+      </div>
+    `;
+    modal.style.display = "flex";
+  }
+
+  function saveExam() {
+    const payload = {
+      exam_id: document.getElementById("edit-exam-id").value,
+      pattern_id: document.getElementById("edit-exam-pattern").value,
+      start_date: document.getElementById("edit-exam-start").value,
+      end_date: document.getElementById("edit-exam-end").value,
+    };
+
+    if (!payload.start_date || !payload.end_date) {
+      showMessage("日付を入力してください", "error");
+      return;
     }
 
-    /**
-     * 試験作成モーダルの表示
-     */
-    function openExamModal(examId = null) {
-        const modal = document.getElementById('student-modal');
-        const exam = examId ? masterData.exams.find(e => e.exam_id === examId) : null;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerText = "保存中...";
 
-        // モーダル中身を試験用に書き換え
-        const body = document.querySelector('.modal-card');
-        body.innerHTML = `
-    <h4 id="modal-title">${exam ? '試験日程の編集' : '試験日程の新規作成'}</h4>
-    <input type="hidden" id="edit-exam-id" value="${exam ? exam.exam_id : ''}" />
+    google.script.run
+      .withSuccessHandler(function (response) {
+        btn.disabled = false;
+        btn.innerText = "保存";
+        if (response.success) {
+          closeModal();
+          showMessage("試験日程を保存しました", "success");
+          loadSection("exams");
+        } else {
+          showMessage(response.error, "error");
+        }
+      })
+      .updateExamData(payload);
+  }
+
+  function deleteExam(examId) {
+    if (
+      !confirm(
+        "この試験日程を削除しますか？既存のデータとの整合性を確保してください。",
+      )
+    )
+      return;
+
+    google.script.run
+      .withSuccessHandler(function () {
+        showMessage("試験日程を削除しました", "success");
+        loadSection("exams");
+      })
+      .deleteExamData(examId);
+  }
+
+  /**
+ * 新規パターン（テスト区分）追加モーダル
+ */
+function openAddPatternModal(schoolId, scId) {
+  const modal = document.getElementById('student-modal');
+  const body = document.querySelector('.modal-card');
+  
+  body.innerHTML = `
+    <h4>新規テスト区分の追加</h4>
     <div class="form-group">
-      <label>試験パターン（学校×テスト名）</label>
-      <select id="edit-exam-pattern" class="admin-select">
-        ${masterData.patterns.map(p => {
-            const s = masterData.schools.find(sc => sc.school_name === p.school_name);
-            const t = masterData.termTests.find(tt => tt.term_test_id === p.term_test_id);
-            const selected = (exam && exam.pattern_id === p.pattern_id) ? 'selected' : '';
-            return `<option value="${p.pattern_id}" ${selected}>${s.abbreviation || s.school_name} / ${t.test_name}</option>`;
-        }).join('')}
+      <label>追加するテスト名（term_tests_masterより）</label>
+      <select id="new-pattern-test-id" class="admin-select">
+        ${masterData.termTests.map(t => `<option value="${t.term_test_id}">${t.test_name}</option>`).join('')}
       </select>
     </div>
-    <div class="form-group">
-      <label>開始日</label>
-      <input type="date" id="edit-exam-start" class="admin-input" value="${exam ? exam.start_date : ''}">
-    </div>
-    <div class="form-group">
-      <label>終了日</label>
-      <input type="date" id="edit-exam-end" class="admin-input" value="${exam ? exam.end_date : ''}">
-    </div>
     <div style="margin-top:20px; display:flex; gap:10px;">
-      <button onclick="saveExam()" class="btn-save-admin">保存</button>
+      <button onclick="addExamPattern('${schoolId}', '${scId}')" class="btn-save-admin">追加する</button>
       <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
     </div>
-    `;
-        modal.style.display = "flex";
-    }
+  `;
+  modal.style.display = "flex";
+}
 
-    function saveExam() {
-        const payload = {
-            pattern_id: document.getElementById('edit-exam-pattern').value,
-            start_date: document.getElementById('edit-exam-start').value,
-            end_date: document.getElementById('edit-exam-end').value
-        };
+/**
+ * パターン追加の実行
+ */
+function addExamPattern(schoolId, scId) {
+  const payload = {
+    school_name: schoolId,
+    school_course_id: scId,
+    term_test_id: document.getElementById('new-pattern-test-id').value
+  };
 
-        if (!payload.start_date || !payload.end_date) {
-            showMessage("日付を入力してください", "error"); return;
-        }
-
-        google.script.run.withSuccessHandler(function () {
-            closeModal();
-            showMessage("試験日程を保存しました", "success");
-            loadSection('exams');
-        }).updateExamData(payload);
-    }
-
-    function deleteExam(examId) {
-        if (!confirm("この試験日程を削除しますか？既存のデータとの整合性を確保してください。")) return;
-
-        google.script.run.withSuccessHandler(function () {
-            showMessage("試験日程を削除しました", "success");
-            loadSection('exams');
-        }).deleteExamData(examId);
-    }
+  google.script.run.withSuccessHandler(function() {
+    closeModal();
+    showMessage("テスト区分を追加しました。教科設定も忘れずに行ってください。", "success");
+    loadSection('exams');
+  }).addNewPattern(payload);
+}
 </script>

@@ -13,7 +13,13 @@ function getRowsData(sheet) {
   return rows.map(row => {
     const obj = {};
     headers.forEach((h, i) => {
-      if (h) obj[h] = row[i];
+      if (h) {
+        if (Number.isFinite(row[i])) {
+          obj[h] = String(row[i]);
+        } else {
+          obj[h] = row[i];
+        }
+      }
     });
     return obj;
   });

@@ -64,8 +64,6 @@
   }
 
   function openStudentModal(studentId = null) {
-    console.log('Opening student modal for ID:', studentId);
-    console.log(masterData)
     if (!masterData.schools || !masterData.schoolCourses) {
       showMessage('マスターデータの読み込みに失敗しました。', 'error');
       return;
@@ -84,7 +82,7 @@
       document.getElementById('edit-student-id').value = st.student_id;
       document.getElementById('edit-name').value = st.name;
       document.getElementById('edit-school').value = st.school_name;
-      document.getElementById('edit-school-course').value = st.school_course_id;
+      document.getElementById('edit-school-course').value = st.school_course_id || '';
       document.getElementById('edit-grade').value = st.grade;
     } else {
       document.getElementById('modal-title').innerText = '生徒情報の新規登録';
