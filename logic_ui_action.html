@@ -1,20 +1,4 @@
 <script>
-  /**
-  * メッセージを表示する関数（alertの代わり）
-  */
-function showMessage(text, type) {
-  const msgEl = document.getElementById('status-message');
-  msgEl.innerText = text;
-  msgEl.className = type === 'success' ? 'msg-success' : 'msg-error';
-
-  msgEl.classList.add('show');
-
-  // 5秒後に自動で消す（任意）
-  setTimeout(() => {
-    msgEl.classList.remove('show');
-  }, 5000);
-}
-
 /**
  * 保存ボタンがクリックされたときの処理
  * @param {string} studentId - 生徒ID
