@@ -18,7 +18,7 @@
         data.exams.forEach(ex => {
             // pattern_id から学校名とテスト名を紐付け（事前に用意した masterData を活用）
             const pattern = data.patterns.find(p => p.pattern_id === ex.pattern_id);
-            const school = pattern ? data.schools.find(s => s.school_id === pattern.school_id) : null;
+            const school = pattern ? data.schools.find(s => s.school_name === pattern.school_name) : null;
             const test = pattern ? data.termTests.find(t => t.term_test_id === pattern.term_test_id) : null;
 
             html += `
@@ -54,7 +54,7 @@
       <label>試験パターン（学校×テスト名）</label>
       <select id="edit-exam-pattern" class="admin-select">
         ${masterData.patterns.map(p => {
-            const s = masterData.schools.find(sc => sc.school_id === p.school_id);
+            const s = masterData.schools.find(sc => sc.school_name === p.school_name);
             const t = masterData.termTests.find(tt => tt.term_test_id === p.term_test_id);
             const selected = (exam && exam.pattern_id === p.pattern_id) ? 'selected' : '';
             return `<option value="${p.pattern_id}" ${selected}>${s.abbreviation || s.school_name} / ${t.test_name}</option>`;

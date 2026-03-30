@@ -31,7 +31,7 @@ function updateStudentMaster(payload) {
       switch (h) {
         case 'student_id': return studentId;
         case 'name': return payload.name;
-        case 'school_id': return payload.school_id;
+        case 'school_name': return payload.school_name;
         case 'school_course_id': return payload.school_course_id;
         case 'grade': return payload.grade;
         // line_user_id は更新対象から外す（別の紐付け機能で扱うため）

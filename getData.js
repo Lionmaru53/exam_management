@@ -29,7 +29,7 @@ function getInitialData(lineUserId) {
 
     // 2. 該当する試験パターン(exam_patterns)の取得
     const patterns = getRowsData(ss.getSheetByName('exam_patterns'))
-      .filter(p => p.school_id === student.school_id && p.school_course_id === student.school_course_id);
+      .filter(p => p.school_name === student.school_name && p.school_course_id === student.school_course_id);
 
     if (patterns.length === 0) return JSON.stringify({ error: '該当する試験パターンがありません。' });
 

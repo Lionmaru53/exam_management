@@ -44,7 +44,7 @@
       </tr>`;
 
     data.students.forEach(st => {
-      const school = data.schools.find(s => s.school_id === st.school_id);
+      const school = data.schools.find(s => s.school_name === st.school_name);
       const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
 
       html += `
@@ -75,7 +75,7 @@
     const schoolSelect = document.getElementById('edit-school');
     const courseSelect = document.getElementById('edit-school-course');
 
-    schoolSelect.innerHTML = masterData.schools.map(s => `<option value="${s.school_id}">${s.abbreviation || s.school_name}</option>`).join('');
+    schoolSelect.innerHTML = masterData.schools.map(s => `<option value="${s.school_name}">${s.abbreviation || s.school_name}</option>`).join('');
     courseSelect.innerHTML = masterData.schoolCourses.map(c => `<option value="${c.school_course_id}">${c.course_name}</option>`).join('');
 
     if (studentId) {
@@ -83,7 +83,7 @@
       document.getElementById('modal-title').innerText = '生徒情報の編集';
       document.getElementById('edit-student-id').value = st.student_id;
       document.getElementById('edit-name').value = st.name;
-      document.getElementById('edit-school').value = st.school_id;
+      document.getElementById('edit-school').value = st.school_name;
       document.getElementById('edit-school-course').value = st.school_course_id;
       document.getElementById('edit-grade').value = st.grade;
     } else {
@@ -117,7 +117,7 @@
     const studentData = {
       student_id: studentId,
       name: name,
-      school_id: schoolId,
+      school_name: schoolId,
       school_course_id: courseId,
       grade: parseInt(grade)
     };
