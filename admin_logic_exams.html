@@ -1,10 +1,31 @@
 <script>
+  let editingExamRowKey = null;
+  let editingExamPatternId = null;
+  let editingExamId = null;
+
+  function makeExamRowKey(school_name, school_course_id, term_test_id) {
+    return encodeURIComponent(`${school_name}||${school_course_id}||${term_test_id}`);
+  }
+
+  function startEditExam(rowKey, patternId, examId) {
+    editingExamRowKey = rowKey;
+    editingExamPatternId = patternId;
+    editingExamId = examId || "";
+    renderExamManager(masterData);
+  }
+
+  function cancelEditExam() {
+    editingExamRowKey = null;
+    editingExamPatternId = null;
+    editingExamId = null;
+    renderExamManager(masterData);
+  }
+
   function renderExamManager(data) {
     const content = document.getElementById("admin-content");
 
     // 1. データを「学校名 / コース」でグループ化
     const groupedPatterns = data.patterns.reduce((acc, p) => {
-      // school_name で直接マスターを検索
       const school = data.schools.find((s) => s.school_name === p.school_name);
       const sDisplayName = school
         ? school.abbreviation || school.school_name
@@ -17,7 +38,6 @@
 
       if (!acc[groupKey]) {
         acc[groupKey] = {
-          // ボタンに渡すための情報（IDではなく名前を使用）
           info: {
             school_name: p.school_name,
             school_course_id: p.school_course_id,
@@ -48,125 +68,100 @@
         const p = group.items.find(
           (item) => item.term_test_id === test.term_test_id,
         );
-
         const exam = p
           ? data.exams.find((e) => e.pattern_id === p.pattern_id)
           : null;
+        const rowKey = makeExamRowKey(
+          group.info.school_name,
+          group.info.school_course_id,
+          test.term_test_id,
+        );
+        const isEditing = editingExamRowKey === rowKey;
 
         html += `
-        <tr>
-          <td><strong>${test.test_name}</strong></td>
+        <tr${isEditing ? ` id="edit-exam-${rowKey}"` : ""}>
+          <td><strong>${test.test_name}</strong></td>`;
+
+        if (isEditing) {
+          html += `
+          <td style="min-width:280px;">
+            <input type="date" class="edit-start-date" value="${exam ? exam.start_date : ""}" style="width:45%; margin-right:4%;" />
+            <input type="date" class="edit-end-date" value="${exam ? exam.end_date : ""}" style="width:45%;" />
+          </td>
+          <td>
+            <button class="save-btn" onclick="saveEditedExam('${rowKey}')">保存</button>
+            <button onclick="cancelEditExam()">キャンセル</button>
+          </td>`;
+        } else {
+          html += `
           <td>
             ${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}
           </td>
           <td>
-          <button onclick="openExamModal({
-            pattern_id: '${p ? p.pattern_id : ""}',
-            exam_id: '${exam ? exam.exam_id : ""}',
-            school_name: '${group.info.school_name}',
-            school_course_id: '${group.info.school_course_id}',
-            term_test_id: '${test.term_test_id}'
-          })">
-            ${exam ? "期間修正" : "期間設定"}
-          </button>
-          </td>
+            ${p ? `<button onclick="startEditExam('${rowKey}', '${p.pattern_id}', '${exam ? exam.exam_id : ""}')">${exam ? "期間修正" : "期間設定"}</button>` : '<span style="color:#ccc;">設定不可</span>'}
+          </td>`;
+        }
+
+        html += `
         </tr>`;
       });
 
-      // 最下行に追加ボタン（IDではなくschool_nameを渡す）
       html += `</tbody></table></div>`;
     }
+
     content.innerHTML = html;
   }
 
-  /**
-   * 試験作成モーダルの表示
-   */
-  function openExamModal(params) {
-    const { pattern_id, exam_id, school_name, school_course_id, term_test_id } =
-      params;
-    const modal = document.getElementById("student-modal");
+  function saveEditedExam(rowKey) {
+    const row = document.getElementById('edit-exam-' + rowKey);
+    if (!row) return;
 
-    // 1. 表示用の情報を取得（既存データがあればそれ、なければマスターから）
-    const school = masterData.schools.find(
-      (s) => s.school_name === school_name,
-    );
-    const test = masterData.termTests.find(
-      (t) => t.term_test_id === term_test_id,
-    );
-    const exam = exam_id
-      ? masterData.exams.find((e) => e.exam_id === exam_id)
-      : null;
+    const start_date = row.querySelector('.edit-start-date').value;
+    const end_date = row.querySelector('.edit-end-date').value;
 
-    const displayName = school
-      ? school.abbreviation || school.school_name
-      : school_name;
-
-    // 2. モーダル中身を書き換え
-    const body = document.querySelector(".modal-card");
-    body.innerHTML = `
-    <h4>試験期間の設定</h4>
-    <p style="font-size:0.9rem; margin-bottom:15px; color:#666;">
-      ${displayName} : ${test ? test.test_name : "不明なテスト"}
-    </p>
-
-    <!-- 保存時に必要な情報をhiddenに埋め込む -->
-    <input type="hidden" id="edit-exam-id" value="${exam_id || ""}">
-    <input type="hidden" id="edit-pattern-id" value="${pattern_id || ""}">
-    <input type="hidden" id="edit-school-name" value="${school_name}">
-    <input type="hidden" id="edit-course-id" value="${school_course_id}">
-    <input type="hidden" id="edit-test-id" value="${term_test_id}">
-
-    <div class="form-group">
-      <label>開始日</label>
-      <input type="date" id="edit-exam-start" class="admin-input" value="${exam ? exam.start_date : ""}">
-    </div>
-    <div class="form-group">
-      <label>終了日</label>
-      <input type="date" id="edit-exam-end" class="admin-input" value="${exam ? exam.end_date : ""}">
-    </div>
-
-    <div style="margin-top:20px; display:flex; gap:10px;">
-      <button onclick="saveExam()" class="btn-save-admin">保存</button>
-      <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
-    </div>
-  `;
-    modal.style.display = "flex";
-  }
-
-  function saveExam() {
-    const payload = {
-      exam_id: document.getElementById("edit-exam-id").value,
-      pattern_id: document.getElementById("edit-pattern-id").value,
-      start_date: document.getElementById("edit-exam-start").value,
-      end_date: document.getElementById("edit-exam-end").value,
-    };
-
-    if (!payload.start_date || !payload.end_date) {
-      showMessage("日付を入力してください", "error");
+    if (!start_date || !end_date) {
+      showMessage('日付を入力してください', 'error');
       return;
     }
 
-    const btn = event.target;
-    btn.disabled = true;
-    btn.innerText = "保存中...";
+    if (!editingExamPatternId) {
+      showMessage('保存対象が不明です。', 'error');
+      return;
+    }
+
+    const btn = row.querySelector('.save-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '保存中...';
+    }
+
+    const payload = {
+      exam_id: editingExamId,
+      pattern_id: editingExamPatternId,
+      start_date: start_date,
+      end_date: end_date,
+    };
 
     google.script.run
       .withSuccessHandler(function (response) {
-        btn.disabled = false;
-        btn.innerText = "保存";
+        if (btn) {
+          btn.disabled = false;
+          btn.innerText = '保存';
+        }
         if (response.success) {
-          closeModal();
           const index = masterData.exams.findIndex((e) => e.exam_id === payload.exam_id);
           if (index !== -1) {
-            masterData.exams[index] = payload; // 既存データを更新
+            masterData.exams[index] = payload;
           } else {
             masterData.exams.push(payload);
           }
-          showMessage("試験日程を保存しました", "success");
-          loadSection("exams");
+          showMessage('試験日程を保存しました', 'success');
+          editingExamRowKey = null;
+          editingExamPatternId = null;
+          editingExamId = null;
+          renderExamManager(masterData);
         } else {
-          showMessage(response.error, "error");
+          showMessage(response.error, 'error');
         }
       })
       .updateExamData(payload);

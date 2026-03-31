@@ -8,7 +8,6 @@ function getAdminInitialData() {
     students: "students_master",
     schools: "schools_master",
     schoolCourses: "school_courses",
-    cramCourses: "courses_master",
     studentCourses: "students_courses",
     patterns: "exam_patterns",
     termTests: "term_tests_master",

@@ -1,6 +1,14 @@
 <script>
   let masterData = null; // 学校やコースのマスターデータを格納
 
+  function formatGradeLabel(grade) {
+    if (grade === 1 || grade === '1' || grade === '高1') return '高1';
+    if (grade === 2 || grade === '2' || grade === '高2') return '高2';
+    if (grade === 3 || grade === '3' || grade === '高3') return '高3';
+    if (grade != null && grade !== '') return String(grade);
+    return '未設定';
+  }
+
   /**
    * 生徒管理セクションの読み込み
    */
@@ -32,113 +40,232 @@
     }
   }
 
-  /**
-   * 生徒一覧の描画
-   */
+  const gradeOptions = ['高1', '高2', '高3'];
+  let editingStudentId = null;
+  let addingStudentGrade = null;
+
+  function normalizeGradeId(grade) {
+      return String(grade || '').replace(/[^-]/g, '_').replace(/[^-\w-]/g, '_');
+  }
+
+  function renderGradeRadioGroup(name, selectedGrade) {
+    return gradeOptions.map(grade => {
+      const checked = grade === selectedGrade ? ' checked' : '';
+      return `<label style="margin-right: 8px;"><input type="radio" name="${name}" value="${grade}"${checked}> ${grade}</label>`;
+    }).join('');
+  }
+
   function renderStudentManager(data) {
     const content = document.getElementById('admin-content');
+
+    const studentsByGrade = data.students.reduce((acc, st) => {
+      const gradeKey = formatGradeLabel(st.grade);
+      if (!acc[gradeKey]) acc[gradeKey] = [];
+      acc[gradeKey].push(st);
+      return acc;
+    }, {});
+
+    gradeOptions.forEach(grade => {
+      if (!studentsByGrade[grade]) {
+        studentsByGrade[grade] = [];
+      }
+    });
+
+    const extraGrades = Object.keys(studentsByGrade).filter(key => !gradeOptions.includes(key)).sort();
+    const gradeKeys = [...gradeOptions, ...extraGrades];
+
+    const schoolOptionsHtml = selectedSchool => data.schools.map(s => `
+            <option value="${s.school_name}"${s.school_name === selectedSchool ? ' selected' : ''}>${s.abbreviation || s.school_name}</option>`).join('');
+    const courseOptionsHtml = selectedCourse => data.schoolCourses.map(c => `
+            <option value="${c.school_course_id}"${c.school_course_id === selectedCourse ? ' selected' : ''}>${c.school_course_name}</option>`).join('');
 
     let html = `
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <h3>生徒マスター管理</h3>
-      <button onclick="openStudentModal()" style="background:#28a745; color:white; padding:5px 15px; border:none; border-radius:3px;">+ 新規追加</button>
-    </div>
-    <table border="1" style="width:100%; border-collapse: collapse; margin-top:10px; background:white;">
-      <tr style="background:#eee;">
-        <th>ID</th><th>氏名</th><th>学校</th><th>コース</th><th>操作</th>
-      </tr>`;
+    </div>`;
 
-    data.students.forEach(st => {
-      const school = data.schools.find(s => s.school_name === st.school_name);
-      const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
+    gradeKeys.forEach(gradeKey => {
+      const students = studentsByGrade[gradeKey] || [];
+      students.sort((a, b) => (String(a.student_id) || '').localeCompare(String(b.student_id) || ''));
 
       html += `
-      <tr>
-        <td>${st.student_id}</td>
-        <td>${st.name}</td>
-        <td>${school ? school.abbreviation || school.school_name : '-'}</td>
-        <td>${course ? course.school_course_name : '-'}</td>
-        <td>
-          <button onclick="openStudentModal('${st.student_id}')">編集</button>
-        </td>
-      </tr>`;
+      <div style="margin-top: 20px;">
+        <h4 style="margin-bottom: 8px;">${gradeKey}</h4>
+        <table border="1" style="width:100%; border-collapse: collapse; background:white;">
+          <tr style="background:#eee;">
+            <th>ID</th><th>氏名</th><th>読み</th><th>学校</th><th>コース</th><th>学年</th><th>操作</th>
+          </tr>`;
+
+      students.forEach(st => {
+        if (editingStudentId === String(st.student_id)) {
+          html += `
+          <tr id="edit-row-${st.student_id}">
+            <td>${st.student_id}</td>
+            <td><input type="text" class="edit-name" value="${st.name || ''}" style="width:100%;" /></td>
+            <td><input type="text" class="edit-pronunciation" value="${st.pronunciation || st.reading || ''}" style="width:100%;" /></td>
+            <td><select class="edit-school" style="width:100%;">${schoolOptionsHtml(st.school_name)}</select></td>
+            <td><select class="edit-course" style="width:100%;">${courseOptionsHtml(st.school_course_id)}</select></td>
+            <td>${renderGradeRadioGroup('edit-grade-' + st.student_id, formatGradeLabel(st.grade))}</td>
+            <td>
+              <button class="save-btn" onclick="saveEditedStudent('${st.student_id}')">更新</button>
+              <button onclick="cancelEdit()">キャンセル</button>
+            </td>
+          </tr>`;
+        } else {
+          const school = data.schools.find(s => s.school_name === st.school_name);
+          const course = data.schoolCourses.find(c => c.school_course_id === st.school_course_id);
+          html += `
+          <tr>
+            <td>${st.student_id}</td>
+            <td>${st.name}</td>
+            <td>${st.pronunciation || st.reading || '-'}</td>
+            <td>${school ? school.abbreviation || school.school_name : '-'}</td>
+            <td>${course ? course.school_course_name : '-'}</td>
+            <td>${formatGradeLabel(st.grade)}</td>
+            <td>
+              <button onclick="startEditStudent('${st.student_id}')">編集</button>
+            </td>
+          </tr>`;
+        }
+      });
+
+      const normalizedGrade = normalizeGradeId(gradeKey);
+      if (addingStudentGrade === gradeKey) {
+        html += `
+          <tr id="new-row-${normalizedGrade}">
+            <td><input type="text" class="new-id" style="width:100%;" /></td>
+            <td><input type="text" class="new-name" style="width:100%;" /></td>
+            <td><input type="text" class="new-pronunciation" style="width:100%;" /></td>
+            <td><select class="new-school" style="width:100%;">${schoolOptionsHtml('')}</select></td>
+            <td><select class="new-course" style="width:100%;">${courseOptionsHtml('')}</select></td>
+            <td>${gradeKey}</td>
+            <td>
+              <button class="save-btn" onclick="saveNewStudent('${gradeKey}')">追加</button>
+              <button onclick="cancelAdd()">キャンセル</button>
+            </td>
+          </tr>`;
+      } else {
+        html += `
+          <tr>
+            <td colspan="7" style="text-align:center; padding:12px; background:#fafafa;">
+              <button onclick="startAddStudent('${gradeKey}')" style="background:#007bff; color:white; padding:6px 12px; border:none; border-radius:3px;">+ 新規追加</button>
+            </td>
+          </tr>`;
+      }
+
+      html += `
+        </table>
+      </div>`;
     });
 
-    html += `</table>`;
     content.innerHTML = html;
   }
 
-  function openStudentModal(studentId = null) {
-    if (!masterData.schools || !masterData.schoolCourses) {
-      showMessage('マスターデータの読み込みに失敗しました。', 'error');
-      return;
-    }
-
-    const modal = document.getElementById('student-modal');
-    const schoolSelect = document.getElementById('edit-school');
-    const courseSelect = document.getElementById('edit-school-course');
-
-    schoolSelect.innerHTML = masterData.schools.map(s => `<option value="${s.school_name}">${s.abbreviation || s.school_name}</option>`).join('');
-    courseSelect.innerHTML = masterData.schoolCourses.map(c => `<option value="${c.school_course_id}">${c.school_course_name}</option>`).join('');
-
-    if (studentId) {
-      const st = masterData.students.find(s => s.student_id === studentId);
-      document.getElementById('modal-title').innerText = '生徒情報の編集';
-      document.getElementById('edit-student-id').value = st.student_id;
-      document.getElementById('edit-name').value = st.name;
-      document.getElementById('edit-school').value = st.school_name;
-      document.getElementById('edit-school-course').value = st.school_course_id || '';
-      document.getElementById('edit-grade').value = st.grade;
-    } else {
-      document.getElementById('modal-title').innerText = '生徒情報の新規登録';
-      document.getElementById('edit-student-id').value = '';
-      document.getElementById('edit-name').value = '';
-      document.getElementById('edit-grade').value = '';
-    }
-    modal.style.display = 'flex';
+  function startEditStudent(studentId) {
+    editingStudentId = String(studentId);
+    addingStudentGrade = null;
+    renderStudentManager(masterData);
   }
 
-  function closeModal() {
-    document.getElementById('student-modal').style.display = 'none';
+  function cancelEdit() {
+    editingStudentId = null;
+    renderStudentManager(masterData);
   }
 
-  function saveStudent() {
-    const studentId = document.getElementById('edit-student-id').value;
-    const name = document.getElementById('edit-name').value;
-    const schoolId = document.getElementById('edit-school').value;
-    const courseId = document.getElementById('edit-school-course').value;
-    const grade = document.getElementById('edit-grade').value;
+  function startAddStudent(grade) {
+    addingStudentGrade = grade;
+    editingStudentId = null;
+    renderStudentManager(masterData);
+  }
+
+  function cancelAdd() {
+    addingStudentGrade = null;
+    renderStudentManager(masterData);
+  }
+
+  function saveEditedStudent(studentId) {
+    const row = document.getElementById('edit-row-' + studentId);
+    if (!row) return;
+
+    const name = row.querySelector('.edit-name').value.trim();
+    const reading = row.querySelector('.edit-pronunciation').value.trim();
+    const schoolId = row.querySelector('.edit-school').value;
+    const courseId = row.querySelector('.edit-course').value;
+    const grade = row.querySelector('input[name="edit-grade-' + studentId + '"]:checked')?.value;
 
     if (!name || !schoolId || !courseId || !grade) {
       showMessage('全ての項目を入力してください', 'error');
       return;
     }
 
-    const btn = event.target;
-    btn.disabled = true;
+    const btn = row.querySelector('.save-btn');
+    if (btn) btn.disabled = true;
 
     const studentData = {
       student_id: studentId,
       name: name,
+      pronunciation: reading,
       school_name: schoolId,
       school_course_id: courseId,
-      grade: parseInt(grade)
+      grade: grade
     };
 
     google.script.run
       .withSuccessHandler(function (response) {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
         if (response.success) {
           showMessage('生徒情報が正常に更新されました。', 'success');
-          closeModal();
-          // masterData.students内のstudent_idが一致する生徒データを上書き、なければ差し込み
           const index = masterData.students.findIndex(s => s.student_id === studentData.student_id);
           if (index !== -1) {
             masterData.students[index] = studentData;
           } else {
             masterData.students.push(studentData);
           }
-          loadSection('students');
+          editingStudentId = null;
+          renderStudentManager(masterData);
+        } else {
+          showMessage(response.error, 'error');
+        }
+      })
+      .updateStudentMaster(studentData);
+  }
+
+  function saveNewStudent(grade) {
+    const normalizedGrade = normalizeGradeId(grade);
+    const row = document.getElementById('new-row-' + normalizedGrade);
+    if (!row) return;
+
+    const studentId = row.querySelector('.new-id').value.trim();
+    const name = row.querySelector('.new-name').value.trim();
+    const pronunciation = row.querySelector('.new-pronunciation').value.trim();
+    const schoolId = row.querySelector('.new-school').value;
+    const courseId = row.querySelector('.new-course').value;
+
+    if (!studentId || !name || !schoolId || !courseId) {
+      showMessage('全ての項目を入力してください', 'error');
+      return;
+    }
+
+    const btn = row.querySelector('.save-btn');
+    if (btn) btn.disabled = true;
+
+    const studentData = {
+      student_id: studentId,
+      name: name,
+      pronunciation: pronunciation,
+      school_name: schoolId,
+      school_course_id: courseId,
+      grade: grade
+    };
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (btn) btn.disabled = false;
+        if (response.success) {
+          showMessage('生徒情報が正常に追加されました。', 'success');
+          masterData.students.push(studentData);
+          addingStudentGrade = null;
+          renderStudentManager(masterData);
         } else {
           showMessage(response.error, 'error');
         }

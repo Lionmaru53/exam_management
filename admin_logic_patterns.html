@@ -16,27 +16,60 @@
     }, {});
 
     for (const groupName in grouped) {
+      const genreNames = Array.from(
+        new Set(
+          grouped[groupName]
+            .flatMap((p) =>
+              data.patternSubjects
+                .filter((ps) => ps.pattern_id === p.pattern_id)
+                .map((ps) =>
+                  data.subjects.find((s) => s.subject_id === ps.subject_id),
+                )
+                .filter(Boolean)
+                .map((s) => s.genre_name || "その他"),
+            ),
+        ),
+      );
+      if (genreNames.length === 0) {
+        genreNames.push("その他");
+      }
+
       html += `<div class="admin-genre-container"><h4 class="admin-genre-title">${groupName}</h4><table class="admin-table">`;
+      html += `<thead><tr><th style="width:30%">試験</th>`;
+      genreNames.forEach((genreName) => {
+        html += `<th>${genreName}</th>`;
+      });
+      html += `<th style="width:100px;">操作</th></tr></thead><tbody>`;
+
       grouped[groupName].forEach((p) => {
         const test = data.termTests.find(
           (t) => t.term_test_id === p.term_test_id,
         );
-        const subjects = data.patternSubjects
-          .filter((ps) => ps.pattern_id === p.pattern_id)
-          .map(
-            (ps) =>
-              data.subjects.find((s) => s.subject_id === ps.subject_id)
-                ?.subject_name,
-          )
-          .join(", ");
 
-        html += `<tr>
-        <td style="width:30%"><strong>${test ? test.test_name : "未設定"}</strong></td>
-        <td style="font-size:0.85rem; color:#666;">${subjects || "教科未設定"}</td>
-        <td style="width:100px;"><button onclick="openPatternSubjectModal('${p.pattern_id}')">教科編集</button></td>
-      </tr>`;
+        const subjectsByGenre = data.patternSubjects
+          .filter((ps) => ps.pattern_id === p.pattern_id)
+          .map((ps) =>
+            data.subjects.find((s) => s.subject_id === ps.subject_id),
+          )
+          .filter(Boolean)
+          .reduce((acc, s) => {
+            const genre = s.genre_name || "その他";
+            if (!acc[genre]) acc[genre] = [];
+            acc[genre].push(s.subject_name);
+            return acc;
+          }, {});
+
+        html += `<tr><td style="width:30%"><strong>${test ? test.test_name : "未設定"}</strong></td>`;
+        genreNames.forEach((genreName) => {
+          const subjectText = subjectsByGenre[genreName]
+            ? subjectsByGenre[genreName].join(", ")
+            : "";
+          html += `<td style="font-size:0.85rem; color:#666;">${subjectText}</td>`;
+        });
+        html += `<td style="width:100px;"><button onclick="openPatternSubjectModal('${p.pattern_id}')">教科編集</button></td></tr>`;
       });
-      html += `</table></div>`;
+
+      html += `</tbody></table></div>`;
     }
     content.innerHTML = html;
   }
