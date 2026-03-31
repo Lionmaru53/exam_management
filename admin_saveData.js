@@ -139,3 +139,88 @@ function updatePatternSubjects(patternId, selectedIds, newSubjectName) {
   return { success: true };
 }
 
+/**
+ * 新しい学校コースを追加し、試験パターンを作成
+ */
+function addNewSchoolCourse(schoolName, courseName, testTermId, grade) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 1. 新しいコースIDを生成
+    const newCourseId = "SC" + Utilities.formatDate(new Date(), "JST", "yyyyMMddHHmmss");
+    
+    // 2. school_coursesシートに新規コースを追加
+    const courseSheet = ss.getSheetByName('school_courses');
+    courseSheet.appendRow([newCourseId, courseName]);
+    
+    // 3. exam_patternsシートに新規パターンを追加
+    const patternSheet = ss.getSheetByName('exam_patterns');
+    const newPatternId = "P" + Utilities.formatDate(new Date(), "JST", "yyyyMMddHHmmss");
+    patternSheet.appendRow([newPatternId, schoolName, testTermId, newCourseId, grade]);
+    
+    // 4. 更新されたマスターデータを取得して返す
+    const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+    const results = {};
+    const targetSheestNames = {
+      schoolCourses: "school_courses",
+      patterns: "exam_patterns",
+    };
+
+    for (let key in targetSheestNames) {
+      const sheetName = targetSheestNames[key];
+      const sheet = ss2.getSheetByName(sheetName);
+      results[key] = stringifyDates(getRowsData(sheet));
+    }
+
+    return { 
+      success: true, 
+      schoolCourses: results.schoolCourses,
+      patterns: results.patterns,
+      message: `新規コース「${courseName}」を追加しました`
+    };
+
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * 既存コースをパターンに追加
+ */
+function addExistingCourseToPattern(schoolName, schoolCourseId, testTermId, grade) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 1. 重複チェック (school_name, term_test_id, school_course_id, grade)
+    const patternSheet = ss.getSheetByName('exam_patterns');
+    const patterns = getRowsData(patternSheet);
+    
+    const exists = patterns.some(p => 
+      p.school_name === schoolName && 
+      p.term_test_id === testTermId && 
+      p.school_course_id === schoolCourseId &&
+      p.grade === grade
+    );
+    
+    if (exists) {
+      return { success: false, error: "このコースとテスト区分、学年の組み合わせは既に登録済みです" };
+    }
+    
+    // 2. 新しいパターンを追加
+    const newPatternId = "P" + Utilities.formatDate(new Date(), "JST", "yyyyMMddHHmmss");
+    patternSheet.appendRow([newPatternId, schoolName, testTermId, schoolCourseId, grade]);
+    
+    // 3. 更新されたパターンデータを返す
+    const updatedPatterns = getRowsData(patternSheet);
+    
+    return { 
+      success: true, 
+      patterns: stringifyDates(updatedPatterns),
+      message: "コースをパターンに追加しました"
+    };
+
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+

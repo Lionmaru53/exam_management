@@ -2,6 +2,7 @@
   let editingExamRowKey = null;
   let editingExamPatternId = null;
   let editingExamId = null;
+  let editingNewCourseRowKey = null; // 新規コース追加行の編集状態を記録
 
   function makeExamRowKey(school_name, school_course_id, term_test_id) {
     return encodeURIComponent(`${school_name}||${school_course_id}||${term_test_id}`);
@@ -21,91 +22,208 @@
     renderExamManager(masterData);
   }
 
+  function startAddNewCourse(schoolName, testTermId, grade) {
+    editingNewCourseRowKey = `${schoolName}||${testTermId}||${grade}`;
+    renderExamManager(masterData);
+  }
+
+  function cancelAddNewCourse() {
+    editingNewCourseRowKey = null;
+    renderExamManager(masterData);
+  }
+
   function renderExamManager(data) {
     const content = document.getElementById("admin-content");
 
-    // 1. データを「学校名 / コース」でグループ化
-    const groupedPatterns = data.patterns.reduce((acc, p) => {
-      const school = data.schools.find((s) => s.school_name === p.school_name);
-      const sDisplayName = school
-        ? school.abbreviation || school.school_name
-        : p.school_name;
-      const course = data.schoolCourses.find(
-        (c) => c.school_course_id === p.school_course_id,
-      );
-      const cName = course ? course.school_course_name : "不明コース";
-      const groupKey = `${sDisplayName} / ${cName}`;
-
-      if (!acc[groupKey]) {
-        acc[groupKey] = {
-          info: {
-            school_name: p.school_name,
-            school_course_id: p.school_course_id,
-          },
-          items: [],
+    // テスト区分ごとにパターンをグループ化
+    const groupedByTest = data.termTests.reduce((acc, test) => {
+      const patterns = data.patterns.filter((p) => p.term_test_id === test.term_test_id);
+      if (patterns.length > 0) {
+        acc[test.term_test_id] = {
+          test_name: test.test_name,
+          patterns: patterns,
         };
       }
-      acc[groupKey].items.push(p);
       return acc;
     }, {});
 
     let html = `<h3>試験日程・実施期間の一覧管理</h3>`;
 
-    for (const groupName in groupedPatterns) {
-      const group = groupedPatterns[groupName];
+    for (const testKey in groupedByTest) {
+      const testGroup = groupedByTest[testKey];
+      
+      // 学校ごとにパターンをグループ化
+      const groupedBySchool = testGroup.patterns.reduce((acc, p) => {
+        const schoolKey = p.school_name;
+        if (!acc[schoolKey]) acc[schoolKey] = [];
+        acc[schoolKey].push(p);
+        return acc;
+      }, {});
+
       html += `
       <div class="admin-genre-container">
-        <h4 class="admin-genre-title">${groupName}</h4>
+        <h4 class="admin-genre-title">${testGroup.test_name}</h4>
         <table class="admin-table">
           <thead>
             <tr>
-              <th>テスト区分</th><th>実施期間（開始 ～ 終了）</th><th>操作</th>
+              <th style="width:12%">学校</th><th style="width:12%">学年</th><th style="width:12%">コース</th><th>実施期間（開始 ～ 終了）</th>
             </tr>
           </thead>
           <tbody>`;
 
-      data.termTests.forEach((test) => {
-        const p = group.items.find(
-          (item) => item.term_test_id === test.term_test_id,
-        );
-        const exam = p
-          ? data.exams.find((e) => e.pattern_id === p.pattern_id)
-          : null;
-        const rowKey = makeExamRowKey(
-          group.info.school_name,
-          group.info.school_course_id,
-          test.term_test_id,
-        );
-        const isEditing = editingExamRowKey === rowKey;
-
-        html += `
-        <tr${isEditing ? ` id="edit-exam-${rowKey}"` : ""}>
-          <td><strong>${test.test_name}</strong></td>`;
-
-        if (isEditing) {
-          html += `
-          <td style="min-width:280px;">
-            <input type="date" class="edit-start-date" value="${exam ? exam.start_date : ""}" style="width:45%; margin-right:4%;" />
-            <input type="date" class="edit-end-date" value="${exam ? exam.end_date : ""}" style="width:45%;" />
-          </td>
-          <td>
-            <button class="save-btn" onclick="saveEditedExam('${rowKey}')">保存</button>
-            <button onclick="cancelEditExam()">キャンセル</button>
-          </td>`;
-        } else {
-          html += `
-          <td>
-            ${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}
-          </td>
-          <td>
-            ${p ? `<button onclick="startEditExam('${rowKey}', '${p.pattern_id}', '${exam ? exam.exam_id : ""}')">${exam ? "期間修正" : "期間設定"}</button>` : '<span style="color:#ccc;">設定不可</span>'}
-          </td>`;
+      const schoolRows = [];
+      let schoolNames = Object.keys(groupedBySchool);
+      
+      for (let si = 0; si < schoolNames.length; si++) {
+        const schoolName = schoolNames[si];
+        const patterns = groupedBySchool[schoolName];
+        
+        // 学年でグループ化
+        const gradeOrder = ["高1", "高2", "高3"];
+        
+        // すべての学年を初期化（データがなくても表示するため）
+        const groupedByGrade = {};
+        for (const grade of gradeOrder) {
+          groupedByGrade[grade] = [];
         }
+        
+        // パターンを正しい学年に割り当て
+        patterns.forEach((p) => {
+          const gradeKey = p.grade || "高1"; // デフォルトは高1
+          if (gradeKey in groupedByGrade) {
+            groupedByGrade[gradeKey].push(p);
+          }
+        });
 
-        html += `
-        </tr>`;
-      });
+        const sortedGradeKeys = gradeOrder; // 常に「高1」「高2」「高3」の順
 
+        let totalRowsForSchool = 0;
+        
+        // 学校全体の行数をカウント（各学年の行数 + 各学年ごとの追加ボタン行）
+        for (const gradeKey of sortedGradeKeys) {
+          totalRowsForSchool += groupedByGrade[gradeKey].length + 1; // +1 は追加行
+        }
+        
+        let gradeIndex = 0;
+        
+        for (const gradeKey of sortedGradeKeys) {
+          const gradePatterns = groupedByGrade[gradeKey];
+          
+          // パターンがある場合、各パターンを表示
+          gradePatterns.forEach((p, index) => {
+            const course = data.schoolCourses.find(
+              (c) => c.school_course_id === p.school_course_id,
+            );
+            const exam = data.exams.find((e) => e.pattern_id === p.pattern_id);
+            const rowKey = makeExamRowKey(
+              p.school_name,
+              p.school_course_id,
+              p.term_test_id,
+            );
+            const isEditing = editingExamRowKey === rowKey;
+
+            let rowHtml = `<tr${isEditing ? ` id="edit-exam-${rowKey}"` : ""}>`;
+            
+            // 最初の行のみ学校名を表示（rowspan）
+            if (gradeIndex === 0 && index === 0) {
+              rowHtml += `<td style="width:12%; font-weight:bold;" rowspan="${totalRowsForSchool}">${schoolName}</td>`;
+            }
+
+            // 最初の行のみ学年を表示（rowspan）
+            if (index === 0) {
+              rowHtml += `<td style="width:12%; font-weight:bold;" rowspan="${gradePatterns.length + 1}">${gradeKey}</td>`;
+            }
+
+            rowHtml += `<td style="width:12%">${course ? course.school_course_name : "不明"}</td>`;
+
+            if (isEditing) {
+              rowHtml += `
+              <td style="min-width:320px; display:flex; align-items:center; gap:8px;">
+                <input type="date" class="edit-start-date" value="${exam ? exam.start_date : ""}" style="flex:1; padding:4px;" />
+                <span>～</span>
+                <input type="date" class="edit-end-date" value="${exam ? exam.end_date : ""}" style="flex:1; padding:4px;" />
+                <button class="save-btn" onclick="saveEditedExam('${rowKey}')" style="padding:4px 8px; white-space:nowrap;">保存</button>
+                <button onclick="cancelEditExam()" style="padding:4px 8px; white-space:nowrap;">キャンセル</button>
+              </td>`;
+            } else {
+              rowHtml += `
+              <td style="display:flex; align-items:center; justify-content:space-between;">
+                <span>${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}</span>
+                <button onclick="startEditExam('${rowKey}', '${p.pattern_id}', '${exam ? exam.exam_id : ""}')" style="border:none; background:none; cursor:pointer; font-size:1.1em; padding:4px 8px;">✏️</button>
+              </td>`;
+            }
+
+            rowHtml += `</tr>`;
+            schoolRows.push(rowHtml);
+          });
+
+          // 各学年の最後に追加行を挿入
+          const addRowKey = `${schoolName}||${testKey}||${gradeKey}`;
+          const isAddingNewCourse = editingNewCourseRowKey === addRowKey;
+
+          if (isAddingNewCourse) {
+            // 編集モード：コース選択・作成用の入力フィールドを表示
+            const existingCourseIds = data.patterns
+              .filter((p) => p.school_name === schoolName && p.term_test_id === testKey && p.grade === gradeKey)
+              .map((p) => p.school_course_id);
+
+            const availableCourses = data.schoolCourses.filter(
+              (c) => !existingCourseIds.includes(c.school_course_id)
+            );
+
+            let addRowHtml = `<tr id="add-course-row-${addRowKey}">`;
+            
+            // パターンがない学年の場合、この行で学年セルを表示
+            if (gradePatterns.length === 0) {
+              if (gradeIndex === 0) {
+                addRowHtml += `<td style="width:12%; font-weight:bold;" rowspan="${sortedGradeKeys.length * 2}">${schoolName}</td>`;
+              }
+              addRowHtml += `<td style="width:12%; font-weight:bold;">${gradeKey}</td>`;
+            }
+            
+            addRowHtml += `<td style="width:12%;">
+              <select id="add-course-select" class="admin-input" style="width:100%; padding:4px; margin-bottom:5px;">
+                <option value="">-- 既存から選択 --</option>`;
+            
+            availableCourses.forEach((course) => {
+              addRowHtml += `<option value="${course.school_course_id}">${course.school_course_name}</option>`;
+            });
+
+            addRowHtml += `</select>
+              <input type="text" id="add-new-course-name" placeholder="新規コース名" class="admin-input" style="width:100%; padding:4px; margin-bottom:5px;" />
+              <div style="display:flex; gap:5px;">
+                <button onclick="saveNewExamCourse('${schoolName}', '${testKey}', '${gradeKey}')" style="font-size:1.2em; border:none; background:none; cursor:pointer; padding:0; color:#0066cc; flex:1; text-align:center;">✓</button>
+                <button onclick="cancelAddNewCourse()" style="font-size:1.2em; border:none; background:none; cursor:pointer; padding:0; color:#999; flex:1; text-align:center;">✕</button>
+              </div>
+            </td>
+            <td></td>
+            </tr>`;
+            schoolRows.push(addRowHtml);
+          } else {
+            // 通常モード：＋ボタンを表示（コース列のみ）
+            let addRowHtml = `<tr>`;
+            
+            // パターンがない学年の場合、この行で学年セルを表示
+            if (gradePatterns.length === 0) {
+              if (gradeIndex === 0) {
+                addRowHtml += `<td style="width:12%; font-weight:bold;" rowspan="${sortedGradeKeys.length * 2}">${schoolName}</td>`;
+              }
+              addRowHtml += `<td style="width:12%; font-weight:bold;">${gradeKey}</td>`;
+            }
+            
+            addRowHtml += `<td style="width:12%; text-align:center; padding:8px;">
+              <button onclick="startAddNewCourse('${schoolName}', '${testKey}', '${gradeKey}')" style="font-size:1.5em; border:none; background:none; cursor:pointer; padding:0; color:#0066cc;">＋</button>
+            </td>
+            <td></td>
+            </tr>`;
+            schoolRows.push(addRowHtml);
+          }
+          
+          gradeIndex++;
+        }
+      }
+
+      html += schoolRows.join("");
       html += `</tbody></table></div>`;
     }
 
@@ -165,5 +283,50 @@
         }
       })
       .updateExamData(payload);
+  }
+
+  /**
+   * 新規コース追加を保存
+   */
+  function saveNewExamCourse(schoolName, testTermId, grade) {
+    const selectValue = document.getElementById("add-course-select").value;
+    const newCourseName = document.getElementById("add-new-course-name").value.trim();
+
+    // プルダウン選択またはテキスト入力のいずれか必須
+    if (!selectValue && !newCourseName) {
+      showMessage("コースを選択するか新規コース名を入力してください", "error");
+      return;
+    }
+
+    // 新規コース追加の場合、コース名をバックエンドに送信
+    if (newCourseName) {
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response.success) {
+            masterData.schoolCourses = response.schoolCourses;
+            masterData.patterns = response.patterns;
+            showMessage("新規コースを追加しました", "success");
+            editingNewCourseRowKey = null;
+            renderExamManager(masterData);
+          } else {
+            showMessage(response.error, "error");
+          }
+        })
+        .addNewSchoolCourse(schoolName, newCourseName, testTermId, grade);
+    } else {
+      // 既存コースを選択した場合
+      google.script.run
+        .withSuccessHandler(function (response) {
+          if (response.success) {
+            masterData.patterns = response.patterns;
+            showMessage("コースを追加しました", "success");
+            editingNewCourseRowKey = null;
+            renderExamManager(masterData);
+          } else {
+            showMessage(response.error, "error");
+          }
+        })
+        .addExistingCourseToPattern(schoolName, selectValue, testTermId, grade);
+    }
   }
 </script>
