@@ -63,71 +63,122 @@ function renderApp(data) {
   document.getElementById('loading').style.display = "none";
   document.getElementById('app').style.display = "block";
 
-  // 日付文字列から「年」を抽出
-  const examYear = data.currentExam.start_date ? data.currentExam.start_date.split('-')[0] : '----';
-
   // 学年を特定（生徒情報、もしくは最初の教科から取得）
   const grade = data.student.grade || (data.subjects.length > 0 ? data.subjects[0].grade : '-');
 
   // ヘッダー生成
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container">
-      <h2 class="exam-title">${examYear}年 ${grade}年 ${data.currentExam.test_name}</h2>
+      <h2 class="exam-title">${data.currentExam.year}年 ${grade}年</h2>
       <p class="exam-subtitle">(${data.student.school_name} ${data.student.school_course_name})</p>
-      <p class="student-name">生徒: ${data.student.name} さん</p>
+      <p class="student-name">${data.student.name} さん</p>
     </div>
   `;
 
-  // 1. 教科をジャンルごとにグループ化
-  const groupedSubjects = data.subjects.reduce((acc, sub) => {
-    const key = sub.genre_name;
-    if (!acc[key]) acc[key] = { subjects: [], genre_id: sub.genre_id, color: sub.color };
-    acc[key].subjects.push(sub);
-    return acc;
-  }, {});
+  const examTabs = data.examTabs || [{
+    ...data.currentExam,
+    subjects: data.subjects,
+    scores: data.scores
+  }];
 
-  // 2. ジャンルごとにHTMLを生成
-  let listHtml = "";
-  for (const genreName in groupedSubjects) {
-    const genre = groupedSubjects[genreName];
-    const borderColor = genre.color || '#000000';
-    const backgroundColor = hexToRgba(genre.color || '#f8f9fa', 0.01);
-    const textColor = genre.color || '#000000';
+  let listHtml = `
+    <div class="subject-tab-wrap">
+      <div class="tab-nav">
+  `;
+
+  examTabs.forEach((exam, index) => {
     listHtml += `
-      <div class="genre-container" style="border-color: ${borderColor}; background-color: ${backgroundColor}">
-        <h3 class="genre-title" style="color: ${textColor}; border-bottom-color: ${borderColor}">${genreName}</h3>
-        <div class="subject-grid">
-      `;
+        <button type="button" class="tab-button${index === 0 ? ' active' : ''}" data-exam-id="${exam.exam_id}" onclick="switchExamTab('${exam.exam_id}')">
+          ${exam.test_name}
+        </button>
+    `;
+  });
 
-    // ジャンル内の教科をカード形式で表示
-    genre.subjects.forEach(sub => {
-      const s = data.scores.find(x => x.subject_id === sub.subject_id) || {};
-      
-      const s0pt = getOptionsHtml(scoreOptionsCache, s.score);
-      const gr0pt = getOptionsHtml(rankOptionsCache, s.grade_rank);
-      const cr0pt = getOptionsHtml(rankOptionsCache, s.class_rank);
-      
-      listHtml += `
-        <div class="subject-card">
-          <span class="subject-label">${sub.subject_name}</span>
-          <div class="stack-group">
-            <div class="stack-item"><span>点数</span> <select id="s_${sub.subject_id}">${s0pt}</select></div>
-            <div class="stack-item"><span>学年<br>順位</span> <select id="gr_${sub.subject_id}">${gr0pt}</select></div>
-            <div class="stack-item"><span>クラス<br>順位</span> <select id="cr_${sub.subject_id}">${cr0pt}</select></div>
+  listHtml += `
+      </div>
+      <div class="tab-content">
+  `;
+
+  examTabs.forEach((exam, examIndex) => {
+    const groupedSubjects = exam.subjects.reduce((acc, sub) => {
+      const genre = sub.genre_name || '未設定';
+      if (!acc[genre]) acc[genre] = { rows: [], color: sub.color };
+      acc[genre].rows.push(sub);
+      return acc;
+    }, {});
+
+    listHtml += `
+        <div class="tab-panel" data-exam-id="${exam.exam_id}" style="display: ${examIndex === 0 ? 'block' : 'none'};">
+          <div class="subject-table-container">
+            <table class="subject-table">
+              <thead>
+                <tr>
+                  <th colspan="5" class="test-name-header">${exam.test_name}</th>
+                </tr>
+                <tr>
+                  <th>教科</th>
+                  <th>科目</th>
+                  <th>点数</th>
+                  <th>学年順位</th>
+                  <th>クラス順位</th>
+                </tr>
+              </thead>
+              <tbody>
+    `;
+
+    Object.keys(groupedSubjects).forEach(genreName => {
+      const group = groupedSubjects[genreName];
+      const rowCount = group.rows.length;
+      const rowBackground = group.color ? hexToRgba(group.color, 0.1) : '#f8f9fa';
+
+      group.rows.forEach((sub, index) => {
+        const s = exam.scores.find(x => x.subject_id === sub.subject_id) || {};
+        const sOpt = getOptionsHtml(scoreOptionsCache, s.score);
+        const grOpt = getOptionsHtml(rankOptionsCache, s.grade_rank);
+        const crOpt = getOptionsHtml(rankOptionsCache, s.class_rank);
+
+        listHtml += `
+          <tr style="background-color: ${rowBackground};">
+            ${index === 0 ? `<td class="genre-cell" rowspan="${rowCount}" style="background-color: ${rowBackground};">${genreName}</td>` : ''}
+            <td>${sub.subject_name}</td>
+            <td><select id="s_${exam.exam_id}_${sub.subject_id}">${sOpt}</select></td>
+            <td><select id="gr_${exam.exam_id}_${sub.subject_id}">${grOpt}</select></td>
+            <td><select id="cr_${exam.exam_id}_${sub.subject_id}">${crOpt}</select></td>
+          </tr>
+        `;
+      });
+    });
+
+    listHtml += `
+              </tbody>
+            </table>
+            <div class="tab-footer">
+              <button type="button" class="btn-save" onclick="handleSave('${data.student.student_id}', '${exam.exam_id}', this)">
+                一括保存する
+              </button>
+            </div>
           </div>
         </div>
-      `;
-    });
-    listHtml += `</div></div>`;
-  }
+    `;
+  });
+
+  listHtml += `
+      </div>
+    </div>
+  `;
+
   document.getElementById('subject-list').innerHTML = listHtml;
 
   // フッター（ボタン）生成
-  document.getElementById('footer').innerHTML = `
-    <button id="submitBtn" class="btn-save" onclick="handleSave('${data.student.student_id}', '${data.currentExam.exam_id}')">
-      一括保存する
-    </button>
-  `;
+  document.getElementById('footer').innerHTML = ``;
 }
 
+function switchExamTab(examId) {
+  document.querySelectorAll('.tab-button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.examId === examId);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.style.display = panel.dataset.examId === examId ? 'block' : 'none';
+  });
+}
 </script>

@@ -51,16 +51,15 @@ function getInitialData(lineUserId) {
 
     if (!currentExam) return JSON.stringify({ error: '有効な試験が見つかりません' });
 
-    // 6. 教科テンプレート(pattern_subjects)から教科リストを取得
-    const patternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'))
-      .filter(ps => ps.pattern_id === currentExam.pattern_id);
+    // 6. 教科テンプレート(pattern_subjects)とマスタデータを取得
+    const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
     const allSubjects = getRowsData(ss.getSheetByName('subjects_master'));
     const allGenres = getRowsData(ss.getSheetByName('genres_master'));
-    
-    const subjects = patternSubjects.map(ps => {
+    const allScores = getRowsData(ss.getSheetByName('scores_data'));
+
+    const makeSubjectsForPattern = patternSubjects => patternSubjects.map(ps => {
       const sub = allSubjects.find(s => s.subject_id === ps.subject_id);
       if (!sub) return null;
-
       const gen = allGenres.find(g => g.genre_id === sub.genre_id);
       return {
         ...sub,
@@ -68,20 +67,30 @@ function getInitialData(lineUserId) {
         genre_name: gen ? gen.genre_name : "その他",
         color: gen ? gen.color : null
       };
-      
-    }).filter(s => s); // 存在する教科のみ抽出
+    }).filter(s => s);
 
-    // 7. 既存の入力済みスコア(scores_data)を取得
-    const scores = getRowsData(ss.getSheetByName('scores_data'))
-      .filter(s => s.exam_id === currentExam.exam_id && s.student_id === student.student_id);
+    const examTabs = sortedExams.map(exam => {
+      const patternSubjects = allPatternSubjects.filter(ps => ps.pattern_id === exam.pattern_id);
+      const subjects = makeSubjectsForPattern(patternSubjects);
+      const scores = allScores.filter(s => s.exam_id === exam.exam_id && s.student_id === student.student_id);
+      return {
+        ...exam,
+        subjects: subjects,
+        scores: scores
+      };
+    });
+
+    const currentSubjects = examTabs[0] ? examTabs[0].subjects : [];
+    const currentScores = examTabs[0] ? examTabs[0].scores : [];
 
     // 全データをまとめてJSON文字列化して返却
     const response = {
       student: student,
       currentExam: currentExam,
-      subjects: subjects,
-      scores: scores,
+      subjects: currentSubjects,
+      scores: currentScores,
       history: sortedExams,
+      examTabs: examTabs,
       genres: allGenres
     };
 

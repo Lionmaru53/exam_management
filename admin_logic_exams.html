@@ -44,37 +44,37 @@
           </thead>
           <tbody>`;
 
-      group.items.forEach((p) => {
-        const test = data.termTests.find(
-          (t) => t.term_test_id === p.term_test_id,
+      data.termTests.forEach((test) => {
+        const p = group.items.find(
+          (item) => item.term_test_id === test.term_test_id,
         );
-        const exam = data.exams.find((e) => e.pattern_id === p.pattern_id);
+
+        const exam = p
+          ? data.exams.find((e) => e.pattern_id === p.pattern_id)
+          : null;
 
         html += `
         <tr>
-          <td><strong>${test ? test.test_name : "不明なテスト"}</strong></td>
+          <td><strong>${test.test_name}</strong></td>
           <td>
             ${exam ? `${exam.start_date} ～ ${exam.end_date}` : '<span style="color:#ccc;">未設定</span>'}
           </td>
           <td>
-            <button onclick="openExamModal('${exam ? exam.exam_id : ""}')">
-              ${exam ? "期間修正" : "期間設定"}
-            </button>
+          <button onclick="openExamModal({
+            pattern_id: '${p ? p.pattern_id : ""}',
+            exam_id: '${exam ? exam.exam_id : ""}',
+            school_name: '${group.info.school_name}',
+            school_course_id: '${group.info.school_course_id}',
+            term_test_id: '${test.term_test_id}'
+          })">
+            ${exam ? "期間修正" : "期間設定"}
+          </button>
           </td>
         </tr>`;
       });
 
       // 最下行に追加ボタン（IDではなくschool_nameを渡す）
-      html += `
-        <tr style="background: #f9f9f9;">
-          <td colspan="3" style="text-align: center; padding: 10px;">
-            <button onclick="openAddPatternModal('${group.info.school_name}', '${group.info.school_course_id}')" 
-                    style="background:#007bff; color:white; border:none; padding:5px 15px; border-radius:3px; cursor:pointer;">
-              + このグループに新しいテスト区分を追加
-            </button>
-          </td>
-        </tr>
-      </tbody></table></div>`;
+      html += `</tbody></table></div>`;
     }
     content.innerHTML = html;
   }
@@ -82,52 +82,62 @@
   /**
    * 試験作成モーダルの表示
    */
-  function openExamModal(examId = null) {
+  function openExamModal(params) {
+    const { pattern_id, exam_id, school_name, school_course_id, term_test_id } =
+      params;
     const modal = document.getElementById("student-modal");
-    const exam = examId
-      ? masterData.exams.find((e) => e.exam_id === examId)
-      : null;
-    const pattern = masterData.patterns.find((p) =>
-      exam ? p.pattern_id === exam.pattern_id : p.exam_id === examId,
-    );
-    const school = masterData.patterns.find(
-      (p) => p.pattern_id === (exam ? exam.pattern_id : examId),
+
+    // 1. 表示用の情報を取得（既存データがあればそれ、なければマスターから）
+    const school = masterData.schools.find(
+      (s) => s.school_name === school_name,
     );
     const test = masterData.termTests.find(
-      (t) => t.term_test_id === pattern.term_test_id,
+      (t) => t.term_test_id === term_test_id,
     );
+    const exam = exam_id
+      ? masterData.exams.find((e) => e.exam_id === exam_id)
+      : null;
 
-    // モーダル中身を試験用に書き換え
+    const displayName = school
+      ? school.abbreviation || school.school_name
+      : school_name;
+
+    // 2. モーダル中身を書き換え
     const body = document.querySelector(".modal-card");
     body.innerHTML = `
-      <h4>試験期間の設定</h4>
-      <p style="font-size:0.9rem; margin-bottom:15px; color:#666;">
-        ${school.abbreviation || school.school_name} : ${test.test_name}
-      </p>
-      <input type="hidden" id="edit-exam-id" value="${examId}">
-      <input type="hidden" id="edit-exam-pattern" value="${patternId}">
+    <h4>試験期間の設定</h4>
+    <p style="font-size:0.9rem; margin-bottom:15px; color:#666;">
+      ${displayName} : ${test ? test.test_name : "不明なテスト"}
+    </p>
 
-      <div class="form-group">
-        <label>開始日</label>
-        <input type="date" id="edit-exam-start" class="admin-input" value="${exam ? exam.start_date : ""}">
-      </div>
-      <div class="form-group">
-        <label>終了日</label>
-        <input type="date" id="edit-exam-end" class="admin-input" value="${exam ? exam.end_date : ""}">
-      </div>
+    <!-- 保存時に必要な情報をhiddenに埋め込む -->
+    <input type="hidden" id="edit-exam-id" value="${exam_id || ""}">
+    <input type="hidden" id="edit-pattern-id" value="${pattern_id || ""}">
+    <input type="hidden" id="edit-school-name" value="${school_name}">
+    <input type="hidden" id="edit-course-id" value="${school_course_id}">
+    <input type="hidden" id="edit-test-id" value="${term_test_id}">
 
-      <div style="margin-top:20px; display:flex; gap:10px;">
-        <button onclick="saveExam()" class="btn-save-admin">保存</button>
-        <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
-      </div>
-    `;
+    <div class="form-group">
+      <label>開始日</label>
+      <input type="date" id="edit-exam-start" class="admin-input" value="${exam ? exam.start_date : ""}">
+    </div>
+    <div class="form-group">
+      <label>終了日</label>
+      <input type="date" id="edit-exam-end" class="admin-input" value="${exam ? exam.end_date : ""}">
+    </div>
+
+    <div style="margin-top:20px; display:flex; gap:10px;">
+      <button onclick="saveExam()" class="btn-save-admin">保存</button>
+      <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
+    </div>
+  `;
     modal.style.display = "flex";
   }
 
   function saveExam() {
     const payload = {
       exam_id: document.getElementById("edit-exam-id").value,
-      pattern_id: document.getElementById("edit-exam-pattern").value,
+      pattern_id: document.getElementById("edit-pattern-id").value,
       start_date: document.getElementById("edit-exam-start").value,
       end_date: document.getElementById("edit-exam-end").value,
     };
@@ -147,6 +157,12 @@
         btn.innerText = "保存";
         if (response.success) {
           closeModal();
+          const index = masterData.exams.findIndex((e) => e.exam_id === payload.exam_id);
+          if (index !== -1) {
+            masterData.exams[index] = payload; // 既存データを更新
+          } else {
+            masterData.exams.push(payload);
+          }
           showMessage("試験日程を保存しました", "success");
           loadSection("exams");
         } else {
@@ -155,60 +171,4 @@
       })
       .updateExamData(payload);
   }
-
-  function deleteExam(examId) {
-    if (
-      !confirm(
-        "この試験日程を削除しますか？既存のデータとの整合性を確保してください。",
-      )
-    )
-      return;
-
-    google.script.run
-      .withSuccessHandler(function () {
-        showMessage("試験日程を削除しました", "success");
-        loadSection("exams");
-      })
-      .deleteExamData(examId);
-  }
-
-  /**
- * 新規パターン（テスト区分）追加モーダル
- */
-function openAddPatternModal(schoolId, scId) {
-  const modal = document.getElementById('student-modal');
-  const body = document.querySelector('.modal-card');
-  
-  body.innerHTML = `
-    <h4>新規テスト区分の追加</h4>
-    <div class="form-group">
-      <label>追加するテスト名（term_tests_masterより）</label>
-      <select id="new-pattern-test-id" class="admin-select">
-        ${masterData.termTests.map(t => `<option value="${t.term_test_id}">${t.test_name}</option>`).join('')}
-      </select>
-    </div>
-    <div style="margin-top:20px; display:flex; gap:10px;">
-      <button onclick="addExamPattern('${schoolId}', '${scId}')" class="btn-save-admin">追加する</button>
-      <button onclick="closeModal()" class="btn-cancel-admin">キャンセル</button>
-    </div>
-  `;
-  modal.style.display = "flex";
-}
-
-/**
- * パターン追加の実行
- */
-function addExamPattern(schoolId, scId) {
-  const payload = {
-    school_name: schoolId,
-    school_course_id: scId,
-    term_test_id: document.getElementById('new-pattern-test-id').value
-  };
-
-  google.script.run.withSuccessHandler(function() {
-    closeModal();
-    showMessage("テスト区分を追加しました。教科設定も忘れずに行ってください。", "success");
-    loadSection('exams');
-  }).addNewPattern(payload);
-}
 </script>

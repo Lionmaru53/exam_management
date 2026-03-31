@@ -18,7 +18,7 @@ function saveAllScores(payload) {
       }
 
       const rowValues = [
-        rowIndex > 0 ? data[rowIndex-1][0] : "SC" + Utilities.getUuid().substring(0,8),
+        rowIndex > 0 ? data[rowIndex-1][0] : "SC" + Utilities.getUuid(),
         payload.exam_id,
         payload.student_id,
         newScore.subject_id,
