@@ -34,6 +34,15 @@
 
   function renderExamManager(data) {
     const content = document.getElementById("admin-content");
+    const schoolCourseMaps = Array.isArray(data.schoolSchoolCourses)
+      ? data.schoolSchoolCourses
+      : [];
+
+    function getMappedCourseIdsBySchool(schoolName) {
+      return schoolCourseMaps
+        .filter((m) => m.school_name === schoolName)
+        .map((m) => String(m.school_course_id));
+    }
 
     // テスト区分ごとにパターンをグループ化
     const groupedByTest = data.termTests.reduce((acc, test) => {
@@ -54,6 +63,11 @@
       
       // 学校ごとにパターンをグループ化
       const groupedBySchool = testGroup.patterns.reduce((acc, p) => {
+        const mappedCourseIds = getMappedCourseIdsBySchool(p.school_name);
+        if (!mappedCourseIds.includes(String(p.school_course_id))) {
+          return acc;
+        }
+
         const schoolKey = p.school_name;
         if (!acc[schoolKey]) acc[schoolKey] = [];
         acc[schoolKey].push(p);
@@ -165,10 +179,13 @@
             // 編集モード：コース選択・作成用の入力フィールドを表示
             const existingCourseIds = data.patterns
               .filter((p) => p.school_name === schoolName && p.term_test_id === testKey && p.grade === gradeKey)
-              .map((p) => p.school_course_id);
+              .map((p) => String(p.school_course_id));
+
+            const mappedCourseIds = getMappedCourseIdsBySchool(schoolName);
 
             const availableCourses = data.schoolCourses.filter(
-              (c) => !existingCourseIds.includes(c.school_course_id)
+              (c) => mappedCourseIds.includes(String(c.school_course_id)) &&
+                !existingCourseIds.includes(String(c.school_course_id))
             );
 
             let addRowHtml = `<tr id="add-course-row-${addRowKey}">`;
@@ -227,7 +244,132 @@
       html += `</tbody></table></div>`;
     }
 
+    html += renderSchoolCourseMappingManager(data);
+
     content.innerHTML = html;
+  }
+
+  function renderSchoolCourseMappingManager(data) {
+    const schools = Array.isArray(data.schools) ? data.schools : [];
+    const schoolCourses = Array.isArray(data.schoolCourses) ? data.schoolCourses : [];
+    const schoolCourseMaps = Array.isArray(data.schoolSchoolCourses)
+      ? data.schoolSchoolCourses
+      : [];
+
+    const sortedSchools = schools.slice().sort((a, b) =>
+      String(a.abbreviation || a.school_name).localeCompare(String(b.abbreviation || b.school_name), 'ja')
+    );
+
+    let html = `
+      <div class="admin-genre-container" style="margin-top:24px;">
+        <h4 class="admin-genre-title">学校-コース紐付け管理（手動メンテ）</h4>
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width:20%">学校</th>
+              <th style="width:50%">現在の紐付けコース</th>
+              <th style="width:30%">追加</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+    sortedSchools.forEach((school) => {
+      const schoolName = school.school_name;
+      const schoolLabel = school.abbreviation || school.school_name;
+      const schoolId = encodeURIComponent(String(schoolName));
+
+      const mappedCourseIds = schoolCourseMaps
+        .filter((m) => m.school_name === schoolName)
+        .map((m) => String(m.school_course_id));
+
+      const mappedCourses = schoolCourses.filter((c) =>
+        mappedCourseIds.includes(String(c.school_course_id))
+      );
+
+      const availableCourses = schoolCourses.filter((c) =>
+        !mappedCourseIds.includes(String(c.school_course_id))
+      );
+
+      html += `<tr>`;
+      html += `<td style="font-weight:bold;">${schoolLabel}</td>`;
+
+      if (mappedCourses.length === 0) {
+        html += `<td><span style="color:#888;">紐付けなし</span></td>`;
+      } else {
+        html += `<td style="display:flex; flex-wrap:wrap; gap:6px;">`;
+        mappedCourses.forEach((course) => {
+          const encodedCourseId = encodeURIComponent(String(course.school_course_id));
+          html += `
+            <span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #ddd; border-radius:999px; padding:2px 8px; background:#fafafa;">
+              <span>${course.school_course_name}</span>
+              <button onclick="removeSchoolCourseMap('${schoolId}','${encodedCourseId}')" style="border:none; background:none; color:#b30000; cursor:pointer;">×</button>
+            </span>`;
+        });
+        html += `</td>`;
+      }
+
+      if (availableCourses.length === 0) {
+        html += `<td><span style="color:#888;">追加可能なコースなし</span></td>`;
+      } else {
+        html += `<td>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <select id="mapping-add-course-${schoolId}" class="admin-input" style="flex:1; min-width:0;">
+              <option value="">-- コースを選択 --</option>`;
+        availableCourses.forEach((course) => {
+          html += `<option value="${course.school_course_id}">${course.school_course_name}</option>`;
+        });
+        html += `</select>
+            <button onclick="addSchoolCourseMap('${schoolId}','mapping-add-course-${schoolId}')" style="padding:4px 8px;">追加</button>
+          </div>
+        </td>`;
+      }
+
+      html += `</tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  function addSchoolCourseMap(encodedSchoolName, selectId) {
+    const schoolName = decodeURIComponent(encodedSchoolName);
+    const select = document.getElementById(selectId);
+    if (!select) return;
+
+    const schoolCourseId = select.value;
+    if (!schoolCourseId) {
+      showMessage("追加するコースを選択してください", "error");
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          masterData.schoolSchoolCourses = response.schoolSchoolCourses;
+          showMessage("紐付けを追加しました", "success");
+          renderExamManager(masterData);
+        } else {
+          showMessage(response.error, "error");
+        }
+      })
+      .addSchoolCourseMapping(schoolName, schoolCourseId);
+  }
+
+  function removeSchoolCourseMap(encodedSchoolName, encodedCourseId) {
+    const schoolName = decodeURIComponent(encodedSchoolName);
+    const schoolCourseId = decodeURIComponent(encodedCourseId);
+
+    google.script.run
+      .withSuccessHandler(function (response) {
+        if (response.success) {
+          masterData.schoolSchoolCourses = response.schoolSchoolCourses;
+          showMessage("紐付けを削除しました", "success");
+          renderExamManager(masterData);
+        } else {
+          showMessage(response.error, "error");
+        }
+      })
+      .removeSchoolCourseMapping(schoolName, schoolCourseId);
   }
 
   function saveEditedExam(rowKey) {
@@ -304,6 +446,7 @@
         .withSuccessHandler(function (response) {
           if (response.success) {
             masterData.schoolCourses = response.schoolCourses;
+            masterData.schoolSchoolCourses = response.schoolSchoolCourses;
             masterData.patterns = response.patterns;
             showMessage("新規コースを追加しました", "success");
             editingNewCourseRowKey = null;
@@ -319,6 +462,7 @@
         .withSuccessHandler(function (response) {
           if (response.success) {
             masterData.patterns = response.patterns;
+            masterData.schoolSchoolCourses = response.schoolSchoolCourses;
             showMessage("コースを追加しました", "success");
             editingNewCourseRowKey = null;
             renderExamManager(masterData);

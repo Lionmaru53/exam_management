@@ -15,7 +15,7 @@ function getInitialData(lineUserId) {
     const school = getRowsData(ss.getSheetByName('schools_master'))
       .find(s => s.school_name === studentRaw.school_name);
 
-    const sCourse = getRowsData(ss.getSheetByName('school_courses'))
+    const sCourse = getRowsData(ss.getSheetByName('school_courses_master'))
       .find(c => c.school_course_id === studentRaw.school_course_id);
 
     const student = {

@@ -1,8 +1,4 @@
-function copyAndMergeColumns() {
-  const _ = Underscore.load();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // --- 【設定：ここを環境に合わせて書き換えてください】 ---
+function copyMeiboToMaster() {
   const CONFIG = {
     sourceSheetName: "015_名簿作成結果①貼付",    // コピー元のシート名
     targetSheetName: "students_master",  // コピー先のシート名
@@ -31,6 +27,15 @@ function copyAndMergeColumns() {
     ]
   };
   // -------------------------------------------------------
+  copyAndMergeColumns(CONFIG);
+}
+
+function copyAndMergeColumns(CONFIG) {
+  const _ = Underscore.load();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // --- 【設定：ここを環境に合わせて書き換えてください】 ---
+
 
   const srcSheet = ss.getSheetByName(CONFIG.sourceSheetName);
   const tgtSheet = ss.getSheetByName(CONFIG.targetSheetName);

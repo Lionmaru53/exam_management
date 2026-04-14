@@ -1,14 +1,7 @@
-function unpivotVariableRange() {
+function unpivotVariableRange(fixedColIndex=4, pivotStartCol=17, fixedHeaderLabel="student_id", valueHeaderName="course_id") {
   const _ = Underscore.load();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const data = ss.getSheetByName("015_名簿作成結果①貼付").getDataRange().getValues();
-
-  // --- 【設定：ここを変更してください】 ---
-  const fixedColIndex = 4;      // 固定する列（0=A列, 1=B列...）
-  const pivotStartCol = 17;      // アンピボットを開始する列（0=A列, 1=B列...）
-  const fixedHeaderLabel = "student_id"
-  const valueHeaderName = "course_id"
-  // --------------------------------------
 
   const result = [];
 
@@ -47,6 +40,12 @@ function unpivotVariableRange() {
   const newSheet = ss.getSheetByName("students_courses");
   newSheet.clearContents();
   newSheet.getRange(1, 1, result.length, result[0].length).setValues(result);
+
+  // 結果のユニークな値を取得して、course_subjectsシートに出力
+  const uniqueValues = _.uniq(_.pluck(result, 1)); // 2列目の値をユニークに抽出
+  const uniqueSheet = ss.getSheetByName("course_subjects");
+  uniqueSheet.clearContents();
+  uniqueSheet.getRange(1, 1, uniqueValues.length, 1).setValues(uniqueValues.map(val => [val]));
 
   SpreadsheetApp.getUi().alert("変換が完了しました。");
 }
