@@ -12,11 +12,24 @@ function hexToRgba(hex, alpha = 0.1) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function getGenreColor(genreName, alpha = 0.08) {
+  const palette = {
+    '数学': '#dbeafe',
+    '英語': '#fed7aa',
+    '国語': '#bbf7d0',
+    '理科': '#fbcfe8',
+    '社会': '#fde68a',
+    'その他': '#f8fafc'
+  };
+  const hex = palette[genreName] || '#f8fafc';
+  return hexToRgba(hex, alpha);
+}
+
 /**
-テスト用のLine IDを使用して、サーバーから初期データを取得し、UIを構築する関数を呼び出す
-*/
+ * テスト用のLine IDを使用して、サーバーから初期データを取得し、UIを構築する関数を呼び出す
+ */
 window.onload = function() {
-  const testLineId = "U1234567890abcdef";
+  const testLineId = 'U1234567890abcdef';
   google.script.run
     .withSuccessHandler(renderApp)
     .getInitialData(testLineId);
@@ -36,13 +49,11 @@ function prepareOptions() {
   }
 }
 
-function getOptionsHtml(cache,selectedValue) {
-  //　値が空の場合は、そのまま返す
+function getOptionsHtml(cache, selectedValue) {
   if (selectedValue === undefined || selectedValue === null || selectedValue === "") {
     return cache;
   }
-  // 値がある場合は、プレースホルダーの selected を外し、該当の数字に selected を付ける
-  cache = cache.replace('disabled selected hidden', 'selected'); // プレースホルダーの selected を外す
+  cache = cache.replace('disabled selected hidden', 'selected');
   cache = cache.replace(`value="${selectedValue}"`, `value="${selectedValue}" selected`);
   return cache;
 }
@@ -52,26 +63,23 @@ function getOptionsHtml(cache,selectedValue) {
  * @param {Object} data - サーバーから受け取る初期データ
  */
 function renderApp(data) {
-  // デバッグ用ログ
-  console.log("Received data:", data);
+  console.log('Received data:', data);
   if (data.error) {
-    document.getElementById('loading').innerText = "エラー: " + data.error;
+    document.getElementById('loading').innerText = 'エラー: ' + data.error;
     return;
   }
-  prepareOptions(); // 選択肢のキャッシュを準備
 
-  document.getElementById('loading').style.display = "none";
-  document.getElementById('app').style.display = "block";
+  prepareOptions();
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
 
-  // 学年を特定（生徒情報、もしくは最初の教科から取得）
   const grade = data.student.grade || (data.subjects.length > 0 ? data.subjects[0].grade : '-');
 
-  // ヘッダー生成
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container">
-      <h2 class="exam-title">${data.currentExam.year}年 ${grade}年</h2>
-      <p class="exam-subtitle">(${data.student.school_name} ${data.student.school_course_name})</p>
+      <h2 class="exam-title">${grade}年</h2>
       <p class="student-name">${data.student.name} さん</p>
+      <p class="exam-subtitle">(${data.student.school_name} ${data.student.school_course_name})</p>
     </div>
   `;
 
@@ -88,9 +96,9 @@ function renderApp(data) {
 
   examTabs.forEach((exam, index) => {
     listHtml += `
-        <button type="button" class="tab-button${index === 0 ? ' active' : ''}" data-exam-id="${exam.exam_id}" onclick="switchExamTab('${exam.exam_id}')">
-          ${exam.test_name}
-        </button>
+      <button type="button" class="tab-button${index === 0 ? ' active' : ''}" data-exam-id="${exam.exam_id}" onclick="switchExamTab('${exam.exam_id}')">
+        ${exam.test_name}
+      </button>
     `;
   });
 
@@ -101,35 +109,35 @@ function renderApp(data) {
 
   examTabs.forEach((exam, examIndex) => {
     const groupedSubjects = exam.subjects.reduce((acc, sub) => {
-      const genre = sub.genre_name || '未設定';
-      if (!acc[genre]) acc[genre] = { rows: [], color: sub.color };
+      const genre = sub.genre_name || 'その他';
+      if (!acc[genre]) acc[genre] = { rows: [] };
       acc[genre].rows.push(sub);
       return acc;
     }, {});
 
     listHtml += `
-        <div class="tab-panel" data-exam-id="${exam.exam_id}" style="display: ${examIndex === 0 ? 'block' : 'none'};">
-          <div class="subject-table-container">
-            <table class="subject-table">
-              <thead>
-                <tr>
-                  <th colspan="5" class="test-name-header">${exam.test_name}</th>
-                </tr>
-                <tr>
-                  <th>教科</th>
-                  <th>科目</th>
-                  <th>点数</th>
-                  <th>学年順位</th>
-                  <th>クラス順位</th>
-                </tr>
-              </thead>
-              <tbody>
+      <div class="tab-panel" data-exam-id="${exam.exam_id}" style="display: ${examIndex === 0 ? 'block' : 'none'};">
+        <div class="subject-table-container">
+          <table class="subject-table">
+            <thead>
+              <tr>
+                <th colspan="5" class="test-name-header">${exam.test_name}</th>
+              </tr>
+              <tr>
+                <th>教科</th>
+                <th>科目</th>
+                <th>点数</th>
+                <th>学年順位</th>
+                <th>クラス順位</th>
+              </tr>
+            </thead>
+            <tbody>
     `;
 
     Object.keys(groupedSubjects).forEach(genreName => {
       const group = groupedSubjects[genreName];
       const rowCount = group.rows.length;
-      const rowBackground = group.color ? hexToRgba(group.color, 0.1) : '#f8f9fa';
+      const rowBackground = getGenreColor(genreName, 0.12);
 
       group.rows.forEach((sub, index) => {
         const s = exam.scores.find(x => x.subject_id === sub.subject_id) || {};
@@ -150,15 +158,15 @@ function renderApp(data) {
     });
 
     listHtml += `
-              </tbody>
-            </table>
-            <div class="tab-footer">
-              <button type="button" class="btn-save" onclick="handleSave('${data.student.student_id}', '${exam.exam_id}', this)">
-                一括保存する
-              </button>
-            </div>
+            </tbody>
+          </table>
+          <div class="tab-footer">
+            <button type="button" class="btn-save" onclick="handleSave('${data.student.student_id}', '${exam.exam_id}', this)">
+              一括保存する
+            </button>
           </div>
         </div>
+      </div>
     `;
   });
 
@@ -168,8 +176,6 @@ function renderApp(data) {
   `;
 
   document.getElementById('subject-list').innerHTML = listHtml;
-
-  // フッター（ボタン）生成
   document.getElementById('footer').innerHTML = ``;
 }
 

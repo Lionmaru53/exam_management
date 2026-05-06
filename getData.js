@@ -1,78 +1,92 @@
 /**
  * LINE IDから生徒情報・試験情報・既存スコアをまとめて取得
- * JSON形式の文字列で返すことでシリアライズエラーを回避
  */
 function getInitialData(lineUserId) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. 生徒情報の特定
     const students = getRowsData(ss.getSheetByName('students_master'));
     const studentRaw = students.find(row => String(row.line_user_id).trim() === String(lineUserId).trim());
     if (!studentRaw) return { error: '生徒未登録' };
 
-    // 学校名とコース名の紐付け
-    const school = getRowsData(ss.getSheetByName('schools_master'))
-      .find(s => s.school_name === studentRaw.school_name);
-
-    const sCourse = getRowsData(ss.getSheetByName('school_courses_master'))
-      .find(c => c.school_course_id === studentRaw.school_course_id);
-
     const student = {
       ...studentRaw,
-      school_course_name: sCourse ? sCourse.school_course_name : "不明なコース"
+      school_course_name: studentRaw.school_course || studentRaw.school_course_name || '不明なコース'
     };
 
-    // 2. 該当する試験パターン(exam_patterns)の取得
     const patterns = getRowsData(ss.getSheetByName('exam_patterns'))
-      .filter(p => p.school_name === student.school_name && p.school_course_id === student.school_course_id);
-    if (patterns.length === 0) return JSON.stringify({ error: '該当する試験パターンがありません。' });
+      .filter(p => p.school_name === student.school_name && p.school_course === student.school_course);
 
-    // 3. 全試験データ(exam_data)から、該当パターンのものを抽出
+    if (patterns.length === 0) {
+      return { error: '該当する試験パターンがありません。' };
+    }
+
     const patternIds = patterns.map(p => p.pattern_id);
     const exams = getRowsData(ss.getSheetByName('exam_data'))
       .filter(e => patternIds.includes(e.pattern_id));
-    if (exams.length === 0) return JSON.stringify({ error: '試験実施データ(exam_data)がありません。' });
 
-    // 4. 試験名称(term_tests_master)を紐づけ
+    if (exams.length === 0) {
+      return { error: '試験実施データ(exam_data)がありません。' };
+    }
+
     const termTests = getRowsData(ss.getSheetByName('term_tests_master'));
+    const termTestMap = termTests.reduce((map, t) => {
+      map[t.term_test_id] = t.test_name;
+      return map;
+    }, {});
+
     const examsWithNames = exams.map(e => {
-      const p = patterns.find(pat => pat.pattern_id === e.pattern_id);
-      const test = termTests.find(t => t.term_test_id === p.term_test_id);
+      const testName = termTestMap[e.term_test_id] || '名称未設定のテスト';
       return {
         ...e,
-        test_name: test ? test.test_name : "名称未設定のテスト"
+        test_name: testName
       };
     });
 
-    // 5. 日付順にソートして最新の1件(currentExam)をオブジェクトとして取得
     const sortedExams = examsWithNames.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
-    const currentExam = sortedExams[0]; // 配列の先頭(最新)を取り出す
+    const currentExam = sortedExams[0];
+    if (!currentExam) {
+      return { error: '有効な試験が見つかりません' };
+    }
 
-    if (!currentExam) return JSON.stringify({ error: '有効な試験が見つかりません' });
-
-    // 6. 教科テンプレート(pattern_subjects)とマスタデータを取得
     const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
     const allSubjects = getRowsData(ss.getSheetByName('subjects_master'));
     const allGenres = getRowsData(ss.getSheetByName('genres_master'));
+    const subjectMap = allSubjects.reduce((map, s) => {
+      const gen = allGenres.find(g => g.genre_id === s.genre_id);
+      map[s.subject_id] = {
+        ...s,
+        genre_id: gen ? gen.genre_id : null,
+        genre_name: gen ? gen.genre_name : 'その他'
+      };
+      return map;
+    }, {});
+
     const allScores = getRowsData(ss.getSheetByName('scores_data'));
+    const patternById = patterns.reduce((map, p) => {
+      map[p.pattern_id] = p;
+      return map;
+    }, {});
 
     const makeSubjectsForPattern = patternSubjects => patternSubjects.map(ps => {
-      const sub = allSubjects.find(s => s.subject_id === ps.subject_id);
-      if (!sub) return null;
-      const gen = allGenres.find(g => g.genre_id === sub.genre_id);
-      return {
-        ...sub,
-        genre_id: gen ? gen.genre_id : null,
-        genre_name: gen ? gen.genre_name : "その他",
-        color: gen ? gen.color : null
-      };
+      return subjectMap[ps.subject_id] || null;
     }).filter(s => s);
 
     const examTabs = sortedExams.map(exam => {
-      const patternSubjects = allPatternSubjects.filter(ps => ps.pattern_id === exam.pattern_id);
+      let patternSubjects = allPatternSubjects.filter(ps => String(ps.pattern_id).trim() === String(exam.pattern_id).trim());
+      if (patternSubjects.length === 0) {
+        const fallbackPattern = patterns.find(p =>
+          String(p.term_test_id).trim() === String(exam.term_test_id).trim() &&
+          String(p.school_name).trim() === String(student.school_name).trim() &&
+          String(p.school_course).trim() === String(student.school_course).trim()
+        );
+        if (fallbackPattern) {
+          exam.pattern_id = fallbackPattern.pattern_id;
+          patternSubjects = allPatternSubjects.filter(ps => String(ps.pattern_id).trim() === String(fallbackPattern.pattern_id).trim());
+        }
+      }
       const subjects = makeSubjectsForPattern(patternSubjects);
-      const scores = allScores.filter(s => s.exam_id === exam.exam_id && s.student_id === student.student_id);
+      const scores = allScores.filter(s => String(s.exam_id).trim() === String(exam.exam_id).trim() && String(s.student_id).trim() === String(student.student_id).trim());
       return {
         ...exam,
         subjects: subjects,
@@ -80,15 +94,11 @@ function getInitialData(lineUserId) {
       };
     });
 
-    const currentSubjects = examTabs[0] ? examTabs[0].subjects : [];
-    const currentScores = examTabs[0] ? examTabs[0].scores : [];
-
-    // 全データをまとめてJSON文字列化して返却
     const response = {
       student: student,
       currentExam: currentExam,
-      subjects: currentSubjects,
-      scores: currentScores,
+      subjects: examTabs[0] ? examTabs[0].subjects : [],
+      scores: examTabs[0] ? examTabs[0].scores : [],
       history: sortedExams,
       examTabs: examTabs,
       genres: allGenres
@@ -97,8 +107,7 @@ function getInitialData(lineUserId) {
     return stringifyDates(response);
 
   } catch (e) {
-    // 実行時エラーが発生した場合はエラーメッセージを返す
-    return JSON.stringify({ error: 'GAS実行エラー: ' + e.toString() });
+    return { error: 'GAS実行エラー: ' + e.toString() };
   }
 }
 

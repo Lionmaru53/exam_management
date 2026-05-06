@@ -11,9 +11,8 @@
   <div id="status-message"></div>
 
   <nav class="admin-nav">
-    <button onclick="loadSection('students')">生徒管理</button>
-    <button onclick="loadSection('exams')">試験日程</button>
-    <button onclick="loadSection('patterns')">教科パターン</button>
+    <button onclick="loadSection('exams')">試験日程管理</button>
+    <button onclick="loadSection('patterns')">教科パターン管理</button>
   </nav>
 
   <div id="admin-content">
@@ -21,9 +20,11 @@
     <p>上のメニューから操作を選択してください。</p>
   </div>
 
+  <div id="pattern-modal" class="modal-backdrop" style="display:none; align-items:center; justify-content:center;" onclick="if (event.target === this) closeModal()">
+    <div class="modal-card"></div>
+  </div>
 
   <?!= include('common_showMessage'); ?>
-  <?!= include('admin_logic_students'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
 </body>
