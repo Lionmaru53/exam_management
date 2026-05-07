@@ -1,49 +1,57 @@
-## Plan: スプレッドシートスキーマ改定とプログラム再構築
+## Plan: 管理者画面の動作完成と管理UIの安定化
 
-TL;DR: シート構成を簡素化（`schools_master`・`school_courses_master` 削除）し、`exam_patterns` に学校名・コース名を直接保持する設計に変更。管理者画面を「試験日程管理」と「教科パターン管理」の 2機能に絞ってゼロから再構築。入力画面の機能は維持しつつ、バックエンド処理を新スキーマに対応させる。
+TL;DR: `exam_patterns` を廃止し、`exam_data` に `school_name`, `school_course`, `grade` を追加した新スキーマに対応する。`admin_index.html` は管理画面の初期化とタブ切り替えを担当し、`admin_logic_exams.html` / `admin_logic_patterns.html` は `exam_data` に統合されたパターン情報を使って表示を行う。`admin_getData.js` / `admin_saveData.js` は `exam_data` 拡張に合わせて修正する。
 
 ---
 
-## フェーズ 1: ユーザー入力画面の修正（現在の機能保持） ✅完了
-1. `getData.js`: `getInitialData()` を修正 ✅
-   - 削除: `schools_master`・`school_courses_master` への参照 ✅
-   - 追加: `exam_patterns` から `school_name`・`school_course` を直接取得 ✅
-   - シート読み込み処理、データフィルタリングロジックを修正 ✅
-2. `logic_ui_render.html`: `genres_master.color` 削除対応 ✅
-   - 削除されたカラムの代替として、デフォルト色または固定色パレットで対応 ✅
-3. `saveData.js`: `saveAllScores()` の保存処理 ✅
-   - `scores_data` の構造は保持されるため、基本的に現行ロジックのまま動作確認 ✅
+## 実施内容
 
-## フェーズ 2: 管理者画面のゼロからの再構築 ✅完了
-- `admin_index.html`: タブナビを「試験日程管理」「教科パターン管理」に再設計 ✅
-- `admin_logic_exams.html`: 試験日程管理をゼロから実装 ✅
-   - 表示: 試験区分 → 学校名・コース → 日程 ✅
-   - 機能: 試験日程一覧、新規追加、編集、削除 ✅
-- `admin_logic_patterns.html`: 教科パターン管理をゼロから実装 ✅
-   - 表示: 学校名 → コース → 試験区分 → 教科 ✅
-   - 機能: パターン教科の一覧、選択、追加、新規教科登録 ✅
+### 1. 管理画面の起動とタブ切り替えを実装
+- `admin_index.html` に管理画面共通スクリプトを追加
+  - `masterData` を保持するグローバル変数
+  - `refreshMasterData()` で `getAdminInitialData()` を呼び出し、データを取得
+  - `loadSection(section)` で `renderExamManager()` / `renderPatternManager()` を切り替え
+  - `closeModal()` でモーダルを閉じる
+  - 初回ロードで `loadSection('exams')` を実行
 
-## フェーズ 3: バックエンド処理の統一修正 ✅完了
-- `admin_getData.js`: `getAdminInitialData()` を修正 ✅
-   - 削除: `ensureSchoolSchoolCoursesSheet()`、`schools_master`・`school_courses_master` 参照 ✅
-   - 新構成: 管理者向けに 9シート対応（生徒マスター以外） ✅
-- `admin_saveData.js`: 関数の削除・修正 ✅
-   - 削除: `updateStudentMaster()`、学校・コース管理関連の関数 ✅
-   - 修正: `updateExamData()`、`updatePatternSubjects()` を新スキーマに対応 ✅
+### 2. 管理画面スタイルを改善
+- `admin_stylesheet.html` にアクティブタブ用スタイルを追加
+- 管理ナビの見た目を調整し、現在のタブを視覚的に判別しやすくする
 
-## フェーズ 4: 削除・統廃合 ✅完了
-- 削除予定: `admin_logic_students.html`、`local_logic.js`、`local_logic_unpivot.js` ✅
+### 3. 新しい学校設定シートを追加
+- `admin_getData.js` で `【設定】学校・科` を読み込む
+- A列を `school_name`、B列を `2学期制`、C列以降を `school_course` の候補として扱う
+- 新しい設定シートのすべての学校・コースを `試験日程管理` で表示する
+- シートが存在しない場合は自動で作成し、ヘッダーを初期化する
 
-## フェーズ 5: スキーマ進化対応 ✅完了
-- スキーマが進化中のため、拡張性を優先した設計を保持 ✅
-- `exam_patterns` の列追加や構成変更に柔軟に対応可能なバックエンド設計を意識 ✅
+### 4. 試験区分の 2学期制フィルタを追加
+- `term_tests_master` に `is_two_terms` 列を追加
+- `admin_logic_exams.html` で `is_two_terms=0` は「3学期制」、`is_two_terms=1` は「2学期制」として表示する
+- 0/1 両方の試験区分を表示し、それぞれの大きなグループに分ける
+- ただし、学校設定シートに存在する学校・コースは引き続き「パターン未登録の学校」として表示する
 
-## 実装前の確認事項
-- スキーマ最終確定: `exam_patterns` の正確な列順・列名を確認
-- 色付けロジックの決定: 固定色パレット vs 色付け廃止
-- データ移行手順の準備: 旧シートから新スキーマへの移行フローを確立
+### 5. 既存管理ロジックの整合確認
+- `admin_logic_exams.html` は `masterData` から試験パターンと試験日程を表示
+- `admin_logic_patterns.html` は `masterData` から学校・試験区分・学年・sub_course をグループ化して一覧表示し、教科をジャンル別の列に分けて表示する（科目名は改行区切り）。pattern_id がない試験区分もすべて表示。`is_two_terms` と試験区分が一致するもののみ表示。列順序は試験区分のみ。教科編集はインライン編集でチェックボックスを使用、新規教科追加可能。存在しないパターンに対しても操作ボタンを表示し、upsert 処理
+- 現行の `updateExamData()`, `addNewPattern()`, `updatePatternSubjects()` を利用して保存処理を完結
 
-## 検証項目
-1. 入力画面: LINE ID 検索～データ取得～タブ表示～点数保存の全フローが動くこと
-2. 管理画面: 試験日程管理と教科パターン管理の保存・編集が正しく動作すること
-3. 新スキーマ依存性: 新しいシート構成での全処理が整合すること
+## 期待される完了状態
+1. 管理画面を開くと `試験日程管理` が表示される
+2. `教科パターン管理` タブへ切り替えられる
+3. 既存パターンと教科の一覧が `masterData` から表示される
+4. 新しい `【設定】学校・科` シートの全学校・コースが `試験日程管理` に表示される
+5. 編集・追加・保存処理が既存の `admin_saveData.js` と連携できるようになる
+6. モーダルの閉じる操作が動作する
+
+## 注意点
+- この更新では既存のシート構成を前提とし、`exam_data` に `school_name`, `school_course`, `grade` を追加した新スキーマを利用する
+- `exam_patterns` シートは廃止し、`exam_data` が試験パターンと日程を兼ねる構造に変更する
+- 既存の `schools_master` / `school_courses_master` 依存は管理画面では不要と判断
+- 実際の Google Apps Script 実行確認は、Apps Script 側でページを開いて動作検証が必要
+
+## 次の確認項目
+1. `admin_index.html` でタブ切り替えと初期ロードが動作するか
+2. `masterData` が取得され、`renderExamManager()` / `renderPatternManager()` へ渡せるか
+3. `closeModal()` がモーダルを閉じるか
+4. `showMessage()` がエラー通知を表示できるか
+

@@ -27,6 +27,55 @@
   <?!= include('common_showMessage'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
+
+  <script>
+    window.masterData = {};
+    window.currentSection = 'exams';
+
+    window.refreshMasterData = function (callback) {
+      google.script.run
+        .withSuccessHandler(function (data) {
+          if (data && !data.error) {
+            window.masterData = data;
+            if (typeof callback === 'function') {
+              callback();
+            }
+          } else {
+            showMessage((data && data.error) || 'データの取得に失敗しました。', 'error');
+          }
+        })
+        .getAdminInitialData();
+    };
+
+    window.loadSection = function (section) {
+      window.currentSection = section === 'patterns' ? 'patterns' : 'exams';
+      window.renderSection(window.currentSection);
+    };
+
+    window.renderSection = function (section) {
+      const tabs = document.querySelectorAll('.admin-nav button');
+      tabs.forEach(button => {
+        button.classList.toggle('active', button.textContent.includes(section === 'patterns' ? '教科パターン' : '試験日程'));
+      });
+
+      if (section === 'patterns') {
+        renderPatternManager(window.masterData);
+      } else {
+        renderExamManager(window.masterData);
+      }
+    };
+
+    window.closeModal = function () {
+      const modal = document.getElementById('pattern-modal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+      window.refreshMasterData(() => window.loadSection('exams'));
+    });
+  </script>
 </body>
 
 </html>
