@@ -1,5 +1,8 @@
 <script>
-let _patStore = []; // レンダリング毎にリセット、onclick の引数に使用
+let _patStore = [];
+let editingGroupKey       = null;  // 'school||course||grade||sub_course'
+let editingGroupPerTermKey = null;
+let subCourseEditorKey    = null;
 
 function _patPush(obj) {
   _patStore.push(obj);
@@ -10,17 +13,25 @@ function sanitizePat(str) {
   return String(str).replace(/[^a-zA-Z0-9]/g, '_');
 }
 
+function makeGroupKey(sn, sc, grade, sub) {
+  return `${sn}||${sc}||${grade}||${sub}`;
+}
+
 function renderPatternManager(data) {
   _patStore = [];
 
-  const content        = document.getElementById('admin-content');
-  const patterns       = Array.isArray(data.patterns)       ? data.patterns       : [];
-  const termTests      = Array.isArray(data.termTests)      ? data.termTests      : [];
-  const subjects       = Array.isArray(data.subjects)       ? data.subjects       : [];
+  const content         = document.getElementById('admin-content');
+  const patterns        = Array.isArray(data.patterns)        ? data.patterns        : [];
+  const termTests       = Array.isArray(data.termTests)       ? data.termTests       : [];
+  const subjects        = Array.isArray(data.subjects)        ? data.subjects        : [];
   const patternSubjects = Array.isArray(data.patternSubjects) ? data.patternSubjects : [];
-  const schoolSettings = Array.isArray(data.schoolSettings) ? data.schoolSettings : [];
+  const schoolSettings  = Array.isArray(data.schoolSettings)  ? data.schoolSettings  : [];
 
   const genreNames = Array.from(new Set(subjects.map(s => s.genre_name || 'その他')));
+  const allSubCourses = [...new Set(
+    patterns.map(p => String(p.sub_course || '').trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, 'ja'));
+
   const subjectByPattern = patternSubjects.reduce((acc, ps) => {
     if (!acc[ps.pattern_id]) acc[ps.pattern_id] = [];
     acc[ps.pattern_id].push(ps.subject_id);
@@ -30,39 +41,36 @@ function renderPatternManager(data) {
   const grades     = ['高1', '高2', '高3'];
   const gradeOrder = { '高1': 1, '高2': 2, '高3': 3 };
 
-  // ---- グループキーを構築 ----
-  // schoolSettings の学校は全学年を必ず表示する
-  // patterns 既存の (school, course, grade, sub_course) もすべて含める
+  // グループキーを構築
   const groupKeySet = new Set();
-
   schoolSettings.forEach(setting => {
     const sn = String(setting.school_name).trim();
     const sc = String(setting.school_course).trim();
-    const schoolPatterns = patterns.filter(p =>
-      String(p.school_name).trim() === sn &&
-      String(p.school_course).trim() === sc
-    );
-
-    if (schoolPatterns.length > 0) {
-      // 既存パターンの sub_course を尊重しつつ全学年追加
-      const subCourses = [...new Set(schoolPatterns.map(p => p.sub_course || ''))];
-      subCourses.forEach(sub => {
-        grades.forEach(grade => groupKeySet.add(`${sn}||${sc}||${grade}||${sub}`));
-      });
-    } else {
-      // パターンなし → 全学年を空 sub_course で追加
-      grades.forEach(grade => groupKeySet.add(`${sn}||${sc}||${grade}||`));
-    }
+    grades.forEach(grade => {
+      const gradePatterns = patterns.filter(p =>
+        String(p.school_name).trim() === sn &&
+        String(p.school_course).trim() === sc &&
+        String(p.grade).trim() === grade
+      );
+      if (gradePatterns.length === 0) {
+        // パターン未登録の学年は空 sub_course のベースグループを表示
+        groupKeySet.add(makeGroupKey(sn, sc, grade, ''));
+      } else {
+        // その学年に存在する sub_course のみ表示（他学年の sub_course は引き継がない）
+        const subCourses = [...new Set(gradePatterns.map(p => String(p.sub_course || '').trim()))];
+        subCourses.forEach(sub => groupKeySet.add(makeGroupKey(sn, sc, grade, sub)));
+      }
+    });
   });
-
-  // settings に存在しないが patterns には存在する学校も追加
   patterns.forEach(p => {
-    groupKeySet.add(
-      `${String(p.school_name).trim()}||${String(p.school_course).trim()}||${String(p.grade).trim()}||${String(p.sub_course || '').trim()}`
-    );
+    groupKeySet.add(makeGroupKey(
+      String(p.school_name).trim(),
+      String(p.school_course).trim(),
+      String(p.grade).trim(),
+      String(p.sub_course || '').trim()
+    ));
   });
 
-  // ソート: 学校名 → コース → 学年順 → sub_course
   const patternGroups = Array.from(groupKeySet)
     .sort((a, b) => {
       const [an, ac, ag, as_] = a.split('||');
@@ -80,11 +88,9 @@ function renderPatternManager(data) {
         String(s.school_course).trim() === school_course
       );
       const is_two_terms = String(setting ? setting.is_two_terms : '0').trim() === '1';
-
       const filteredTermTests = termTests.filter(t =>
         (String(t.is_two_terms).trim() === '1') === is_two_terms
       );
-
       const rows = filteredTermTests.map(termTest => {
         const pattern = patterns.find(p =>
           String(p.school_name).trim() === school_name &&
@@ -95,14 +101,12 @@ function renderPatternManager(data) {
         );
         return { termTest, pattern };
       });
-
       return { school: { school_name, school_course, grade, sub_course }, rows };
     });
 
   let html = `<h3>教科パターン管理</h3>`;
-
   if (patternGroups.length === 0) {
-    html += `<p>登録された学校・コースがありません。「設定】学校・科」シートに学校を登録してください。</p>`;
+    html += `<p>登録された学校・コースがありません。「【設定】学校・科」シートに学校を登録してください。</p>`;
     content.innerHTML = html;
     return;
   }
@@ -111,158 +115,298 @@ function renderPatternManager(data) {
 
   patternGroups.forEach(group => {
     const { school_name, school_course, grade, sub_course } = group.school;
-    const groupLabel = sub_course
+    const groupKey      = makeGroupKey(school_name, school_course, grade, sub_course);
+    const safeKey       = sanitizePat(groupKey);
+    const groupLabel    = sub_course
       ? `${school_name} / ${school_course} / ${grade} / ${sub_course}`
       : `${school_name} / ${school_course} / ${grade}`;
 
+    const isGroupEdit     = editingGroupKey === groupKey;
+    const isPerTermEdit   = editingGroupPerTermKey === groupKey;
+    const isSubCourseOpen = subCourseEditorKey === groupKey;
+
+    // 共通教科の初期値: 教科が設定されている最初のパターンを使用
+    const firstPatternWithSubjects = group.rows
+      .map(r => r.pattern)
+      .find(p => p && (subjectByPattern[p.pattern_id] || []).length > 0);
+    const groupSubjectIds = firstPatternWithSubjects
+      ? (subjectByPattern[firstPatternWithSubjects.pattern_id] || [])
+      : [];
+
     html += `<div class="admin-genre-container">`;
-    html += `<h4 class="admin-genre-title">${groupLabel}</h4>`;
-    html += `<table class="admin-table"><thead><tr>`;
-    html += `<th style="width:18%">試験区分</th>`;
-    genreNames.forEach(name => {
-      html += `<th style="width:${colWidth}%">${name}</th>`;
-    });
-    html += `<th style="width:10%">操作</th></tr></thead><tbody>`;
 
-    group.rows.forEach(row => {
-      const pattern    = row.pattern;
-      const patternId  = pattern ? pattern.pattern_id : null;
-      const subjectIds = patternId ? (subjectByPattern[patternId] || []) : [];
-      const isEditing  = patternId && editingPatternId === patternId;
+    // ヘッダー
+    const headerIdx = _patPush({ groupKey });
+    html += `<h4 class="admin-genre-title">${groupLabel}`;
+    html += ` <button class="btn-subcourse" onclick="toggleSubCourseEditor(${headerIdx})">＋ サブ区分を追加</button>`;
+    html += `</h4>`;
 
-      html += `<tr><td>${row.termTest.test_name}</td>`;
+    // サブ区分エディタ
+    if (isSubCourseOpen) {
+      const scIdx = _patPush({ school_name, school_course, grade, safeKey });
+      html += `<div class="sub-course-editor">`;
+      html += `<strong>サブ区分を追加</strong>`;
+      html += `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">`;
+      html += `<label>既存から選択: <select id="sc_select_${safeKey}" class="admin-select" style="width:auto; padding:4px 8px; display:inline-block;">`;
+      html += `<option value="">(なし)</option>`;
+      allSubCourses.forEach(sc => {
+        html += `<option value="${sc}">${sc}</option>`;
+      });
+      html += `</select></label>`;
+      html += `<label>または新規入力: <input type="text" id="sc_input_${safeKey}" placeholder="例: 文系" class="admin-input" style="width:120px; display:inline-block;" /></label>`;
+      html += `<button class="btn-save-admin" style="padding:6px 12px; flex:none;" onclick="addSubCourseById(${scIdx})">追加</button>`;
+      html += `<button class="btn-cancel-admin" style="padding:6px 12px; flex:none;" onclick="closeSubCourseEditor()">閉じる</button>`;
+      html += `</div>`;
+      html += `</div>`;
+    }
 
-      // ジャンル列
-      genreNames.forEach(genreName => {
-        if (isEditing) {
-          const genreSubjects = subjects.filter(s => (s.genre_name || 'その他') === genreName);
-          const checkboxes = genreSubjects.map(s => {
-            const chk = subjectIds.includes(s.subject_id) ? 'checked' : '';
-            return `<label style="display:block; padding:2px;"><input type="checkbox" name="subject_check_${patternId}" value="${s.subject_id}" ${chk}> ${s.subject_name}</label>`;
-          }).join('');
-          const inputId = `nsn_${patternId}_${sanitizePat(genreName)}`;
-          const addIdx  = _patPush({ patternId, genreName, inputId });
-          html += `<td>${checkboxes}
-            <input type="text" id="${inputId}" placeholder="新しい教科名" class="admin-input" style="width:100%; margin-top:4px;" />
-            <button onclick="addNewSubjectById(${addIdx})" style="margin-top:2px;">追加</button>
-          </td>`;
+    // グループ編集モード: 共通教科設定パネル
+    if (isGroupEdit) {
+      html += `<div class="shared-subjects-panel">`;
+      html += `<p style="margin:0 0 10px; font-weight:bold;">全試験区分に共通の教科を設定します</p>`;
+      html += `<div class="subjects-grid">`;
+      genreNames.forEach((genreName, genreIdx) => {
+        const genreSubjects = subjects.filter(s => (s.genre_name || 'その他') === genreName && String(s.grade || '').trim() === grade);
+        const inputId = `gsn_${safeKey}_${genreIdx}`;
+        const addIdx  = _patPush({ groupKey, genreName, inputId, grade });
+        html += `<div class="genre-col">`;
+        html += `<div class="genre-col-title">${genreName}</div>`;
+        genreSubjects.forEach(s => {
+          const chk = groupSubjectIds.includes(s.subject_id) ? 'checked' : '';
+          html += `<label class="subject-label"><input type="checkbox" name="group_subject_${safeKey}" value="${s.subject_id}" ${chk}> ${s.subject_name}</label>`;
+        });
+        html += `<div class="add-subject-row">`;
+        html += `<input type="text" id="${inputId}" placeholder="新しい教科名" class="admin-input" />`;
+        html += `<button onclick="addNewSubjectForGroup(${addIdx})">追加</button>`;
+        html += `</div>`;
+        html += `</div>`;
+      });
+      html += `</div>`;
+      const termTestNames = group.rows.map(r => r.termTest.test_name).join('、');
+      html += `<p style="margin:10px 0 0; color:#777; font-size:0.85em;">対象試験区分: ${termTestNames}</p>`;
+      html += `</div>`;
+    }
+
+    // テーブル: グループ編集モード中は非表示
+    if (!isGroupEdit) {
+      html += `<table class="admin-table"><thead><tr>`;
+      html += `<th style="width:18%">試験区分</th>`;
+      genreNames.forEach(name => {
+        html += `<th style="width:${colWidth}%">${name}</th>`;
+      });
+      html += `</tr></thead><tbody>`;
+
+      group.rows.forEach(row => {
+        const pattern    = row.pattern;
+        const patternId  = pattern ? pattern.pattern_id : null;
+        const subjectIds = patternId ? [...new Set(subjectByPattern[patternId] || [])] : [];
+        const termTestId = row.termTest.term_test_id;
+
+        html += `<tr><td>${row.termTest.test_name}</td>`;
+
+        if (isPerTermEdit) {
+          genreNames.forEach(genreName => {
+            const genreSubjects = subjects.filter(s => (s.genre_name || 'その他') === genreName && String(s.grade || '').trim() === grade);
+            const checkboxes = genreSubjects.map(s => {
+              const chk = subjectIds.includes(s.subject_id) ? 'checked' : '';
+              return `<label class="subject-label"><input type="checkbox" name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}" value="${s.subject_id}" ${chk}> ${s.subject_name}</label>`;
+            }).join('');
+            html += `<td>${checkboxes || '<span style="color:#aaa;">-</span>'}</td>`;
+          });
         } else {
-          const names = subjectIds.map(id => {
-            const s = subjects.find(s => s.subject_id === id);
-            return s && (s.genre_name || 'その他') === genreName ? s.subject_name : null;
-          }).filter(Boolean);
-          html += `<td>${names.join('<br>') || '<span style="color:#888;">-</span>'}</td>`;
+          genreNames.forEach(genreName => {
+            const names = subjectIds
+              .map(id => {
+                const s = subjects.find(s => s.subject_id === id);
+                return s && (s.genre_name || 'その他') === genreName ? s.subject_name : null;
+              })
+              .filter(Boolean);
+            html += `<td>${names.join('<br>') || '<span style="color:#aaa;">-</span>'}</td>`;
+          });
         }
+
+        html += `</tr>`;
       });
 
-      // 操作列
-      if (isEditing) {
-        const saveIdx = _patPush({ patternId, schoolName: school_name, schoolCourse: school_course, grade, subCourse: sub_course, termTestId: row.termTest.term_test_id });
-        html += `<td>
-          <button class="btn-save-admin" onclick="savePatternSubjectsById(${saveIdx})">保存</button>
-          <button class="btn-cancel-admin" onclick="cancelEditPattern()">キャンセル</button>
-        </td>`;
-      } else {
-        const editIdx = _patPush({ patternId, schoolName: school_name, schoolCourse: school_course, grade, subCourse: sub_course, termTestId: row.termTest.term_test_id });
-        html += `<td><button onclick="editPatternSubjectsById(${editIdx})">教科編集</button></td>`;
-      }
+      html += `</tbody></table>`;
+    }
 
-      html += `</tr>`;
-    });
+    // アクションボタン
+    html += `<div class="pattern-actions">`;
+    if (isGroupEdit) {
+      const saveIdx = _patPush({ school_name, school_course, grade, sub_course, safeKey, termTests: group.rows.map(r => r.termTest) });
+      html += `<button class="btn-save-admin" onclick="saveGroupSubjectsById(${saveIdx})">一括保存</button>`;
+      html += `<button class="btn-cancel-admin" onclick="cancelGroupEdit()">キャンセル</button>`;
+    } else if (isPerTermEdit) {
+      const saveIdx = _patPush({ school_name, school_course, grade, sub_course, safeKey, rows: group.rows });
+      html += `<button class="btn-save-admin" onclick="savePerTermSubjectsById(${saveIdx})">一括保存（試験区分ごと）</button>`;
+      html += `<button class="btn-cancel-admin" onclick="cancelGroupEdit()">キャンセル</button>`;
+    } else {
+      const editIdx = _patPush({ school_name, school_course, grade, sub_course, groupKey });
+      html += `<button onclick="startGroupEdit(${editIdx})">教科を編集</button>`;
+      html += `<button onclick="startPerTermEdit(${editIdx})">試験区分ごと編集</button>`;
+    }
+    html += `</div>`;
 
-    html += `</tbody></table></div>`;
+    html += `</div>`;
   });
 
   content.innerHTML = html;
 }
 
-// ---- _patStore 経由の安全な呼び出しラッパー ----
+// ---- サブ区分エディタ ----
 
-function addNewSubjectById(idx) {
-  const { patternId, genreName, inputId } = _patStore[idx];
+function toggleSubCourseEditor(idx) {
+  const { groupKey } = _patStore[idx];
+  subCourseEditorKey = subCourseEditorKey === groupKey ? null : groupKey;
+  renderPatternManager(masterData);
+}
+
+function closeSubCourseEditor() {
+  subCourseEditorKey = null;
+  renderPatternManager(masterData);
+}
+
+function addSubCourseById(idx) {
+  const { school_name, school_course, grade, safeKey } = _patStore[idx];
+  const inputVal  = document.getElementById(`sc_input_${safeKey}`)?.value.trim() || '';
+  const selectVal = document.getElementById(`sc_select_${safeKey}`)?.value.trim() || '';
+  const newSubCourse = inputVal || selectVal;
+
+  setLoading(true, ['サブ区分を追加中...', 'パターンを作成中...', 'データを書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        subCourseEditorKey = null;
+        showMessage('サブ区分を追加しました', 'success');
+        refreshMasterData(() => loadSection('patterns'));
+      } else {
+        showMessage(response.error || 'サブ区分の追加に失敗しました。', 'error');
+        setLoading(false);
+      }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
+    })
+    .addSubCourseGroup({ school_name, school_course, grade, sub_course: newSubCourse });
+}
+
+// ---- グループ編集 ----
+
+function startGroupEdit(idx) {
+  const { groupKey } = _patStore[idx];
+  editingGroupKey       = groupKey;
+  editingGroupPerTermKey = null;
+  renderPatternManager(masterData);
+}
+
+function startPerTermEdit(idx) {
+  const { groupKey } = _patStore[idx];
+  editingGroupPerTermKey = groupKey;
+  editingGroupKey       = null;
+  renderPatternManager(masterData);
+}
+
+function cancelGroupEdit() {
+  editingGroupKey       = null;
+  editingGroupPerTermKey = null;
+  renderPatternManager(masterData);
+}
+
+function saveGroupSubjectsById(idx) {
+  const { school_name, school_course, grade, sub_course, safeKey, termTests } = _patStore[idx];
+  const selectedIds = Array.from(
+    document.querySelectorAll(`input[name="group_subject_${safeKey}"]:checked`)
+  ).map(cb => cb.value);
+  const termTestIds = termTests.map(t => t.term_test_id);
+
+  setLoading(true, ['教科データを確認中...', 'パターンを照合中...', '教科を登録中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        editingGroupKey = null;
+        showMessage('教科設定を一括保存しました', 'success');
+        refreshMasterData(() => loadSection('patterns'));
+      } else {
+        showMessage(response.error || '保存に失敗しました。', 'error');
+        setLoading(false);
+      }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
+    })
+    .batchSetGroupSubjects({ school_name, school_course, grade, sub_course, term_test_ids: termTestIds, selected_subject_ids: selectedIds });
+}
+
+function savePerTermSubjectsById(idx) {
+  const { school_name, school_course, grade, sub_course, safeKey, rows } = _patStore[idx];
+  const items = rows.map(row => {
+    const termTestId = row.termTest.term_test_id;
+    const selectedIds = Array.from(
+      document.querySelectorAll(`input[name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}"]:checked`)
+    ).map(cb => cb.value);
+    return { school_name, school_course, grade, sub_course, term_test_id: termTestId, selected_subject_ids: selectedIds };
+  });
+
+  setLoading(true, ['教科データを確認中...', 'パターンを照合中...', '試験区分ごとに教科を登録中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        editingGroupPerTermKey = null;
+        showMessage('教科設定を一括保存しました（試験区分ごと）', 'success');
+        refreshMasterData(() => loadSection('patterns'));
+      } else {
+        showMessage(response.error || '保存に失敗しました。', 'error');
+        setLoading(false);
+      }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
+    })
+    .batchSetPerTermSubjects(items);
+}
+
+// ---- 教科追加（グループ編集モード中） ----
+
+function addNewSubjectForGroup(idx) {
+  const { groupKey, genreName, inputId, grade } = _patStore[idx];
   const newSubjectName = document.getElementById(inputId)?.value.trim();
   if (!newSubjectName) {
     showMessage('教科名を入力してください。', 'error');
     return;
   }
+  setLoading(true, ['教科名を登録中...', 'マスターデータを更新中...']);
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
         const el = document.getElementById(inputId);
         if (el) el.value = '';
+        editingGroupKey = groupKey;
         showMessage('教科を追加しました', 'success');
         refreshMasterData(() => loadSection('patterns'));
       } else {
         showMessage(response.error || '追加に失敗しました。', 'error');
+        setLoading(false);
       }
     })
-    .addNewSubject(patternId, newSubjectName, genreName);
-}
-
-function editPatternSubjectsById(idx) {
-  const { patternId, schoolName, schoolCourse, grade, subCourse, termTestId } = _patStore[idx];
-  if (patternId) {
-    editingPatternId = patternId;
-    renderPatternManager(masterData);
-  } else {
-    google.script.run
-      .withSuccessHandler(function(response) {
-        if (response && response.success) {
-          editingPatternId = response.pattern_id;
-          showMessage('パターンを新規作成しました。', 'success');
-          refreshMasterData(() => loadSection('patterns'));
-        } else {
-          showMessage(response.error || 'パターン作成に失敗しました。', 'error');
-        }
-      })
-      .addNewPattern({ school_name: schoolName, school_course: schoolCourse, grade, sub_course: subCourse, term_test_id: termTestId });
-  }
-}
-
-function savePatternSubjectsById(idx) {
-  const { patternId, schoolName, schoolCourse, grade, subCourse, termTestId } = _patStore[idx];
-  if (!patternId) {
-    google.script.run
-      .withSuccessHandler(function(response) {
-        if (response && response.success) {
-          saveSubjects(response.pattern_id);
-        } else {
-          showMessage(response.error || 'パターン作成に失敗しました。', 'error');
-        }
-      })
-      .addNewPattern({ school_name: schoolName, school_course: schoolCourse, grade, sub_course: subCourse, term_test_id: termTestId });
-  } else {
-    saveSubjects(patternId);
-  }
-}
-
-function saveSubjects(patternId) {
-  const selectedIds = Array.from(
-    document.querySelectorAll(`input[name="subject_check_${patternId}"]:checked`)
-  ).map(cb => cb.value);
-
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        editingPatternId = null;
-        showMessage('教科設定を更新しました', 'success');
-        refreshMasterData(() => loadSection('patterns'));
-      } else {
-        showMessage(response.error || '保存に失敗しました。', 'error');
-      }
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
     })
-    .updatePatternSubjects(patternId, selectedIds, '', '');
+    .addNewSubject(null, newSubjectName, genreName, grade);
 }
 
-function cancelEditPattern() {
-  editingPatternId = null;
-  renderPatternManager(masterData);
-}
-
-window.renderPatternManager      = renderPatternManager;
-window.cancelEditPattern         = cancelEditPattern;
-window.saveSubjects              = saveSubjects;
-window.editPatternSubjectsById   = editPatternSubjectsById;
-window.savePatternSubjectsById   = savePatternSubjectsById;
-window.addNewSubjectById         = addNewSubjectById;
+window.renderPatternManager    = renderPatternManager;
+window.toggleSubCourseEditor   = toggleSubCourseEditor;
+window.closeSubCourseEditor    = closeSubCourseEditor;
+window.addSubCourseById        = addSubCourseById;
+window.startGroupEdit          = startGroupEdit;
+window.startPerTermEdit        = startPerTermEdit;
+window.cancelGroupEdit         = cancelGroupEdit;
+window.saveGroupSubjectsById   = saveGroupSubjectsById;
+window.savePerTermSubjectsById = savePerTermSubjectsById;
+window.addNewSubjectForGroup   = addNewSubjectForGroup;
 </script>

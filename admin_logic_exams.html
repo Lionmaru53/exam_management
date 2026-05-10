@@ -64,6 +64,7 @@ function saveMergedExam(idx) {
     end_date:   endDate
   }));
 
+  setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
@@ -72,7 +73,12 @@ function saveMergedExam(idx) {
         refreshMasterData(() => loadSection('exams'));
       } else {
         showMessage((response && response.error) || '保存に失敗しました。', 'error');
+        setLoading(false);
       }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
     })
     .updateExamDataBatch(items);
 }
@@ -88,6 +94,7 @@ function saveGradeExam(idx) {
     return;
   }
 
+  setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
@@ -96,7 +103,12 @@ function saveGradeExam(idx) {
         refreshMasterData(() => loadSection('exams'));
       } else {
         showMessage((response && response.error) || '保存に失敗しました。', 'error');
+        setLoading(false);
       }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
     })
     .updateExamData({
       exam_id:    examId || '',
@@ -196,8 +208,49 @@ function renderExamManager(data) {
       html += `<h4 class="admin-genre-title">${school_name} / ${school_course}</h4>`;
 
       if (schoolPatterns.length === 0) {
-        html += `<p style="color:#888; padding:6px 0;">教科パターン未登録 →
-          <button onclick="loadSection('patterns')">教科パターン作成</button></p>`;
+        // パターン未登録でも日程入力を許可（保存時に全学年分のパターンを自動作成）
+        const tableRows = [];
+        relevantTests.forEach(termTest => {
+          const termTestId = termTest.term_test_id;
+          const grpKey     = makeGrpKey(school_name, school_course, '', termTestId);
+          const idKey      = sanitizeId(grpKey);
+          const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
+
+          if (isMergedEdit) {
+            const saveIdx = _push({ grpKey, school_name, school_course, sub_course: '', term_test_id: termTestId });
+            tableRows.push(`<tr>
+              <td>${termTest.test_name}</td>
+              <td style="display:flex; gap:6px; align-items:center;">
+                <input id="start_${idKey}" type="date" style="flex:1; padding:4px;" />
+                <span>～</span>
+                <input id="end_${idKey}" type="date" style="flex:1; padding:4px;" />
+              </td>
+              <td>
+                <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
+                <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
+              </td>
+            </tr>`);
+          } else {
+            const editIdx = _push({ grpKey });
+            tableRows.push(`<tr>
+              <td>${termTest.test_name}</td>
+              <td><span style="color:#888;">未設定</span></td>
+              <td><button onclick="startEditMerged(${editIdx})">編集</button></td>
+            </tr>`);
+          }
+        });
+
+        if (tableRows.length > 0) {
+          html += `<p style="font-size:0.8rem; color:#888; margin:6px 15px;">教科パターン未登録（日程保存時に自動作成されます）</p>`;
+          html += `<table class="admin-table">
+            <thead><tr>
+              <th style="width:22%">試験区分</th>
+              <th style="width:50%">実施期間</th>
+              <th style="width:28%">操作</th>
+            </tr></thead>
+            <tbody>${tableRows.join('')}</tbody>
+          </table>`;
+        }
         html += `</div>`;
         return;
       }
@@ -219,13 +272,32 @@ function renderExamManager(data) {
 
           const grpKey = makeGrpKey(school_name, school_course, subCourse, termTestId);
 
-          // パターン未登録の試験区分：行は表示するが編集不可
+          // パターン未登録の試験区分でも日程入力を許可（保存時に自動作成）
           if (termPatterns.length === 0) {
-            tableRows.push(`<tr>
-              <td>${termTest.test_name}</td>
-              <td><span style="color:#aaa;">パターン未登録</span></td>
-              <td><button onclick="loadSection('patterns')">教科パターン作成</button></td>
-            </tr>`);
+            const idKey        = sanitizeId(grpKey);
+            const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
+            if (isMergedEdit) {
+              const saveIdx = _push({ grpKey, school_name, school_course, sub_course: subCourse, term_test_id: termTestId });
+              tableRows.push(`<tr>
+                <td>${termTest.test_name}</td>
+                <td style="display:flex; gap:6px; align-items:center;">
+                  <input id="start_${idKey}" type="date" style="flex:1; padding:4px;" />
+                  <span>～</span>
+                  <input id="end_${idKey}" type="date" style="flex:1; padding:4px;" />
+                </td>
+                <td>
+                  <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
+                  <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
+                </td>
+              </tr>`);
+            } else {
+              const editIdx = _push({ grpKey });
+              tableRows.push(`<tr>
+                <td>${termTest.test_name}</td>
+                <td><span style="color:#888;">未設定</span></td>
+                <td><button onclick="startEditMerged(${editIdx})">編集</button></td>
+              </tr>`);
+            }
             return;
           }
           const idKey  = sanitizeId(grpKey);
@@ -351,12 +423,46 @@ function renderExamManager(data) {
   content.innerHTML = html;
 }
 
-window.renderExamManager   = renderExamManager;
-window.startEditMerged     = startEditMerged;
-window.startEditGrade      = startEditGrade;
-window.cancelEdit          = cancelEdit;
-window.saveMergedExam      = saveMergedExam;
-window.saveGradeExam       = saveGradeExam;
-window.toggleGradeSplit    = toggleGradeSplit;
-window.changeExamYear      = changeExamYear;
+function saveMergedExamAutoPattern(idx) {
+  const { grpKey, school_name, school_course, sub_course, term_test_id } = _store[idx];
+  const idKey     = sanitizeId(grpKey);
+  const startDate = document.getElementById('start_' + idKey)?.value;
+  const endDate   = document.getElementById('end_'   + idKey)?.value;
+
+  if (!startDate || !endDate) {
+    showMessage('開始日と終了日を入力してください。', 'error');
+    return;
+  }
+
+  setLoading(true, ['パターンを確認中...', '学年ごとのパターンを作成中...', '試験日程を書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        _examEditingKey = null;
+        showMessage('試験日程を保存しました。', 'success');
+        refreshMasterData(() => loadSection('exams'));
+      } else {
+        showMessage((response && response.error) || '保存に失敗しました。', 'error');
+        setLoading(false);
+      }
+    })
+    .withFailureHandler(function() {
+      showMessage('通信エラーが発生しました。', 'error');
+      setLoading(false);
+    })
+    .upsertExamWithAutoPattern({
+      school_name, school_course, sub_course, term_test_id,
+      year: selectedExamYear, start_date: startDate, end_date: endDate
+    });
+}
+
+window.renderExamManager          = renderExamManager;
+window.startEditMerged            = startEditMerged;
+window.startEditGrade             = startEditGrade;
+window.cancelEdit                 = cancelEdit;
+window.saveMergedExam             = saveMergedExam;
+window.saveGradeExam              = saveGradeExam;
+window.toggleGradeSplit           = toggleGradeSplit;
+window.changeExamYear             = changeExamYear;
+window.saveMergedExamAutoPattern  = saveMergedExamAutoPattern;
 </script>
