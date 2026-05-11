@@ -27,23 +27,23 @@ function handleSave(studentId, examId, btn) {
   });
 
   button.disabled = true;
-  button.innerText = "保存中...";
+  setLoading(true, ['得点データを保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
 
   google.script.run
     .withSuccessHandler(function(responseString) {
       const response = JSON.parse(responseString);
+      setLoading(false);
       btn.disabled = false;
-      btn.innerText = "一括保存する";
 
       if (response.success) {
         showMessage("正常に保存されました！", "success");
       } else {
-        showMessage("保存エラー: ", response.error, "error");
+        showMessage("保存エラー: " + response.error, "error");
       }
     })
     .withFailureHandler(function(err) {
+      setLoading(false);
       btn.disabled = false;
-      btn.innerText = "一括保存する";
       showMessage("通信エラーが発生しました: " + err.message, "error");
     })
     .saveAllScores({

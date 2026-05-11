@@ -348,4 +348,44 @@
     font-weight: bold;
     margin-bottom: 5px;
   }
+
+  /* ローディングオーバーレイ（ユーザー・管理者共通） */
+  #loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 9000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    animation: overlay-fade-in 0.18s ease forwards;
+  }
+  #loading-overlay.active {
+    display: flex;
+  }
+  @keyframes overlay-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .loading-spinner {
+    width: 46px;
+    height: 46px;
+    border: 5px solid #e0e0e0;
+    border-top-color: #007bff;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loading-label {
+    font-size: 0.88rem;
+    font-weight: bold;
+    color: #555;
+    letter-spacing: 0.04em;
+  }
 </style>

@@ -10,8 +10,11 @@
   <body>
     <div id="status-message"></div>
     
-    <div id="loading" class="loader">データを取得中...</div>
-    
+    <div id="loading-overlay">
+      <div class="loading-spinner"></div>
+      <div class="loading-label" id="loading-label">読み込み中...</div>
+    </div>
+
     <div id="app" style="display:none;">
       <header id="header"></header>
       <main id="subject-list"></main>
