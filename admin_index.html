@@ -16,8 +16,8 @@
   </div>
 
   <nav class="admin-nav">
-    <button onclick="loadSection('exams')">試験日程管理</button>
     <button onclick="loadSection('patterns')">教科パターン管理</button>
+    <button onclick="loadSection('exams')">試験日程管理</button>
   </nav>
 
   <div id="admin-content">
@@ -35,7 +35,7 @@
 
   <script>
     window.masterData = {};
-    window.currentSection = 'exams';
+    window.currentSection = 'patterns';
 
     var _loadingMsgTimer = null;
 
@@ -125,7 +125,7 @@
     };
 
     document.addEventListener('DOMContentLoaded', function () {
-      window.refreshMasterData(() => window.loadSection('exams'));
+      window.refreshMasterData(() => window.loadSection('patterns'));
     });
   </script>
 </body>

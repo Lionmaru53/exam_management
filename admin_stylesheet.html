@@ -13,6 +13,9 @@
     background: #333;
     padding: 10px;
     border-radius: 5px;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
   }
 
   .admin-nav button {
@@ -173,7 +176,7 @@
   }
 
   .genre-col {
-    min-width: 130px;
+    min-width: 110px;
     flex: 1;
   }
 
@@ -195,11 +198,13 @@
   .add-subject-row {
     margin-top: 6px;
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
   }
 
   .add-subject-row .admin-input {
     flex: 1;
+    min-width: 0;
     width: auto;
     padding: 5px;
   }
@@ -276,5 +281,69 @@
   .admin-loading input {
     pointer-events: none;
     opacity: 0.55;
+  }
+
+  /* 階層ナビゲーション */
+  .hier-school { margin-bottom: 6px; }
+  .hier-course { margin-top: 2px; }
+  .hier-grade  { margin-top: 2px; }
+
+  .hier-school-header,
+  .hier-course-header,
+  .hier-grade-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 4px;
+  }
+  .hier-school-header {
+    padding: 8px 14px;
+    background: #e8eaf6;
+    border-left: 4px solid #3f51b5;
+    font-size: 1.05rem;
+    font-weight: bold;
+  }
+  .hier-course-header {
+    padding: 6px 14px 6px 28px;
+    background: #f3f4f6;
+    border-left: 3px solid #7986cb;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .hier-grade-header {
+    padding: 5px 14px 5px 44px;
+    background: #fafafa;
+    border-left: 2px solid #b0bec5;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .hier-school-header:hover { background: #c5cae9; }
+  .hier-course-header:hover { background: #e8eaf6; }
+  .hier-grade-header:hover  { background: #f0f0f0; }
+
+  .hier-arrow { font-size: 0.7em; flex-shrink: 0; }
+
+  /* サブ区分追加ボタン（学年ヘッダー内・右寄せ小字） */
+  .btn-subcourse-sm {
+    margin-left: auto;
+    font-size: 0.68rem;
+    padding: 2px 7px;
+  }
+
+  .hier-school-body { padding-left: 0; }
+  .hier-course-body { padding-left: 14px; }
+  .hier-grade-body  { padding-left: 28px; margin-bottom: 10px; }
+
+  .sub-course-label {
+    padding: 4px 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #555;
+    background: #f9f9f9;
+    border-left: 3px solid #ccc;
+    margin-top: 8px;
+    margin-bottom: 2px;
   }
 </style>

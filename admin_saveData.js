@@ -366,6 +366,10 @@ function updateExamDataBatch(items) {
       if (pid && yr) byPatternYear[`${pid}||${yr}`] = { rowIndex: i + 1, examId: eid };
     }
 
+    // 同一秒内の連続生成でも衝突しないようタイムスタンプ＋連番で ID を生成
+    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+    let autoIdCounter = 0;
+
     items.forEach(payload => {
       let rowIndex = -1;
       let examId   = payload.exam_id;
@@ -380,7 +384,7 @@ function updateExamDataBatch(items) {
         }
       }
 
-      if (!examId) examId = generateUniqueId('EX');
+      if (!examId) examId = 'EX' + base + (++autoIdCounter);
 
       const rowValues = [
         examId,

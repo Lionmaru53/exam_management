@@ -47,9 +47,8 @@ function cancelEdit() {
 // --- 保存処理 ---
 function saveMergedExam(idx) {
   const { grpKey, patternIds, examIdMap } = _store[idx];
-  const idKey = sanitizeId(grpKey);
-  const startDate = document.getElementById('start_' + idKey)?.value;
-  const endDate   = document.getElementById('end_' + idKey)?.value;
+  const startDate = document.getElementById('start_' + idx)?.value;
+  const endDate   = document.getElementById('end_' + idx)?.value;
 
   if (!startDate || !endDate) {
     showMessage('開始日と終了日を入力してください。', 'error');
@@ -85,9 +84,8 @@ function saveMergedExam(idx) {
 
 function saveGradeExam(idx) {
   const { patternId, examId } = _store[idx];
-  const idKey = sanitizeId(patternId);
-  const startDate = document.getElementById('start_' + idKey)?.value;
-  const endDate   = document.getElementById('end_' + idKey)?.value;
+  const startDate = document.getElementById('start_' + idx)?.value;
+  const endDate   = document.getElementById('end_' + idx)?.value;
 
   if (!startDate || !endDate) {
     showMessage('開始日と終了日を入力してください。', 'error');
@@ -221,9 +219,9 @@ function renderExamManager(data) {
             tableRows.push(`<tr>
               <td>${termTest.test_name}</td>
               <td style="display:flex; gap:6px; align-items:center;">
-                <input id="start_${idKey}" type="date" style="flex:1; padding:4px;" />
+                <input id="start_${saveIdx}" type="date" style="flex:1; padding:4px;" />
                 <span>～</span>
-                <input id="end_${idKey}" type="date" style="flex:1; padding:4px;" />
+                <input id="end_${saveIdx}" type="date" style="flex:1; padding:4px;" />
               </td>
               <td>
                 <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
@@ -281,9 +279,9 @@ function renderExamManager(data) {
               tableRows.push(`<tr>
                 <td>${termTest.test_name}</td>
                 <td style="display:flex; gap:6px; align-items:center;">
-                  <input id="start_${idKey}" type="date" style="flex:1; padding:4px;" />
+                  <input id="start_${saveIdx}" type="date" style="flex:1; padding:4px;" />
                   <span>～</span>
-                  <input id="end_${idKey}" type="date" style="flex:1; padding:4px;" />
+                  <input id="end_${saveIdx}" type="date" style="flex:1; padding:4px;" />
                 </td>
                 <td>
                   <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
@@ -321,9 +319,9 @@ function renderExamManager(data) {
               tableRows.push(`<tr>
                 <td>${termTest.test_name}</td>
                 <td style="display:flex; gap:6px; align-items:center;">
-                  <input id="start_${idKey}" type="date" value="${repExam ? repExam.start_date : ''}" style="flex:1; padding:4px;" />
+                  <input id="start_${saveIdx}" type="date" value="${repExam ? repExam.start_date : ''}" style="flex:1; padding:4px;" />
                   <span>～</span>
-                  <input id="end_${idKey}" type="date" value="${repExam ? repExam.end_date : ''}" style="flex:1; padding:4px;" />
+                  <input id="end_${saveIdx}" type="date" value="${repExam ? repExam.end_date : ''}" style="flex:1; padding:4px;" />
                 </td>
                 <td>
                   <button class="save-btn" onclick="saveMergedExam(${saveIdx})">保存</button>
@@ -380,9 +378,9 @@ function renderExamManager(data) {
                 tableRows.push(`<tr style="background:#fffde7;">
                   <td style="padding-left:24px; color:#555;">↳ ${grade}</td>
                   <td style="display:flex; gap:6px; align-items:center;">
-                    <input id="start_${pidSafe}" type="date" value="${gradeExam ? gradeExam.start_date : ''}" style="flex:1; padding:4px;" />
+                    <input id="start_${saveIdx}" type="date" value="${gradeExam ? gradeExam.start_date : ''}" style="flex:1; padding:4px;" />
                     <span>～</span>
-                    <input id="end_${pidSafe}" type="date" value="${gradeExam ? gradeExam.end_date : ''}" style="flex:1; padding:4px;" />
+                    <input id="end_${saveIdx}" type="date" value="${gradeExam ? gradeExam.end_date : ''}" style="flex:1; padding:4px;" />
                   </td>
                   <td>
                     <button class="save-btn" onclick="saveGradeExam(${saveIdx})">保存</button>
@@ -425,9 +423,8 @@ function renderExamManager(data) {
 
 function saveMergedExamAutoPattern(idx) {
   const { grpKey, school_name, school_course, sub_course, term_test_id } = _store[idx];
-  const idKey     = sanitizeId(grpKey);
-  const startDate = document.getElementById('start_' + idKey)?.value;
-  const endDate   = document.getElementById('end_'   + idKey)?.value;
+  const startDate = document.getElementById('start_' + idx)?.value;
+  const endDate   = document.getElementById('end_'   + idx)?.value;
 
   if (!startDate || !endDate) {
     showMessage('開始日と終了日を入力してください。', 'error');
