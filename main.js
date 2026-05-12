@@ -10,8 +10,9 @@ function doGet(e) {
       .setTitle('成績管理システム - 管理者用');
   }
 
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
+  const template = HtmlService.createTemplateFromFile('index');
+  template.liffId = PropertiesService.getScriptProperties().getProperty('LIFF_ID') || '';
+  return template.evaluate()
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setTitle('定期テスト得点入力フォーム');
 }
