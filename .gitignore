@@ -1,0 +1,15 @@
+# clasp 認証・プロジェクト設定（スクリプトIDを含むため非公開）
+.clasp.json
+
+# 環境変数・APIキー類
+.env
+.env.local
+.env.*.local
+
+# エディタ・OS
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
