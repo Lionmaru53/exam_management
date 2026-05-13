@@ -1,0 +1,18 @@
+# clasp 認証・プロジェクト設定（スクリプトIDを含むため非公開）
+.clasp.json
+
+# GitHub Pages 設定（LIFF_ID・GAS_URL を含むため非公開）
+docs/config.js
+
+# 環境変数・APIキー類
+.env
+.env.local
+.env.*.local
+
+# エディタ・OS
+.vscode/settings.json
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/

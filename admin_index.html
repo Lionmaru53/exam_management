@@ -10,10 +10,14 @@
 <body>
   <div id="status-message"></div>
 
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-label" id="loading-label">読み込み中...</div>
+  </div>
+
   <nav class="admin-nav">
-    <button onclick="loadSection('students')">生徒管理</button>
-    <button onclick="loadSection('exams')">試験日程</button>
-    <button onclick="loadSection('patterns')">教科パターン</button>
+    <button onclick="loadSection('patterns')">教科パターン管理</button>
+    <button onclick="loadSection('exams')">試験日程管理</button>
   </nav>
 
   <div id="admin-content">
@@ -21,45 +25,109 @@
     <p>上のメニューから操作を選択してください。</p>
   </div>
 
-
-  <div id="student-modal" class="modal-overlay" style="display: none">
-    <div class="modal-card">
-      <h4 id="modal-title">生徒情報の編集</h4>
-      <input type="hidden" id="edit-student-id" />
-
-      <div class="form-group">
-        <label>氏名</label>
-        <input type="text" id="edit-name" class="admin-input" />
-      </div>
-
-      <div class="form-group">
-        <label>学校</label>
-        <select id="edit-school" class="admin-select"></select>
-      </div>
-
-      <div class="form-group">
-        <label>学校コース</label>
-        <select id="edit-school-course" class="admin-select"></select>
-      </div>
-
-      <div class="form-group">
-        <label>学年</label>
-        <input type="number" id="edit-grade" class="admin-input" min="1" max="3" />
-      </div>
-
-      <div style="margin-top: 20px; display: flex; gap: 10px">
-        <button onclick="saveStudent()" class="btn-save-admin">保存</button>
-        <button onclick="closeModal()" class="btn-cancel-admin">
-          キャンセル
-        </button>
-      </div>
-    </div>
+  <div id="pattern-modal" class="modal-backdrop" style="display:none; align-items:center; justify-content:center;" onclick="if (event.target === this) closeModal()">
+    <div class="modal-card"></div>
   </div>
 
   <?!= include('common_showMessage'); ?>
-  <?!= include('admin_logic_students'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
+
+  <script>
+    window.masterData = {};
+    window.currentSection = 'patterns';
+
+    var _loadingMsgTimer = null;
+
+    window.setLoading = function (active, messages, intervalMs) {
+      const overlay = document.getElementById('loading-overlay');
+      const label   = document.getElementById('loading-label');
+      if (!overlay) return;
+
+      if (_loadingMsgTimer) {
+        clearInterval(_loadingMsgTimer);
+        _loadingMsgTimer = null;
+      }
+
+      if (active) {
+        const msgs = Array.isArray(messages) ? messages : [messages || '処理中...'];
+        if (label) label.textContent = msgs[0];
+        overlay.classList.add('active');
+
+        if (msgs.length > 1) {
+          var idx = 0;
+          _loadingMsgTimer = setInterval(function () {
+            idx = Math.min(idx + 1, msgs.length - 1);
+            if (label) label.textContent = msgs[idx];
+          }, intervalMs || 2500);
+        }
+      } else {
+        overlay.classList.remove('active');
+      }
+    };
+
+    window.refreshMasterData = function (callback) {
+      setLoading(true, 'データを読み込み中...');
+      google.script.run
+        .withSuccessHandler(function (data) {
+          if (data && !data.error) {
+            window.masterData = data;
+            if (typeof callback === 'function') {
+              callback();
+            }
+          } else {
+            showMessage((data && data.error) || 'データの取得に失敗しました。', 'error');
+          }
+          setLoading(false);
+        })
+        .withFailureHandler(function (err) {
+          showMessage('通信エラーが発生しました。再度お試しください。', 'error');
+          setLoading(false);
+        })
+        .getAdminInitialData();
+    };
+
+    window.loadSection = function (section) {
+      window.currentSection = section === 'patterns' ? 'patterns' : 'exams';
+
+      // ローディングオーバーレイが出ていないときだけコンテンツをフェードして切り替え
+      const overlay = document.getElementById('loading-overlay');
+      const content = document.getElementById('admin-content');
+      if (overlay && overlay.classList.contains('active')) {
+        window.renderSection(window.currentSection);
+        return;
+      }
+      if (content) content.classList.add('section-fading');
+      setTimeout(function () {
+        window.renderSection(window.currentSection);
+        if (content) content.classList.remove('section-fading');
+      }, 120);
+    };
+
+    window.renderSection = function (section) {
+      const tabs = document.querySelectorAll('.admin-nav button');
+      tabs.forEach(button => {
+        button.classList.toggle('active', button.textContent.includes(section === 'patterns' ? '教科パターン' : '試験日程'));
+      });
+
+      if (section === 'patterns') {
+        renderPatternManager(window.masterData);
+      } else {
+        renderExamManager(window.masterData);
+      }
+    };
+
+    window.closeModal = function () {
+      const modal = document.getElementById('pattern-modal');
+      if (modal) {
+        modal.style.display = 'none';
+      }
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+      window.refreshMasterData(() => window.loadSection('patterns'));
+    });
+  </script>
 </body>
 
 </html>

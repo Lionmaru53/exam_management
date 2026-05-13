@@ -1,25 +1,13 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- CSSファイルをインクルード -->
-    <?!= include('common_stylesheet'); ?>
-    <?!= include('common_showMessage'); ?>
-  </head>
-  <body>
-    <div id="status-message"></div>
-    
-    <div id="loading" class="loader">データを取得中...</div>
-    
-    <div id="app" style="display:none;">
-      <header id="header"></header>
-      <main id="subject-list"></main>
-      <footer id="footer"></footer>
-    </div>
-
-    <!-- JSロジックを分割してインクルード -->
-    <?!= include('logic_ui_render'); ?>
-    <?!= include('logic_ui_action'); ?>
-  </body>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family:sans-serif;padding:24px;text-align:center;">
+  <p>このページは LINE アプリからご利用ください。</p>
+  <p style="font-size:0.85em;color:#888;">管理者の方は
+    <a href="?page=admin">こちら</a>
+  </p>
+</body>
 </html>

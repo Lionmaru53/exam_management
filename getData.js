@@ -1,95 +1,146 @@
 /**
  * LINE IDから生徒情報・試験情報・既存スコアをまとめて取得
- * JSON形式の文字列で返すことでシリアライズエラーを回避
+ * - 学校の学期制に存在する全試験区分をタブ表示
+ * - パターン未登録・日程未登録の試験区分も空テーブルで表示
  */
 function getInitialData(lineUserId) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    // 1. 生徒情報の特定
+    // 生徒情報を取得
     const students = getRowsData(ss.getSheetByName('students_master'));
     const studentRaw = students.find(row => String(row.line_user_id).trim() === String(lineUserId).trim());
     if (!studentRaw) return { error: '生徒未登録' };
 
-    // 学校名とコース名の紐付け
-    const school = getRowsData(ss.getSheetByName('schools_master'))
-      .find(s => s.school_name === studentRaw.school_name);
-
-    const sCourse = getRowsData(ss.getSheetByName('school_courses'))
-      .find(c => c.school_course_id === studentRaw.school_course_id);
-
     const student = {
       ...studentRaw,
-      school_course_name: sCourse ? sCourse.school_course_name : "不明なコース"
+      school_course_name: studentRaw.school_course || studentRaw.school_course_name || '不明なコース',
+      sub_course: studentRaw.sub_course || ''
     };
 
-    // 2. 該当する試験パターン(exam_patterns)の取得
-    const patterns = getRowsData(ss.getSheetByName('exam_patterns'))
-      .filter(p => p.school_name === student.school_name && p.school_course_id === student.school_course_id);
-    if (patterns.length === 0) return JSON.stringify({ error: '該当する試験パターンがありません。' });
+    // 学校の学期制（is_two_terms）を【設定】学校・科シートから取得
+    let is_two_terms = false;
+    const settingSheet = ss.getSheetByName('【設定】学校・科');
+    if (settingSheet) {
+      const settingRows = settingSheet.getDataRange().getValues();
+      for (let i = 1; i < settingRows.length; i++) {
+        if (String(settingRows[i][0]).trim() === String(student.school_name).trim()) {
+          is_two_terms = String(settingRows[i][1]).trim() === '1';
+          break;
+        }
+      }
+    }
 
-    // 3. 全試験データ(exam_data)から、該当パターンのものを抽出
-    const patternIds = patterns.map(p => p.pattern_id);
-    const exams = getRowsData(ss.getSheetByName('exam_data'))
-      .filter(e => patternIds.includes(e.pattern_id));
-    if (exams.length === 0) return JSON.stringify({ error: '試験実施データ(exam_data)がありません。' });
-
-    // 4. 試験名称(term_tests_master)を紐づけ
+    // term_tests_master から学期制に対応する試験区分を取得
     const termTests = getRowsData(ss.getSheetByName('term_tests_master'));
-    const examsWithNames = exams.map(e => {
-      const p = patterns.find(pat => pat.pattern_id === e.pattern_id);
-      const test = termTests.find(t => t.term_test_id === p.term_test_id);
+    const relevantTermTests = termTests.filter(t =>
+      (String(t.is_two_terms).trim() === '1') === is_two_terms
+    );
+
+    // 学期制が設定シートから特定できなかった場合、パターンから推定（フォールバック）
+    if (!settingSheet && relevantTermTests.length === 0) {
+      const examPatternsFb = getRowsData(ss.getSheetByName('exam_patterns'));
+      const fbPattern = examPatternsFb.find(p =>
+        String(p.school_name).trim() === String(student.school_name).trim()
+      );
+      if (fbPattern) {
+        const fbTT = termTests.find(t => t.term_test_id === fbPattern.term_test_id);
+        if (fbTT) {
+          is_two_terms = String(fbTT.is_two_terms).trim() === '1';
+        }
+      }
+    }
+
+    // 生徒の学校・コース・学年・サブ区分に合致するパターンを取得
+    const examPatterns = getRowsData(ss.getSheetByName('exam_patterns'));
+    const studentPatterns = examPatterns.filter(p =>
+      String(p.school_name).trim()    === String(student.school_name).trim() &&
+      String(p.school_course).trim()  === String(student.school_course).trim() &&
+      String(p.grade || '').trim()    === String(student.grade || '').trim() &&
+      String(p.sub_course || '').trim() === String(student.sub_course || '').trim()
+    );
+
+    const patternIds = studentPatterns.map(p => String(p.pattern_id));
+
+    // exam_schedule からパターンに対応するスケジュールを取得
+    const examSchedule = getRowsData(ss.getSheetByName('exam_schedule'));
+    const relevantExams = examSchedule.filter(e => patternIds.includes(String(e.pattern_id).trim()));
+
+    // subjects_master と genres_master を結合してマップを作成
+    const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
+    const allSubjects        = getRowsData(ss.getSheetByName('subjects_master'));
+    const allGenres          = getRowsData(ss.getSheetByName('genres_master'));
+    const subjectMap = allSubjects.reduce((map, s) => {
+      const gen = allGenres.find(g => g.genre_id === s.genre_id);
+      map[s.subject_id] = {
+        ...s,
+        genre_id:   gen ? gen.genre_id   : null,
+        genre_name: gen ? gen.genre_name : 'その他'
+      };
+      return map;
+    }, {});
+
+    const allScores = getRowsData(ss.getSheetByName('scores_data'));
+
+    // 全試験区分に対してタブデータを構築（パターン・日程なしも含む）
+    const examTabs = relevantTermTests.map(termTest => {
+      const pattern = studentPatterns.find(p =>
+        String(p.term_test_id).trim() === String(termTest.term_test_id).trim()
+      );
+      const exam = pattern
+        ? relevantExams.find(e => String(e.pattern_id).trim() === String(pattern.pattern_id).trim())
+        : null;
+
+      const subjects = pattern
+        ? allPatternSubjects
+            .filter(ps => String(ps.pattern_id).trim() === String(pattern.pattern_id).trim())
+            .map(ps => subjectMap[ps.subject_id] || null)
+            .filter(Boolean)
+        : [];
+
+      const scores = exam
+        ? allScores.filter(s =>
+            String(s.exam_id).trim()    === String(exam.exam_id).trim() &&
+            String(s.student_id).trim() === String(student.student_id).trim()
+          )
+        : [];
+
       return {
-        ...e,
-        test_name: test ? test.test_name : "名称未設定のテスト"
+        term_test_id: termTest.term_test_id,
+        test_name:    termTest.test_name,
+        exam_id:      exam    ? exam.exam_id      : null,
+        pattern_id:   pattern ? pattern.pattern_id : null,
+        start_date:   exam    ? exam.start_date    : null,
+        end_date:     exam    ? exam.end_date      : null,
+        subjects,
+        scores,
+        hasPattern: !!pattern,
+        hasExam:    !!exam
       };
     });
 
-    // 5. 日付順にソートして最新の1件(currentExam)をオブジェクトとして取得
-    const sortedExams = examsWithNames.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
-    const currentExam = sortedExams[0]; // 配列の先頭(最新)を取り出す
+    // 日程あり→最新順、日程なし→term_tests_master 順
+    examTabs.sort((a, b) => {
+      if (a.start_date && b.start_date) return new Date(b.start_date) - new Date(a.start_date);
+      if (a.start_date) return -1;
+      if (b.start_date) return 1;
+      return 0;
+    });
 
-    if (!currentExam) return JSON.stringify({ error: '有効な試験が見つかりません' });
+    const currentExam = examTabs.find(t => t.exam_id) || examTabs[0] || null;
 
-    // 6. 教科テンプレート(pattern_subjects)から教科リストを取得
-    const patternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'))
-      .filter(ps => ps.pattern_id === currentExam.pattern_id);
-    const allSubjects = getRowsData(ss.getSheetByName('subjects_master'));
-    const allGenres = getRowsData(ss.getSheetByName('genres_master'));
-    
-    const subjects = patternSubjects.map(ps => {
-      const sub = allSubjects.find(s => s.subject_id === ps.subject_id);
-      if (!sub) return null;
-
-      const gen = allGenres.find(g => g.genre_id === sub.genre_id);
-      return {
-        ...sub,
-        genre_id: gen ? gen.genre_id : null,
-        genre_name: gen ? gen.genre_name : "その他",
-        color: gen ? gen.color : null
-      };
-      
-    }).filter(s => s); // 存在する教科のみ抽出
-
-    // 7. 既存の入力済みスコア(scores_data)を取得
-    const scores = getRowsData(ss.getSheetByName('scores_data'))
-      .filter(s => s.exam_id === currentExam.exam_id && s.student_id === student.student_id);
-
-    // 全データをまとめてJSON文字列化して返却
-    const response = {
-      student: student,
-      currentExam: currentExam,
-      subjects: subjects,
-      scores: scores,
-      history: sortedExams,
+    return stringifyDates({
+      student,
+      currentExam,
+      subjects: currentExam ? currentExam.subjects : [],
+      scores:   currentExam ? currentExam.scores   : [],
+      history:  examTabs.filter(t => t.exam_id),
+      examTabs,
       genres: allGenres
-    };
-
-    return stringifyDates(response);
+    });
 
   } catch (e) {
-    // 実行時エラーが発生した場合はエラーメッセージを返す
-    return JSON.stringify({ error: 'GAS実行エラー: ' + e.toString() });
+    return { error: 'GAS実行エラー: ' + e.toString() };
   }
 }
 
@@ -98,7 +149,6 @@ function getInitialData(lineUserId) {
  */
 function stringifyDates(obj) {
   if (obj instanceof Date) {
-    // 日付型なら文字列に変換（日本時間の日付のみを抽出するなど調整可）
     return Utilities.formatDate(obj, "JST", "yyyy-MM-dd");
   }
   if (Array.isArray(obj)) {

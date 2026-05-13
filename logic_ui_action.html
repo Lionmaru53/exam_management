@@ -4,17 +4,19 @@
  * @param {string} studentId - 生徒ID
  * @param {string} examId - 試験ID
  */
-function handleSave(studentId, examId) {
-  const btn = document.getElementById('submitBtn');
+function handleSave(studentId, examId, btn) {
+  const button = btn || document.getElementById('submitBtn');
+  const panel = button ? button.closest('.tab-panel') : document;
   const scores = [];
+  const selectPrefix = `s_${examId}_`;
   
   // データの収集
-  document.querySelectorAll('select[id^="s_"]').forEach(el => {
-    const subId = el.id.replace('s_', '');
+  panel.querySelectorAll(`select[id^="${selectPrefix}"]`).forEach(el => {
+    const subId = el.id.slice(selectPrefix.length);
 
     const scoreVal = el.value;
-    const gradeRankVal = document.getElementById(`gr_${subId}`).value;
-    const classRankVal = document.getElementById(`cr_${subId}`).value;
+    const gradeRankVal = panel.querySelector(`#gr_${examId}_${subId}`)?.value || '';
+    const classRankVal = panel.querySelector(`#cr_${examId}_${subId}`)?.value || '';
 
     scores.push({
       subject_id: subId,
@@ -24,24 +26,24 @@ function handleSave(studentId, examId) {
     });
   });
 
-  btn.disabled = true;
-  btn.innerText = "保存中...";
+  button.disabled = true;
+  setLoading(true, ['得点データを保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
 
   google.script.run
     .withSuccessHandler(function(responseString) {
       const response = JSON.parse(responseString);
+      setLoading(false);
       btn.disabled = false;
-      btn.innerText = "一括保存する";
 
       if (response.success) {
         showMessage("正常に保存されました！", "success");
       } else {
-        showMessage("保存エラー: ", response.error, "error");
+        showMessage("保存エラー: " + response.error, "error");
       }
     })
     .withFailureHandler(function(err) {
+      setLoading(false);
       btn.disabled = false;
-      btn.innerText = "一括保存する";
       showMessage("通信エラーが発生しました: " + err.message, "error");
     })
     .saveAllScores({

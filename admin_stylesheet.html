@@ -13,6 +13,9 @@
     background: #333;
     padding: 10px;
     border-radius: 5px;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
   }
 
   .admin-nav button {
@@ -27,8 +30,14 @@
     background: #555;
   }
 
+  .admin-nav button.active {
+    background: #007bff;
+    border-color: #007bff;
+  }
+
   /* モーダルの背景 */
-  .modal-overlay {
+  .modal-overlay,
+  .modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
@@ -126,5 +135,215 @@
     font-size: 0.8rem;
     color: #888;
     text-transform: uppercase;
+  }
+
+  /* サブ区分追加ボタン */
+  .btn-subcourse {
+    font-size: 0.75rem;
+    padding: 3px 8px;
+    background: #f0f0f0;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: 10px;
+    vertical-align: middle;
+    font-weight: normal;
+  }
+  .btn-subcourse:hover {
+    background: #e0e0e0;
+  }
+
+  /* サブ区分エディタ */
+  .sub-course-editor {
+    padding: 10px 15px;
+    background: #f9f9f9;
+    border-bottom: 1px solid #ddd;
+    font-size: 0.9rem;
+  }
+
+  /* 共通教科設定パネル（グループ一括編集モード） */
+  .shared-subjects-panel {
+    padding: 14px 15px;
+    background: #fff8e1;
+    border-bottom: 1px solid #ffe082;
+  }
+
+  .subjects-grid {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .genre-col {
+    min-width: 110px;
+    flex: 1;
+  }
+
+  .genre-col-title {
+    font-weight: bold;
+    font-size: 0.85rem;
+    color: #555;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 4px;
+  }
+
+  .subject-label {
+    display: block;
+    padding: 2px 0;
+    font-size: 0.9rem;
+  }
+
+  .add-subject-row {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .add-subject-row .admin-input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    padding: 5px;
+  }
+
+  /* アクションボタン行 */
+  .pattern-actions {
+    padding: 8px 15px;
+    background: #f9f9f9;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 8px;
+  }
+
+  .pattern-actions .btn-save-admin,
+  .pattern-actions .btn-cancel-admin {
+    flex: none;
+    padding: 6px 16px;
+  }
+
+  /* ローディングオーバーレイ */
+  #loading-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    z-index: 9000;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    animation: overlay-fade-in 0.18s ease forwards;
+  }
+  #loading-overlay.active {
+    display: flex;
+  }
+  @keyframes overlay-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  /* スピナー */
+  .loading-spinner {
+    width: 46px;
+    height: 46px;
+    border: 5px solid #e0e0e0;
+    border-top-color: #007bff;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-label {
+    font-size: 0.88rem;
+    font-weight: bold;
+    color: #555;
+    letter-spacing: 0.04em;
+  }
+
+  /* コンテンツのタブ切り替えフェード */
+  #admin-content {
+    transition: opacity 0.12s ease;
+  }
+  #admin-content.section-fading {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 処理中のボタン全般 */
+  .admin-loading button,
+  .admin-loading input {
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  /* 階層ナビゲーション */
+  .hier-school { margin-bottom: 6px; }
+  .hier-course { margin-top: 2px; }
+  .hier-grade  { margin-top: 2px; }
+
+  .hier-school-header,
+  .hier-course-header,
+  .hier-grade-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 4px;
+  }
+  .hier-school-header {
+    padding: 8px 14px;
+    background: #e8eaf6;
+    border-left: 4px solid #3f51b5;
+    font-size: 1.05rem;
+    font-weight: bold;
+  }
+  .hier-course-header {
+    padding: 6px 14px 6px 28px;
+    background: #f3f4f6;
+    border-left: 3px solid #7986cb;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .hier-grade-header {
+    padding: 5px 14px 5px 44px;
+    background: #fafafa;
+    border-left: 2px solid #b0bec5;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .hier-school-header:hover { background: #c5cae9; }
+  .hier-course-header:hover { background: #e8eaf6; }
+  .hier-grade-header:hover  { background: #f0f0f0; }
+
+  .hier-arrow { font-size: 0.7em; flex-shrink: 0; }
+
+  /* サブ区分追加ボタン（学年ヘッダー内・右寄せ小字） */
+  .btn-subcourse-sm {
+    margin-left: auto;
+    font-size: 0.68rem;
+    padding: 2px 7px;
+  }
+
+  .hier-school-body { padding-left: 0; }
+  .hier-course-body { padding-left: 14px; }
+  .hier-grade-body  { padding-left: 28px; margin-bottom: 10px; }
+
+  .sub-course-label {
+    padding: 4px 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #555;
+    background: #f9f9f9;
+    border-left: 3px solid #ccc;
+    margin-top: 8px;
+    margin-bottom: 2px;
   }
 </style>
