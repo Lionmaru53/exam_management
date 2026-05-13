@@ -303,21 +303,22 @@ function loadData(userId) {
 window.onload = async function() {
   setLoading(true, 'データを読み込み中...');
   try {
-    // withLoginOnExternalBrowser を指定しない（デフォルト true）
-    // → PC ブラウザでも LINE Login へリダイレクトされる
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) {
-      liff.login();  // LINE app / PC どちらも同じ処理
+    await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: false });
+
+    if (!liff.isInClient()) {
+      // PC ブラウザ → 開発用フォームを表示（Google ログイン中でも GAS を呼ばずに済む）
+      showDevForm();
       return;
     }
+
+    // LINE アプリ内
+    if (!liff.isLoggedIn()) { liff.login(); return; }
     var profile = await liff.getProfile();
     loadData(profile.userId);
+
   } catch (err) {
     console.error('[LIFF]', err.message);
-    setLoading(false);
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('header').innerHTML =
-      `<p style="color:#dc3545;">初期化エラー: ${err.message}</p>`;
+    showDevForm();
   }
 };
 </script>
