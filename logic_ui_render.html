@@ -75,36 +75,6 @@ function getOptionsHtml(cache, selectedValue) {
   return cache;
 }
 
-// ---- 初期ロード ----
-
-window.onload = async function() {
-  setLoading(true, 'データを読み込み中...');
-  try {
-    await liff.init({ liffId: window.LIFF_ID });
-
-    if (!liff.isLoggedIn()) {
-      liff.login();
-      return;
-    }
-
-    const profile = await liff.getProfile();
-    google.script.run
-      .withSuccessHandler(renderApp)
-      .withFailureHandler(function(err) {
-        setLoading(false);
-        document.getElementById('app').style.display = 'block';
-        document.getElementById('header').innerHTML =
-          `<p style="color:#dc3545;">通信エラーが発生しました。再度お試しください。</p>`;
-      })
-      .getInitialData(profile.userId);
-  } catch (err) {
-    setLoading(false);
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('header').innerHTML =
-      `<p style="color:#dc3545;">LIFFの初期化に失敗しました: ${err.message}</p>`;
-  }
-};
-
 // ---- メイン描画 ----
 
 function renderApp(data) {

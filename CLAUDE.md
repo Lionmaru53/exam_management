@@ -8,6 +8,21 @@ Google Apps Script (GAS) + Google スプレッドシートで構成。
 
 ---
 
+## LIFF 設定の注意点
+
+GAS web app は `/exec` URL から `googleusercontent.com/userCodeAppPanel` へリダイレクトして HTML を配信する。
+LIFF はエンドポイント URL と実際の配信 URL を照合するため、**LINE Developers のエンドポイント URL には `/exec` URL ではなく `googleusercontent.com` URL を設定する必要がある**。
+
+```
+誤: https://script.google.com/macros/s/{scriptId}/exec
+正: https://n-{hash}-script.googleusercontent.com/userCodeAppPanel
+```
+
+`n-{hash}` のハッシュはスクリプト ID から生成される固定値で、再デプロイしても変わらない。
+変わるのは GAS プロジェクト自体を作り直したときのみ。
+
+---
+
 ## 技術スタック
 
 - **バックエンド**: Google Apps Script (GAS) — `.js` / `.html` ファイルを clasp で push

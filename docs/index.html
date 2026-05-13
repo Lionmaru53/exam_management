@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>定期テスト得点確認</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script src="config.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    :root { --primary-color: #007bff; --bg-color: #f8f9fa; }
+    html, body { -webkit-overflow-scrolling: touch; overflow-y: scroll; height: 100%; }
+    body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; padding: 20px; background: var(--bg-color); color: #333; }
+    select { padding: 5px; background-color: white; border: 1px solid #ccc; border-radius: 6px; height: 36px; font-size: 14px; cursor: pointer; vertical-align: middle; }
+    select:invalid, select:has(option[value=""]:checked) { color: #ccc; }
+    select option { color: #333; }
+    #app { will-change: transform; padding-bottom: 80px; }
+    #status-message { position: fixed; top: -100px; left: 50%; transform: translateX(-50%); width: 80%; max-width: 400px; z-index: 99999; padding: 15px; border-radius: 8px; text-align: center; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.15); opacity: 0; transition: all 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
+    #status-message.show { top: 20px; opacity: 1; }
+    .msg-success { background-color: #28a745; color: white; border: none; }
+    .msg-error   { background-color: #dc3545; color: white; border: none; }
+    #subject-list { display: block; width: 100%; }
+    .subject-table-container { width: 100%; overflow-x: auto; }
+    .tab-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .tab-button { appearance: none; border: 1px solid #ced4da; background: #fff; color: #495057; border-radius: 6px; padding: 10px 14px; cursor: pointer; transition: background 0.2s, border-color 0.2s; }
+    .tab-button.active { background: #f1f3f5; border-color: #adb5bd; font-weight: 700; }
+    .tab-panel { width: 100%; }
+    .tab-footer { margin-top: 14px; }
+    .test-name-header { background: #e9ecef; text-align: left; font-size: 1rem; padding: 12px; }
+    .subject-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .subject-table th, .subject-table td { border: 1px solid #dee2e6; padding: 10px 12px; text-align: left; vertical-align: middle; }
+    .subject-table th { background: #fdfeff; font-weight: 600; color: #343a40; }
+    .subject-table .genre-cell { font-weight: 700; }
+    .btn-save { width: 100%; padding: 15px; background: var(--primary-color); color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px; }
+    .btn-save:disabled { background: #ccc; }
+    .exam-header-container { margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    .student-name { font-size: 1.25rem; font-weight: bold; }
+    .student-info { font-size: 0.9rem; color: #555; }
+    #loading-overlay { display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.75); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); z-index: 9000; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+    #loading-overlay.active { display: flex; }
+    .loading-spinner { width: 46px; height: 46px; border: 5px solid #e0e0e0; border-top-color: #007bff; border-radius: 50%; animation: spin 0.75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-label { font-size: 0.88rem; font-weight: bold; color: #555; letter-spacing: 0.04em; }
+    /* 開発用フォーム */
+    .dev-card { padding: 16px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <div id="status-message"></div>
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-label" id="loading-label">読み込み中...</div>
+  </div>
+  <div id="app" style="display:none;">
+    <header id="header"></header>
+    <main id="subject-list"></main>
+    <footer id="footer"></footer>
+  </div>
+
+<script>
+// ---- メッセージ表示 ----
+function showMessage(text, type) {
+  const el = document.getElementById('status-message');
+  if (!el) return;
+  el.innerText = text;
+  el.className = type === 'success' ? 'msg-success' : 'msg-error';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ---- ローディング ----
+var _loadingTimer = null;
+function setLoading(active, messages, intervalMs) {
+  const overlay = document.getElementById('loading-overlay');
+  const label   = document.getElementById('loading-label');
+  if (!overlay) return;
+  if (_loadingTimer) { clearInterval(_loadingTimer); _loadingTimer = null; }
+  if (active) {
+    const msgs = Array.isArray(messages) ? messages : [messages || '処理中...'];
+    if (label) label.textContent = msgs[0];
+    overlay.classList.add('active');
+    if (msgs.length > 1) {
+      var idx = 0;
+      _loadingTimer = setInterval(function() {
+        idx = Math.min(idx + 1, msgs.length - 1);
+        if (label) label.textContent = msgs[idx];
+      }, intervalMs || 2500);
+    }
+  } else {
+    overlay.classList.remove('active');
+  }
+}
+
+// ---- オプション生成 ----
+var scoreOptionsCache = '';
+var rankOptionsCache  = '';
+function prepareOptions() {
+  scoreOptionsCache = '<option value="" disabled selected hidden>点数</option>';
+  for (var i = 100; i >= 0; i--) scoreOptionsCache += `<option value="${i}">${i}</option>`;
+  rankOptionsCache = '<option value="" disabled selected hidden>順位</option>';
+  for (var j = 1; j <= 400; j++) rankOptionsCache += `<option value="${j}">${j}</option>`;
+}
+function getOptionsHtml(cache, selected) {
+  if (selected === undefined || selected === null || selected === '') return cache;
+  cache = cache.replace('disabled selected hidden', 'selected');
+  cache = cache.replace(`value="${selected}"`, `value="${selected}" selected`);
+  return cache;
+}
+
+// ---- ジャンル色 ----
+function getGenreColor(name, alpha) {
+  var palette = { '数学':'#dbeafe','英語':'#fed7aa','国語':'#bbf7d0','理科':'#fbcfe8','社会':'#fde68a','その他':'#f8fafc' };
+  var hex = palette[name] || '#f8fafc';
+  var r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha||0.08})`;
+}
+
+// ---- GAS API 呼び出し ----
+async function fetchData(userId) {
+  const url = GAS_URL + '?userId=' + encodeURIComponent(userId);
+  const res  = await fetch(url, { redirect: 'follow' });
+  return res.json();
+}
+
+async function postSave(payload) {
+  // CORS preflight を避けるため GET で送信
+  const url = GAS_URL + '?action=saveScores&payload=' + encodeURIComponent(JSON.stringify(payload));
+  const res  = await fetch(url, { redirect: 'follow' });
+  return res.json();
+}
+
+// ---- 得点保存 ----
+function handleSave(studentId, examId, btn) {
+  const panel  = btn.closest('.tab-panel') || document;
+  const scores = [];
+  const prefix = `s_${examId}_`;
+  panel.querySelectorAll(`select[id^="${prefix}"]`).forEach(el => {
+    const subId = el.id.slice(prefix.length);
+    scores.push({
+      subject_id: subId,
+      score:      el.value,
+      grade_rank: (panel.querySelector(`#gr_${examId}_${subId}`) || {}).value || '',
+      class_rank: (panel.querySelector(`#cr_${examId}_${subId}`) || {}).value || ''
+    });
+  });
+
+  btn.disabled = true;
+  setLoading(true, ['得点データを保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
+
+  postSave({ student_id: studentId, exam_id: examId, scores: scores })
+    .then(function(result) {
+      setLoading(false);
+      btn.disabled = false;
+      if (result && result.success) {
+        showMessage('正常に保存されました！', 'success');
+      } else {
+        showMessage('保存エラー: ' + (result && result.error || '不明'), 'error');
+      }
+    })
+    .catch(function(err) {
+      setLoading(false);
+      btn.disabled = false;
+      showMessage('通信エラー: ' + err.message, 'error');
+    });
+}
+
+// ---- 描画 ----
+function renderApp(data) {
+  setLoading(false);
+  if (data.error) {
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('header').innerHTML = `<p style="color:#dc3545;">エラー: ${data.error}</p>`;
+    return;
+  }
+  prepareOptions();
+  document.getElementById('app').style.display = 'block';
+  const s = data.student;
+  const infoText = [s.school_name, s.school_course_name, s.grade, s.sub_course].filter(Boolean).join('　');
+  document.getElementById('header').innerHTML = `
+    <div class="exam-header-container">
+      <h2 style="margin:0 0 4px;">定期テスト得点入力フォーム</h2>
+      <p class="student-name">${s.name} さん <span class="student-info">(${infoText})</span></p>
+    </div>`;
+
+  const examTabs = data.examTabs || [];
+  if (examTabs.length === 0) {
+    document.getElementById('subject-list').innerHTML = '<p style="color:#888;">表示できる試験区分がありません。</p>';
+    return;
+  }
+
+  var html = '<div class="subject-tab-wrap"><div class="tab-nav">';
+  examTabs.forEach(function(exam, i) {
+    html += `<button type="button" class="tab-button${i===0?' active':''}" data-tab-id="${exam.term_test_id}" onclick="switchExamTab('${exam.term_test_id}')">${exam.test_name}</button>`;
+  });
+  html += '</div><div class="tab-content">';
+
+  examTabs.forEach(function(exam, ei) {
+    var grouped = (exam.subjects || []).reduce(function(acc, sub) {
+      var g = sub.genre_name || 'その他';
+      if (!acc[g]) acc[g] = [];
+      acc[g].push(sub);
+      return acc;
+    }, {});
+
+    html += `<div class="tab-panel" data-tab-id="${exam.term_test_id}" style="display:${ei===0?'block':'none'};">
+      <div class="subject-table-container"><table class="subject-table">
+        <thead>
+          <tr><th colspan="5" class="test-name-header">${exam.test_name}</th></tr>
+          <tr><th>教科</th><th>科目</th><th>点数</th><th>学年順位</th><th>クラス順位</th></tr>
+        </thead><tbody>`;
+
+    if (Object.keys(grouped).length === 0) {
+      html += `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:20px;">${exam.hasExam?'教科が未登録です':'教科パターンが未登録です'}</td></tr>`;
+    } else {
+      Object.keys(grouped).forEach(function(genreName) {
+        var rows = grouped[genreName];
+        var bg   = getGenreColor(genreName, 0.12);
+        rows.forEach(function(sub, si) {
+          var sc    = (exam.scores || []).find(function(x){ return x.subject_id === sub.subject_id; }) || {};
+          var sOpt  = getOptionsHtml(scoreOptionsCache, sc.score);
+          var grOpt = getOptionsHtml(rankOptionsCache, sc.grade_rank);
+          var crOpt = getOptionsHtml(rankOptionsCache, sc.class_rank);
+          html += `<tr style="background-color:${bg};">
+            ${si===0?`<td class="genre-cell" rowspan="${rows.length}" style="background-color:${bg};">${genreName}</td>`:''}
+            <td>${sub.subject_name}</td>
+            <td><select id="s_${exam.exam_id}_${sub.subject_id}">${sOpt}</select></td>
+            <td><select id="gr_${exam.exam_id}_${sub.subject_id}">${grOpt}</select></td>
+            <td><select id="cr_${exam.exam_id}_${sub.subject_id}">${crOpt}</select></td>
+          </tr>`;
+        });
+      });
+    }
+
+    html += '</tbody></table>';
+    if (exam.exam_id && Object.keys(grouped).length > 0) {
+      html += `<div class="tab-footer"><button type="button" class="btn-save" onclick="handleSave('${s.student_id}','${exam.exam_id}',this)">一括保存する</button></div>`;
+    } else if (!exam.hasExam) {
+      html += '<p style="text-align:center;color:#aaa;font-size:0.85rem;margin-top:12px;">試験日程が未登録のため、得点入力できません</p>';
+    }
+    html += '</div></div>';
+  });
+
+  html += '</div></div>';
+  document.getElementById('subject-list').innerHTML = html;
+  document.getElementById('footer').innerHTML = '';
+}
+
+function switchExamTab(tabId) {
+  document.querySelectorAll('.tab-button').forEach(function(b){ b.classList.toggle('active', b.dataset.tabId===tabId); });
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.style.display = p.dataset.tabId===tabId?'block':'none'; });
+}
+
+// ---- 開発用フォーム（LINE アプリ外のアクセス） ----
+function showDevForm() {
+  setLoading(false);
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('header').innerHTML = `
+    <div class="dev-card">
+      <p style="margin:0 0 8px;font-weight:bold;">🔧 開発用テストモード</p>
+      <p style="margin:0 0 8px;font-size:0.9em;color:#555;">line_user_id を直接入力してテストできます。</p>
+      <input id="dev-uid" type="text" placeholder="Uxxxxxxxxxxxxxxxxx"
+        style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">
+      <button onclick="onDevLogin()"
+        style="margin-top:8px;padding:8px 20px;background:#06c755;color:#fff;border:none;border-radius:4px;cursor:pointer;">
+        この ID で読み込む
+      </button>
+    </div>`;
+}
+
+function onDevLogin() {
+  var uid = (document.getElementById('dev-uid') || {}).value || '';
+  uid = uid.trim();
+  if (!uid) { alert('line_user_id を入力してください'); return; }
+  loadData(uid);
+}
+
+function loadData(userId) {
+  setLoading(true, ['データを読み込み中...', '少々お待ちください...', 'サーバーに接続中...'], 5000);
+  fetchData(userId)
+    .then(renderApp)
+    .catch(function(err) {
+      setLoading(false);
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('header').innerHTML = `<p style="color:#dc3545;">通信エラー: ${err.message}</p>`;
+    });
+}
+
+// ---- 起動 ----
+window.onload = async function() {
+  setLoading(true, 'データを読み込み中...');
+  try {
+    await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: false });
+    if (!liff.isInClient()) {
+      showDevForm();
+      return;
+    }
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    var profile = await liff.getProfile();
+    loadData(profile.userId);
+  } catch (err) {
+    console.error('[LIFF]', err.message);
+    showDevForm();
+  }
+};
+</script>
+</body>
+</html>
