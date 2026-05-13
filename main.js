@@ -23,24 +23,26 @@ function doGet(e) {
     }
   }
 
-  // データ取得 API（GitHub Pages の LIFF フロントエンドから呼ばれる）
+  // 生徒アプリ：GitHub Pages で userId 取得後リダイレクトされてくる
   if (params.userId) {
     try {
-      const data = getInitialData(params.userId);
-      return jsonpOrJson(JSON.stringify(data), params.callback);
+      const data    = getInitialData(params.userId);
+      const tmpl    = HtmlService.createTemplateFromFile('index_app');
+      tmpl.appData  = JSON.stringify(data);
+      return tmpl.evaluate()
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setTitle('定期テスト得点確認');
     } catch (err) {
-      return jsonpOrJson(JSON.stringify({ error: err.toString() }), params.callback);
+      return HtmlService.createHtmlOutput(
+        `<p style="color:red;padding:20px;">エラー: ${err.toString()}</p>`
+      );
     }
   }
 
   // デフォルト（直接アクセス）
-  return HtmlService.createHtmlOutput(`
-    <!DOCTYPE html><html><head>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-    </head><body style="font-family:sans-serif;padding:24px;text-align:center;">
-      <p>このページは LINE アプリからご利用ください。</p>
-    </body></html>
-  `);
+  return HtmlService.createHtmlOutput(
+    '<p style="font-family:sans-serif;padding:24px;text-align:center;">LINE アプリからアクセスしてください。</p>'
+  );
 }
 
 /**
