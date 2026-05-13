@@ -12,3 +12,4 @@
 .git/**
 node_modules/**
 Underscore.d.ts
+docs/**
