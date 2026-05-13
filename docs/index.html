@@ -115,18 +115,32 @@ function getGenreColor(name, alpha) {
   return `rgba(${r},${g},${b},${alpha||0.08})`;
 }
 
-// ---- GAS API 呼び出し ----
-async function fetchData(userId) {
-  const url = GAS_URL + '?userId=' + encodeURIComponent(userId);
-  const res  = await fetch(url, { redirect: 'follow' });
-  return res.json();
+// ---- GAS API 呼び出し（JSONP で CORS 回避）----
+function jsonpFetch(url) {
+  return new Promise(function(resolve, reject) {
+    var cb = '_cb' + Date.now() + Math.random().toString(36).slice(2);
+    var script = document.createElement('script');
+    window[cb] = function(data) {
+      delete window[cb];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+    script.onerror = function() {
+      delete window[cb];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('通信に失敗しました'));
+    };
+    script.src = url + '&callback=' + cb;
+    document.head.appendChild(script);
+  });
 }
 
-async function postSave(payload) {
-  // CORS preflight を避けるため GET で送信
-  const url = GAS_URL + '?action=saveScores&payload=' + encodeURIComponent(JSON.stringify(payload));
-  const res  = await fetch(url, { redirect: 'follow' });
-  return res.json();
+function fetchData(userId) {
+  return jsonpFetch(GAS_URL + '?userId=' + encodeURIComponent(userId));
+}
+
+function postSave(payload) {
+  return jsonpFetch(GAS_URL + '?action=saveScores&payload=' + encodeURIComponent(JSON.stringify(payload)));
 }
 
 // ---- 得点保存 ----

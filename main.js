@@ -17,11 +17,9 @@ function doGet(e) {
     try {
       const payload = JSON.parse(params.payload || '{}');
       const result  = saveAllScores(payload);
-      return ContentService.createTextOutput(result)
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonpOrJson(result, params.callback);
     } catch (err) {
-      return ContentService.createTextOutput(JSON.stringify({ error: err.toString() }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonpOrJson(JSON.stringify({ error: err.toString() }), params.callback);
     }
   }
 
@@ -29,11 +27,9 @@ function doGet(e) {
   if (params.userId) {
     try {
       const data = getInitialData(params.userId);
-      return ContentService.createTextOutput(JSON.stringify(data))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonpOrJson(JSON.stringify(data), params.callback);
     } catch (err) {
-      return ContentService.createTextOutput(JSON.stringify({ error: err.toString() }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return jsonpOrJson(JSON.stringify({ error: err.toString() }), params.callback);
     }
   }
 
@@ -45,6 +41,19 @@ function doGet(e) {
       <p>このページは LINE アプリからご利用ください。</p>
     </body></html>
   `);
+}
+
+/**
+ * JSONP または JSON でレスポンスを返す
+ * callback パラメータがあれば JSONP 形式（CORS 回避）、なければ JSON
+ */
+function jsonpOrJson(jsonStr, callback) {
+  if (callback) {
+    return ContentService.createTextOutput(callback + '(' + jsonStr + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(jsonStr)
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 /**
