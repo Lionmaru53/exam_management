@@ -44,32 +44,34 @@ function ensureSchoolSettingsSheet(ss) {
   return sheet;
 }
 
-function getAdminInitialData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const results = {};
-  const targetSheetNames = {
-    termTests: 'term_tests_master',
-    schedules: 'exam_schedule',
-    patterns: 'exam_patterns',
-    subjects: 'subjects_master',
-    patternSubjects: 'pattern_subjects',
-    genres: 'genres_master'
-  };
-
+function getAdminInitialData(callerEmail) {
   try {
+    // 認証チェック（Phase 0: クライアントから受け取ったメールで照合）
+    const adminContext = getAdminContext(callerEmail || '');
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) throw new Error('スプレッドシートにアクセスできません。スクリプトがスプレッドシートに紐付けられているか確認してください。');
+
+    const results = { adminContext };
+    const targetSheetNames = {
+      termTests:      'term_tests_master',
+      schedules:      'exam_schedule',
+      patterns:       'exam_patterns',
+      subjects:       'subjects_master',
+      patternSubjects: 'pattern_subjects',
+      genres:         'genres_master'
+    };
+
     for (let key in targetSheetNames) {
       const sheetName = targetSheetNames[key];
       const sheet = ss.getSheetByName(sheetName);
-      if (!sheet) {
-        throw new Error(`シート "${sheetName}" が見つかりませんでした。`);
-      }
+      if (!sheet) throw new Error(`シート "${sheetName}" が見つかりませんでした。`);
       results[key] = stringifyDates(getRowsData(sheet));
     }
 
     const settingSheet = ensureSchoolSettingsSheet(ss);
     results.schoolSettings = getSchoolCoursesFromSettingsSheet(settingSheet);
 
-    // フロントエンドとの互換性のため exams = schedules とする
     results.exams = results.schedules;
 
     results.subjects = results.subjects.map(s => {

@@ -1,0 +1,230 @@
+<script>
+let _auStore = [];
+let _auAddMode = false;
+let _auEditEmail = null;
+
+function _auPush(obj) {
+  _auStore.push(obj);
+  return _auStore.length - 1;
+}
+
+function renderAdminUserManager() {
+  _auStore   = [];
+  _auAddMode = false;
+  _auEditEmail = null;
+
+  const content = document.getElementById('admin-content');
+  content.innerHTML = '<h3>管理者管理</h3><p>読み込み中...</p>';
+
+  setLoading(true, '管理者一覧を取得中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _renderAdminUserList(res.adminUsers || []);
+      } else {
+        showMessage((res && res.error) || '管理者一覧の取得に失敗しました。', 'error');
+        content.innerHTML = '<h3>管理者管理</h3>';
+      }
+    })
+    .withFailureHandler(function () {
+      setLoading(false);
+      showMessage('通信エラーが発生しました。', 'error');
+    })
+    .getAdminUsers(window.callerEmail);
+}
+
+function _renderAdminUserList(adminUsers) {
+  _auStore = [];
+  const content = document.getElementById('admin-content');
+
+  let html = '<h3>管理者管理</h3>';
+
+  // 追加フォーム
+  if (_auAddMode) {
+    html += `
+      <div class="admin-genre-container" style="margin-bottom:16px;">
+        <h4 class="admin-genre-title">管理者を追加</h4>
+        <div style="display:flex; flex-direction:column; gap:10px; max-width:420px;">
+          <label>メールアドレス<br>
+            <input type="email" id="au_email" placeholder="example@gmail.com" class="admin-input" style="width:100%;" />
+          </label>
+          <label>ロール<br>
+            <select id="au_role" class="admin-select" onchange="_auRoleChange()" style="width:100%;">
+              <option value="branch_admin">校舎管理者</option>
+              <option value="master">マスター管理者</option>
+            </select>
+          </label>
+          <label id="au_cram_label">担当校舎ID<br>
+            <input type="text" id="au_cram_id" placeholder="例: C001" class="admin-input" style="width:100%;" />
+          </label>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-save-admin" onclick="_auSubmitAdd()">追加</button>
+            <button class="btn-cancel-admin" onclick="_auCancelAdd()">キャンセル</button>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    html += `<button onclick="_auStartAdd()" style="margin-bottom:16px;">＋ 管理者を追加</button>`;
+  }
+
+  // 一覧テーブル
+  html += `<table class="admin-table">
+    <thead><tr>
+      <th>メールアドレス</th>
+      <th>ロール</th>
+      <th>担当校舎ID</th>
+      <th>状態</th>
+      <th style="width:200px;">操作</th>
+    </tr></thead><tbody>`;
+
+  adminUsers.forEach(user => {
+    const isActive   = user.is_active === true || String(user.is_active) === '1' || String(user.is_active) === 'true';
+    const roleLabel  = user.role === 'master' ? 'マスター' : '校舎管理者';
+    const stateLabel = isActive ? '<span style="color:#2a9d2a;">有効</span>' : '<span style="color:#999;">無効</span>';
+    const isEditing  = _auEditEmail === user.email;
+
+    if (isEditing) {
+      const editIdx = _auPush({ email: user.email });
+      html += `<tr style="background:#fffde7;">
+        <td>${user.email}</td>
+        <td><select id="au_edit_role_${editIdx}" class="admin-select" style="width:auto;" onchange="_auEditRoleChange(${editIdx})">
+          <option value="branch_admin" ${user.role !== 'master' ? 'selected' : ''}>校舎管理者</option>
+          <option value="master" ${user.role === 'master' ? 'selected' : ''}>マスター管理者</option>
+        </select></td>
+        <td><input type="text" id="au_edit_cram_${editIdx}" value="${user.cram_id || ''}" class="admin-input" style="width:80px;" /></td>
+        <td>${stateLabel}</td>
+        <td>
+          <button class="btn-save-admin" onclick="_auSubmitEdit(${editIdx})">保存</button>
+          <button class="btn-cancel-admin" onclick="_auCancelEdit()">キャンセル</button>
+        </td>
+      </tr>`;
+    } else {
+      const idx = _auPush({ email: user.email, is_active: isActive });
+      html += `<tr>
+        <td>${user.email}</td>
+        <td>${roleLabel}</td>
+        <td>${user.cram_id || '—'}</td>
+        <td>${stateLabel}</td>
+        <td>`;
+      if (user.email !== adminContext.email) {
+        html += `<button onclick="_auStartEdit(${idx})" style="margin-right:4px;">変更</button>`;
+        if (isActive) {
+          html += `<button class="btn-cancel-admin" onclick="_auDeactivate(${idx})">無効化</button>`;
+        }
+      } else {
+        html += '<span style="color:#aaa; font-size:0.85em;">（自分）</span>';
+      }
+      html += `</td></tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  content.innerHTML = html;
+}
+
+// ---- 追加フォーム ----
+
+function _auStartAdd() {
+  _auAddMode   = true;
+  _auEditEmail = null;
+  renderAdminUserManager();
+}
+
+function _auCancelAdd() {
+  _auAddMode = false;
+  renderAdminUserManager();
+}
+
+function _auRoleChange() {
+  const role  = document.getElementById('au_role')?.value;
+  const label = document.getElementById('au_cram_label');
+  if (label) label.style.display = role === 'master' ? 'none' : '';
+}
+
+function _auSubmitAdd() {
+  const email   = document.getElementById('au_email')?.value.trim();
+  const role    = document.getElementById('au_role')?.value;
+  const cram_id = role === 'master' ? '' : (document.getElementById('au_cram_id')?.value.trim() || '');
+
+  if (!email) { showMessage('メールアドレスを入力してください。', 'error'); return; }
+
+  setLoading(true, '管理者を追加中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _auAddMode = false;
+        showMessage('管理者を追加しました。', 'success');
+        renderAdminUserManager();
+      } else {
+        showMessage((res && res.error) || '追加に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .addAdminUser(window.callerEmail, { email, role, cram_id });
+}
+
+// ---- 編集 ----
+
+function _auStartEdit(idx) {
+  _auEditEmail = _auStore[idx].email;
+  _auAddMode   = false;
+  renderAdminUserManager();
+}
+
+function _auCancelEdit() {
+  _auEditEmail = null;
+  renderAdminUserManager();
+}
+
+function _auEditRoleChange(idx) {
+  const role   = document.getElementById(`au_edit_role_${idx}`)?.value;
+  const cramEl = document.getElementById(`au_edit_cram_${idx}`);
+  if (cramEl) cramEl.style.display = role === 'master' ? 'none' : '';
+}
+
+function _auSubmitEdit(idx) {
+  const { email } = _auStore[idx];
+  const role      = document.getElementById(`au_edit_role_${idx}`)?.value;
+  const cram_id   = role === 'master' ? '' : (document.getElementById(`au_edit_cram_${idx}`)?.value.trim() || '');
+
+  setLoading(true, '管理者情報を更新中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _auEditEmail = null;
+        showMessage('管理者情報を更新しました。', 'success');
+        renderAdminUserManager();
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .updateAdminUser(window.callerEmail, { email, role, cram_id });
+}
+
+// ---- 無効化 ----
+
+function _auDeactivate(idx) {
+  const { email } = _auStore[idx];
+  if (!confirm(`${email} を無効化しますか？\nこの管理者はログインできなくなります。`)) return;
+
+  setLoading(true, '管理者を無効化中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('管理者を無効化しました。', 'success');
+        renderAdminUserManager();
+      } else {
+        showMessage((res && res.error) || '無効化に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .deactivateAdminUser(window.callerEmail, email);
+}
+
+window.renderAdminUserManager = renderAdminUserManager;
+</script>

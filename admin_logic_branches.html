@@ -1,0 +1,23 @@
+<script>
+function renderBranchManager() {
+  const content = document.getElementById('admin-content');
+  content.innerHTML = `
+    <h3>校舎管理</h3>
+    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 16px; margin-bottom:16px; font-size:0.9em; color:#5d4037;">
+      ⚠ この機能は <strong>Phase 1（親SS・子SS間ルーティング）</strong> 完成後に実装されます。<br>
+      実装内容: 校舎一覧表示 / 新規校舎作成（テンプレートSSからの自動コピー）/ 校舎情報編集
+    </div>
+    <table class="admin-table">
+      <thead><tr>
+        <th>校舎ID</th><th>校舎名</th><th>子SS</th><th>担当管理者</th><th>状態</th><th>操作</th>
+      </tr></thead>
+      <tbody>
+        <tr><td colspan="6" style="text-align:center; color:#aaa; padding:24px;">（実装予定）</td></tr>
+      </tbody>
+    </table>
+    <button disabled style="margin-top:12px; opacity:0.5; cursor:not-allowed;">＋ 新規校舎を追加（準備中）</button>
+  `;
+}
+
+window.renderBranchManager = renderBranchManager;
+</script>

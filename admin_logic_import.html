@@ -1,0 +1,49 @@
+<script>
+function renderImportManager() {
+  const content = document.getElementById('admin-content');
+  content.innerHTML = `
+    <h3>生徒データインポート</h3>
+    <p>別システムからエクスポートした校舎別の Excel ファイル（.xlsx）をアップロードしてください。</p>
+    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 16px; margin-bottom:16px; font-size:0.9em; color:#5d4037;">
+      ⚠ この機能は <strong>Phase 1（親SS・子SS間ルーティング）</strong> 完成後に有効化されます。<br>
+      現在はファイル選択のみ可能で、実際のインポートは行われません。
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; margin:16px 0;">
+      <input type="file" id="import-file" accept=".xlsx" />
+      <button onclick="_doImport()" disabled style="opacity:0.5; cursor:not-allowed;">インポート実行（準備中）</button>
+    </div>
+    <div id="import-result"></div>
+  `;
+}
+
+function _doImport() {
+  const fileInput = document.getElementById('import-file');
+  if (!fileInput || !fileInput.files.length) {
+    showMessage('ファイルを選択してください。', 'error');
+    return;
+  }
+  const file   = fileInput.files[0];
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const base64 = e.target.result.split(',')[1];
+    setLoading(true, ['ファイルを解析中...', 'データを変換中...', 'マスターデータに書き込み中...', 'もうしばらくお待ちください...']);
+    google.script.run
+      .withSuccessHandler(function (res) {
+        setLoading(false);
+        if (res && res.success) {
+          showMessage(`インポート完了: ${res.added}件追加、${res.updated}件更新しました。`, 'success');
+        } else {
+          showMessage((res && res.error) || 'インポートに失敗しました。', 'error');
+        }
+      })
+      .withFailureHandler(function () {
+        setLoading(false);
+        showMessage('通信エラーが発生しました。', 'error');
+      })
+      .importStudentData(base64, file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+window.renderImportManager = renderImportManager;
+</script>

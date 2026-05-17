@@ -15,12 +15,21 @@
     <div class="loading-label" id="loading-label">読み込み中...</div>
   </div>
 
-  <nav class="admin-nav">
-    <button onclick="loadSection('patterns')">教科パターン管理</button>
-    <button onclick="loadSection('exams')">試験日程管理</button>
-  </nav>
+  <!-- ログイン画面 -->
+  <div id="login-screen" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; gap:16px;">
+    <h2 style="margin:0;">管理者ログイン</h2>
+    <p style="color:#666; margin:0;">登録済みのメールアドレスを入力してください。</p>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="email" id="login-email" placeholder="admin@example.com"
+        style="padding:10px 14px; border:1px solid #ccc; border-radius:4px; width:260px; font-size:1em;"
+        onkeydown="if(event.key==='Enter') doLogin()" />
+      <button onclick="doLogin()" style="padding:10px 20px;">ログイン</button>
+    </div>
+  </div>
 
-  <div id="admin-content">
+  <nav class="admin-nav" id="admin-nav" style="display:none;"></nav>
+
+  <div id="admin-content" style="display:none;">
     <h3>管理パネルへようこそ</h3>
     <p>上のメニューから操作を選択してください。</p>
   </div>
@@ -32,13 +41,20 @@
   <?!= include('common_showMessage'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
+  <?!= include('admin_logic_import'); ?>
+  <?!= include('admin_logic_admin_users'); ?>
+  <?!= include('admin_logic_branches'); ?>
+  <?!= include('admin_logic_master_data'); ?>
 
   <script>
-    window.masterData = {};
+    window.masterData    = {};
+    window.adminContext  = { role: '', cram_id: '', email: '' };
     window.currentSection = 'patterns';
+    window.callerEmail   = '';
 
     var _loadingMsgTimer = null;
 
+    // ---- ローディング ----
     window.setLoading = function (active, messages, intervalMs) {
       const overlay = document.getElementById('loading-overlay');
       const label   = document.getElementById('loading-label');
@@ -66,31 +82,70 @@
       }
     };
 
+    // ---- ナビゲーション ----
+    function _renderNav(role) {
+      const tabs = [
+        { section: 'patterns',   label: '教科パターン管理' },
+        { section: 'exams',      label: '試験日程管理' },
+        { section: 'import',     label: '生徒インポート' }
+      ];
+      if (role === 'master') {
+        tabs.push(
+          { section: 'adminUsers', label: '管理者管理' },
+          { section: 'branches',   label: '校舎管理' },
+          { section: 'masterData', label: 'マスターデータ' }
+        );
+      }
+      const nav = document.getElementById('admin-nav');
+      nav.innerHTML = tabs.map(t =>
+        `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
+      ).join('');
+      nav.style.display = '';
+      document.getElementById('admin-content').style.display = '';
+    }
+
+    // ---- ログイン ----
+    window.doLogin = function () {
+      const input = document.getElementById('login-email');
+      const email = input ? input.value.trim() : '';
+      if (!email) { showMessage('メールアドレスを入力してください。', 'error'); return; }
+      window.callerEmail = email;
+      document.getElementById('login-screen').style.display = 'none';
+      window.refreshMasterData(() => window.loadSection('patterns'));
+    };
+
+    // ---- データ取得 ----
     window.refreshMasterData = function (callback) {
       setLoading(true, 'データを読み込み中...');
       google.script.run
         .withSuccessHandler(function (data) {
           if (data && !data.error) {
-            window.masterData = data;
-            if (typeof callback === 'function') {
-              callback();
-            }
+            window.masterData   = data;
+            window.adminContext = data.adminContext || window.adminContext;
+            _renderNav(window.adminContext.role);
+            if (typeof callback === 'function') callback();
           } else {
             showMessage((data && data.error) || 'データの取得に失敗しました。', 'error');
+            // 認証失敗時はログイン画面に戻す
+            if (data && data.error && data.error.includes('権限')) {
+              document.getElementById('login-screen').style.display = '';
+            }
           }
           setLoading(false);
         })
         .withFailureHandler(function (err) {
-          showMessage('通信エラーが発生しました。再度お試しください。', 'error');
+          const msg = (err && err.message) ? err.message : JSON.stringify(err);
+          showMessage('エラー: ' + msg, 'error');
           setLoading(false);
         })
-        .getAdminInitialData();
+        .getAdminInitialData(window.callerEmail);
     };
 
+    // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      window.currentSection = section === 'patterns' ? 'patterns' : 'exams';
+      const valid = ['patterns', 'exams', 'import', 'adminUsers', 'branches', 'masterData'];
+      window.currentSection = valid.includes(section) ? section : 'patterns';
 
-      // ローディングオーバーレイが出ていないときだけコンテンツをフェードして切り替え
       const overlay = document.getElementById('loading-overlay');
       const content = document.getElementById('admin-content');
       if (overlay && overlay.classList.contains('active')) {
@@ -105,28 +160,28 @@
     };
 
     window.renderSection = function (section) {
-      const tabs = document.querySelectorAll('.admin-nav button');
-      tabs.forEach(button => {
-        button.classList.toggle('active', button.textContent.includes(section === 'patterns' ? '教科パターン' : '試験日程'));
+      // アクティブタブを更新
+      document.querySelectorAll('.admin-nav button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.section === section);
       });
 
-      if (section === 'patterns') {
-        renderPatternManager(window.masterData);
-      } else {
-        renderExamManager(window.masterData);
-      }
+      const renderers = {
+        patterns:   function () { renderPatternManager(window.masterData); },
+        exams:      function () { renderExamManager(window.masterData); },
+        import:     function () { renderImportManager(); },
+        adminUsers: function () { renderAdminUserManager(); },
+        branches:   function () { renderBranchManager(); },
+        masterData: function () { renderMasterDataManager(window.masterData); }
+      };
+      (renderers[section] || renderers.patterns)();
     };
 
     window.closeModal = function () {
       const modal = document.getElementById('pattern-modal');
-      if (modal) {
-        modal.style.display = 'none';
-      }
+      if (modal) modal.style.display = 'none';
     };
 
-    document.addEventListener('DOMContentLoaded', function () {
-      window.refreshMasterData(() => window.loadSection('patterns'));
-    });
+    // ログインボタン押下後に refreshMasterData を呼ぶため、自動ロードなし
   </script>
 </body>
 

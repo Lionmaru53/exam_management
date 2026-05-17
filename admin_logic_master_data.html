@@ -1,0 +1,266 @@
+<script>
+let _mdStore       = [];
+let _mdTab         = 'termTests';
+let _mdEditId      = null;
+let _mdAddMode     = false;
+
+function _mdPush(obj) {
+  _mdStore.push(obj);
+  return _mdStore.length - 1;
+}
+
+function renderMasterDataManager(data) {
+  _mdStore   = [];
+  const content = document.getElementById('admin-content');
+
+  const tabs = [
+    { key: 'termTests', label: '試験区分' },
+    { key: 'genres',    label: '教科ジャンル' },
+    { key: 'subjects',  label: '教科一覧' }
+  ];
+
+  let html = `<h3>共通マスターデータ管理</h3>`;
+  html += `<div style="display:flex; gap:8px; margin-bottom:16px;">`;
+  tabs.forEach(t => {
+    const active = _mdTab === t.key ? 'background:#4a90d9; color:#fff;' : 'background:#eee;';
+    html += `<button style="${active} border:none; padding:6px 14px; border-radius:4px; cursor:pointer;" onclick="_mdSwitchTab('${t.key}')">${t.label}</button>`;
+  });
+  html += `</div>`;
+
+  if (_mdTab === 'termTests') {
+    html += _renderTermTests(data);
+  } else if (_mdTab === 'genres') {
+    html += _renderGenres(data);
+  } else {
+    html += _renderSubjects(data);
+  }
+
+  content.innerHTML = html;
+}
+
+function _mdSwitchTab(tab) {
+  _mdTab    = tab;
+  _mdEditId = null;
+  _mdAddMode = false;
+  _mdStore  = [];
+  renderMasterDataManager(window.masterData);
+}
+
+// ---- 試験区分 ----
+
+function _renderTermTests(data) {
+  const termTests = Array.isArray(data.termTests) ? data.termTests : [];
+  let html = '';
+
+  if (_mdAddMode) {
+    html += `<div class="admin-genre-container" style="margin-bottom:12px;">
+      <h4 class="admin-genre-title">試験区分を追加</h4>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="md_tt_name" placeholder="試験名（例: 1学期中間）" class="admin-input" style="width:200px;" />
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="md_tt_two_terms" /> 2学期制
+        </label>
+        <button class="btn-save-admin" onclick="_mdAddTermTest()">追加</button>
+        <button class="btn-cancel-admin" onclick="_mdCancelAdd()">キャンセル</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button onclick="_mdStartAdd()" style="margin-bottom:12px;">＋ 試験区分を追加</button>`;
+  }
+
+  html += `<table class="admin-table">
+    <thead><tr><th>ID</th><th>試験名</th><th>学期制</th><th style="width:120px;">操作</th></tr></thead>
+    <tbody>`;
+
+  termTests.forEach(tt => {
+    const isTwoTerms = String(tt.is_two_terms).trim() === '1';
+    const termLabel  = isTwoTerms ? '2学期制' : '3学期制';
+
+    if (_mdEditId === tt.term_test_id) {
+      const idx = _mdPush({ term_test_id: tt.term_test_id });
+      html += `<tr style="background:#fffde7;">
+        <td style="font-size:0.8em; color:#888;">${tt.term_test_id}</td>
+        <td><input type="text" id="md_tt_edit_name_${idx}" value="${tt.test_name}" class="admin-input" style="width:160px;" /></td>
+        <td><label><input type="checkbox" id="md_tt_edit_two_${idx}" ${isTwoTerms ? 'checked' : ''} /> 2学期制</label></td>
+        <td>
+          <button class="btn-save-admin" onclick="_mdSaveTermTest(${idx})">保存</button>
+          <button class="btn-cancel-admin" onclick="_mdCancelEdit()">取消</button>
+        </td>
+      </tr>`;
+    } else {
+      const idx = _mdPush({ term_test_id: tt.term_test_id });
+      html += `<tr>
+        <td style="font-size:0.8em; color:#888;">${tt.term_test_id}</td>
+        <td>${tt.test_name}</td>
+        <td>${termLabel}</td>
+        <td><button onclick="_mdStartEdit('${tt.term_test_id}')">編集</button></td>
+      </tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  return html;
+}
+
+function _mdStartAdd()   { _mdAddMode = true;  _mdEditId = null; renderMasterDataManager(window.masterData); }
+function _mdCancelAdd()  { _mdAddMode = false; renderMasterDataManager(window.masterData); }
+function _mdStartEdit(id){ _mdEditId = id; _mdAddMode = false; renderMasterDataManager(window.masterData); }
+function _mdCancelEdit() { _mdEditId = null; renderMasterDataManager(window.masterData); }
+
+function _mdAddTermTest() {
+  const name       = document.getElementById('md_tt_name')?.value.trim();
+  const isTwoTerms = document.getElementById('md_tt_two_terms')?.checked ? '1' : '0';
+  if (!name) { showMessage('試験名を入力してください。', 'error'); return; }
+
+  setLoading(true, '試験区分を追加中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _mdAddMode = false;
+        showMessage('試験区分を追加しました。', 'success');
+        refreshMasterData(() => renderMasterDataManager(window.masterData));
+      } else {
+        showMessage((res && res.error) || '追加に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .upsertTermTest({ test_name: name, is_two_terms: isTwoTerms });
+}
+
+function _mdSaveTermTest(idx) {
+  const { term_test_id } = _mdStore[idx];
+  const name       = document.getElementById(`md_tt_edit_name_${idx}`)?.value.trim();
+  const isTwoTerms = document.getElementById(`md_tt_edit_two_${idx}`)?.checked ? '1' : '0';
+  if (!name) { showMessage('試験名を入力してください。', 'error'); return; }
+
+  setLoading(true, '試験区分を更新中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _mdEditId = null;
+        showMessage('試験区分を更新しました。', 'success');
+        refreshMasterData(() => renderMasterDataManager(window.masterData));
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .upsertTermTest({ term_test_id, test_name: name, is_two_terms: isTwoTerms });
+}
+
+// ---- 教科ジャンル ----
+
+function _renderGenres(data) {
+  const genres = Array.isArray(data.genres) ? data.genres : [];
+  let html = '';
+
+  if (_mdAddMode) {
+    html += `<div class="admin-genre-container" style="margin-bottom:12px;">
+      <h4 class="admin-genre-title">ジャンルを追加</h4>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="text" id="md_g_name" placeholder="ジャンル名（例: 文系）" class="admin-input" style="width:200px;" />
+        <button class="btn-save-admin" onclick="_mdAddGenre()">追加</button>
+        <button class="btn-cancel-admin" onclick="_mdCancelAdd()">キャンセル</button>
+      </div>
+    </div>`;
+  } else {
+    html += `<button onclick="_mdStartAdd()" style="margin-bottom:12px;">＋ ジャンルを追加</button>`;
+  }
+
+  html += `<table class="admin-table">
+    <thead><tr><th>ID</th><th>ジャンル名</th><th style="width:120px;">操作</th></tr></thead>
+    <tbody>`;
+
+  genres.forEach(g => {
+    if (_mdEditId === g.genre_id) {
+      const idx = _mdPush({ genre_id: g.genre_id });
+      html += `<tr style="background:#fffde7;">
+        <td style="font-size:0.8em; color:#888;">${g.genre_id}</td>
+        <td><input type="text" id="md_g_edit_${idx}" value="${g.genre_name}" class="admin-input" style="width:160px;" /></td>
+        <td>
+          <button class="btn-save-admin" onclick="_mdSaveGenre(${idx})">保存</button>
+          <button class="btn-cancel-admin" onclick="_mdCancelEdit()">取消</button>
+        </td>
+      </tr>`;
+    } else {
+      html += `<tr>
+        <td style="font-size:0.8em; color:#888;">${g.genre_id}</td>
+        <td>${g.genre_name}</td>
+        <td><button onclick="_mdStartEdit('${g.genre_id}')">編集</button></td>
+      </tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  return html;
+}
+
+function _mdAddGenre() {
+  const name = document.getElementById('md_g_name')?.value.trim();
+  if (!name) { showMessage('ジャンル名を入力してください。', 'error'); return; }
+
+  setLoading(true, 'ジャンルを追加中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _mdAddMode = false;
+        showMessage('ジャンルを追加しました。', 'success');
+        refreshMasterData(() => renderMasterDataManager(window.masterData));
+      } else {
+        showMessage((res && res.error) || '追加に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .upsertGenre({ genre_name: name });
+}
+
+function _mdSaveGenre(idx) {
+  const { genre_id } = _mdStore[idx];
+  const name = document.getElementById(`md_g_edit_${idx}`)?.value.trim();
+  if (!name) { showMessage('ジャンル名を入力してください。', 'error'); return; }
+
+  setLoading(true, 'ジャンルを更新中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _mdEditId = null;
+        showMessage('ジャンルを更新しました。', 'success');
+        refreshMasterData(() => renderMasterDataManager(window.masterData));
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .upsertGenre({ genre_id, genre_name: name });
+}
+
+// ---- 教科一覧（参照のみ）----
+
+function _renderSubjects(data) {
+  const subjects = Array.isArray(data.subjects) ? data.subjects : [];
+  let html = `<p style="color:#666; font-size:0.9em; margin-bottom:12px;">
+    教科の追加・編集は「教科パターン管理」タブから行ってください。
+  </p>
+  <table class="admin-table">
+    <thead><tr><th>ID</th><th>教科名</th><th>ジャンル</th><th>学年</th></tr></thead>
+    <tbody>`;
+
+  subjects.forEach(s => {
+    html += `<tr>
+      <td style="font-size:0.8em; color:#888;">${s.subject_id}</td>
+      <td>${s.subject_name}</td>
+      <td>${s.genre_name || '—'}</td>
+      <td>${s.grade || '—'}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  return html;
+}
+
+window.renderMasterDataManager = renderMasterDataManager;
+</script>
