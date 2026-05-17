@@ -152,6 +152,30 @@ LINE アプリ
 
 ---
 
+## 次回セッション開始手順
+
+別 PC や新しいセッションで作業を再開する際は、以下を順番に実行すること。
+
+### 1. GAS セットアップ（未実行の場合のみ）
+GAS エディタで `setupAdminSS()` を手動実行 → `branches` シートが親 SS に作成される
+
+### 2. コードのデプロイ
+```
+clasp push
+```
+
+### 3. 動作確認
+`GAS_URL + ?page=admin` を開き、管理者アカウントでアクセスできることを確認
+
+### 4. 続きの実装タスク（現在: Phase 2-B）
+`admin_logic_branches.html` の校舎管理 UI を実装する。
+- 校舎一覧の表示（`getBranches()` を呼ぶ）
+- 校舎の追加フォーム（`addBranch(payload)` を呼ぶ）
+- 校舎の編集（`updateBranch(payload)` を呼ぶ）
+- spreadsheet_id の入力欄（2-C の子SS作成が完成するまでは手動入力）
+
+---
+
 ## 開発ロードマップ（進捗）
 
 ### Phase 0 — 管理画面基盤（完了 2026-05-17）
