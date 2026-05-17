@@ -44,10 +44,9 @@ function ensureSchoolSettingsSheet(ss) {
   return sheet;
 }
 
-function getAdminInitialData(callerEmail) {
+function getAdminInitialData(callerIdToken) {
   try {
-    // 認証チェック（Phase 0: クライアントから受け取ったメールで照合）
-    const adminContext = getAdminContext(callerEmail || '');
+    const adminContext = getAdminContext(callerIdToken || '');
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) throw new Error('スプレッドシートにアクセスできません。スクリプトがスプレッドシートに紐付けられているか確認してください。');

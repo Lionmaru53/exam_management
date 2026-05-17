@@ -1,15 +1,9 @@
 /**
- * 管理者認証・権限チェック（Phase 0 簡易版）
+ * 管理者認証・権限チェック（Phase 1: GIS トークン検証）
  *
- * 【現状の制約】
- * USER_ACCESSING モードでは SpreadsheetApp 系の呼び出しが
- * try-catch で捕捉できない権限エラーを発生させるケースがある。
- * そのため Phase 0 では USER_DEPLOYING を維持し、
- * クライアントから渡されたメールアドレスを admin_users シートで照合する。
- *
- * 【Phase 1 での移行計画】
- * Google Identity Services (クライアントサイド) でIDトークンを取得し、
- * GAS 側でトークンを検証する方式に切り替える。
+ * クライアントサイドで Google Identity Services (GIS) が発行した ID トークンを
+ * Google tokeninfo エンドポイントで検証し、メールアドレスを取得する。
+ * USER_DEPLOYING モードを維持しているため、SpreadsheetApp へのアクセスは問題なし。
  */
 
 const ADMIN_USERS_SHEET = 'admin_users';
@@ -22,13 +16,39 @@ function _getAdminSS() {
 }
 
 /**
- * クライアントから受け取ったメールアドレスで管理者を照合する。
- * Phase 1 でトークン検証に置き換える。
- * @param {string} email
+ * HTML テンプレートに OAuth クライアント ID を注入するためのヘルパー。
+ * Script Properties に OAUTH_CLIENT_ID が未設定の場合は空文字を返す。
+ */
+function getOAuthClientId() {
+  return PropertiesService.getScriptProperties().getProperty('OAUTH_CLIENT_ID') || '';
+}
+
+/**
+ * GIS が発行した ID トークンを Google tokeninfo API で検証し、メールアドレスを返す。
+ * @param {string} idToken
+ * @returns {string} 検証済みメールアドレス
+ */
+function _verifyIdToken(idToken) {
+  if (!idToken) throw new Error('認証トークンがありません。再ログインしてください。');
+  const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken);
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) {
+    throw new Error('認証トークンの検証に失敗しました。再ログインしてください。');
+  }
+  const payload = JSON.parse(res.getContentText());
+  if (payload.email_verified !== 'true' && payload.email_verified !== true) {
+    throw new Error('メールアドレスが未確認のGoogleアカウントです。');
+  }
+  return String(payload.email || '').trim();
+}
+
+/**
+ * ID トークンを検証し、admin_users シートで管理者を照合する。
+ * @param {string} idToken  GIS が発行した ID トークン
  * @returns {{ email: string, role: string, cram_id: string }}
  */
-function getAdminContext(email) {
-  if (!email) throw new Error('メールアドレスが指定されていません。');
+function getAdminContext(idToken) {
+  const email = _verifyIdToken(idToken);
 
   const ss    = _getAdminSS();
   const sheet = ss.getSheetByName(ADMIN_USERS_SHEET);
@@ -36,7 +56,7 @@ function getAdminContext(email) {
 
   const rows  = getRowsData(sheet);
   const admin = rows.find(r =>
-    String(r.email || '').trim().toLowerCase() === email.trim().toLowerCase() &&
+    String(r.email || '').trim().toLowerCase() === email.toLowerCase() &&
     (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true')
   );
 
@@ -45,7 +65,7 @@ function getAdminContext(email) {
   _updateLastLogin(sheet, rows, email);
 
   return {
-    email:   email.trim(),
+    email:   email,
     role:    String(admin.role    || '').trim(),
     cram_id: String(admin.cram_id || '').trim()
   };
@@ -125,9 +145,9 @@ function setupAdminSS() {
 
 // ---- 管理者ユーザー管理 ----
 
-function getAdminUsers(callerEmail) {
+function getAdminUsers(callerIdToken) {
   try {
-    const ctx = getAdminContext(callerEmail);
+    const ctx = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { error: '権限がありません' };
     const rows = getRowsData(_getAdminSS().getSheetByName(ADMIN_USERS_SHEET));
     return { success: true, adminUsers: stringifyDates(rows) };
@@ -136,11 +156,11 @@ function getAdminUsers(callerEmail) {
   }
 }
 
-function addAdminUser(callerEmail, payload) {
+function addAdminUser(callerIdToken, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx   = getAdminContext(callerEmail);
+    const ctx   = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { error: '権限がありません' };
 
     const sheet = _getAdminSS().getSheetByName(ADMIN_USERS_SHEET);
@@ -162,11 +182,11 @@ function addAdminUser(callerEmail, payload) {
   }
 }
 
-function deactivateAdminUser(callerEmail, targetEmail) {
+function deactivateAdminUser(callerIdToken, targetEmail) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerEmail);
+    const ctx = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { error: '権限がありません' };
     if (ctx.email.toLowerCase() === targetEmail.toLowerCase()) return { error: '自分自身は無効化できません' };
 
@@ -191,11 +211,11 @@ function deactivateAdminUser(callerEmail, targetEmail) {
   }
 }
 
-function updateAdminUser(callerEmail, payload) {
+function updateAdminUser(callerIdToken, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerEmail);
+    const ctx = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { error: '権限がありません' };
 
     const sheet   = _getAdminSS().getSheetByName(ADMIN_USERS_SHEET);

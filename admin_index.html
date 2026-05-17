@@ -5,6 +5,36 @@
   <base target="_top" />
   <?!= include('common_stylesheet'); ?>
   <?!= include('admin_stylesheet'); ?>
+  <script>
+    // GIS コールバックをスクリプト読み込み前に定義しておく
+    window._onGISCredential = function(response) {
+      window.callerIdToken = response.credential;
+      document.getElementById('login-screen').style.display = 'none';
+      window.refreshMasterData(function() { window.loadSection('patterns'); });
+    };
+    window._initGIS = function() {
+      var clientId = '<?= getOAuthClientId() ?>';
+      if (!clientId) {
+        var errEl = document.getElementById('login-error');
+        if (errEl) {
+          errEl.textContent = '管理者設定エラー: OAUTH_CLIENT_ID が設定されていません。GASエディタ > スクリプトプロパティ から設定してください。';
+          errEl.style.display = '';
+        }
+        return;
+      }
+      google.accounts.id.initialize({
+        client_id: clientId,
+        callback: window._onGISCredential,
+        auto_select: false,
+        cancel_on_tap_outside: true
+      });
+      google.accounts.id.renderButton(
+        document.getElementById('gis-signin-button'),
+        { theme: 'outline', size: 'large', locale: 'ja', text: 'signin_with' }
+      );
+    };
+  </script>
+  <script src="https://accounts.google.com/gsi/client" onload="window._initGIS()" async defer></script>
 </head>
 
 <body>
@@ -18,13 +48,9 @@
   <!-- ログイン画面 -->
   <div id="login-screen" style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:60vh; gap:16px;">
     <h2 style="margin:0;">管理者ログイン</h2>
-    <p style="color:#666; margin:0;">登録済みのメールアドレスを入力してください。</p>
-    <div style="display:flex; gap:8px; align-items:center;">
-      <input type="email" id="login-email" placeholder="admin@example.com"
-        style="padding:10px 14px; border:1px solid #ccc; border-radius:4px; width:260px; font-size:1em;"
-        onkeydown="if(event.key==='Enter') doLogin()" />
-      <button onclick="doLogin()" style="padding:10px 20px;">ログイン</button>
-    </div>
+    <p style="color:#666; margin:0;">登録済みの Google アカウントでログインしてください。</p>
+    <div id="gis-signin-button"></div>
+    <p id="login-error" style="color:#c00; display:none; font-size:0.9em; max-width:360px; text-align:center;"></p>
   </div>
 
   <nav class="admin-nav" id="admin-nav" style="display:none;"></nav>
@@ -47,10 +73,10 @@
   <?!= include('admin_logic_master_data'); ?>
 
   <script>
-    window.masterData    = {};
-    window.adminContext  = { role: '', cram_id: '', email: '' };
+    window.masterData     = {};
+    window.adminContext   = { role: '', cram_id: '', email: '' };
     window.currentSection = 'patterns';
-    window.callerEmail   = '';
+    window.callerIdToken  = '';
 
     var _loadingMsgTimer = null;
 
@@ -104,16 +130,6 @@
       document.getElementById('admin-content').style.display = '';
     }
 
-    // ---- ログイン ----
-    window.doLogin = function () {
-      const input = document.getElementById('login-email');
-      const email = input ? input.value.trim() : '';
-      if (!email) { showMessage('メールアドレスを入力してください。', 'error'); return; }
-      window.callerEmail = email;
-      document.getElementById('login-screen').style.display = 'none';
-      window.refreshMasterData(() => window.loadSection('patterns'));
-    };
-
     // ---- データ取得 ----
     window.refreshMasterData = function (callback) {
       setLoading(true, 'データを読み込み中...');
@@ -126,8 +142,10 @@
             if (typeof callback === 'function') callback();
           } else {
             showMessage((data && data.error) || 'データの取得に失敗しました。', 'error');
-            // 認証失敗時はログイン画面に戻す
-            if (data && data.error && data.error.includes('権限')) {
+            // 認証エラー時はログイン画面に戻す
+            var err = (data && data.error) || '';
+            if (err.includes('権限') || err.includes('トークン') || err.includes('認証') || err.includes('ログイン')) {
+              window.callerIdToken = '';
               document.getElementById('login-screen').style.display = '';
             }
           }
@@ -138,7 +156,7 @@
           showMessage('エラー: ' + msg, 'error');
           setLoading(false);
         })
-        .getAdminInitialData(window.callerEmail);
+        .getAdminInitialData(window.callerIdToken);
     };
 
     // ---- セクション切り替え ----

@@ -31,7 +31,7 @@ function renderAdminUserManager() {
       setLoading(false);
       showMessage('通信エラーが発生しました。', 'error');
     })
-    .getAdminUsers(window.callerEmail);
+    .getAdminUsers(window.callerIdToken);
 }
 
 function _renderAdminUserList(adminUsers) {
@@ -162,7 +162,7 @@ function _auSubmitAdd() {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .addAdminUser(window.callerEmail, { email, role, cram_id });
+    .addAdminUser(window.callerIdToken, { email, role, cram_id });
 }
 
 // ---- 編集 ----
@@ -202,7 +202,7 @@ function _auSubmitEdit(idx) {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .updateAdminUser(window.callerEmail, { email, role, cram_id });
+    .updateAdminUser(window.callerIdToken, { email, role, cram_id });
 }
 
 // ---- 無効化 ----
@@ -223,7 +223,7 @@ function _auDeactivate(idx) {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .deactivateAdminUser(window.callerEmail, email);
+    .deactivateAdminUser(window.callerIdToken, email);
 }
 
 window.renderAdminUserManager = renderAdminUserManager;

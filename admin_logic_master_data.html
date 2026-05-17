@@ -125,7 +125,7 @@ function _mdAddTermTest() {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .upsertTermTest({ test_name: name, is_two_terms: isTwoTerms });
+    .upsertTermTest(window.callerIdToken, { test_name: name, is_two_terms: isTwoTerms });
 }
 
 function _mdSaveTermTest(idx) {
@@ -147,7 +147,7 @@ function _mdSaveTermTest(idx) {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .upsertTermTest({ term_test_id, test_name: name, is_two_terms: isTwoTerms });
+    .upsertTermTest(window.callerIdToken, { term_test_id, test_name: name, is_two_terms: isTwoTerms });
 }
 
 // ---- 教科ジャンル ----
@@ -214,7 +214,7 @@ function _mdAddGenre() {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .upsertGenre({ genre_name: name });
+    .upsertGenre(window.callerIdToken, { genre_name: name });
 }
 
 function _mdSaveGenre(idx) {
@@ -235,7 +235,7 @@ function _mdSaveGenre(idx) {
       }
     })
     .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
-    .upsertGenre({ genre_id, genre_name: name });
+    .upsertGenre(window.callerIdToken, { genre_id, genre_name: name });
 }
 
 // ---- 教科一覧（参照のみ）----

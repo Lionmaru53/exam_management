@@ -306,11 +306,11 @@ function batchSetPerTermSubjects(items) {
  * term_tests_master に試験区分を追加または更新（upsert）
  * payload: { term_test_id?, test_name, is_two_terms }
  */
-function upsertTermTest(callerEmail, payload) {
+function upsertTermTest(callerIdToken, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerEmail);
+    const ctx = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -349,11 +349,11 @@ function upsertTermTest(callerEmail, payload) {
  * genres_master にジャンルを追加または更新（upsert）
  * payload: { genre_id?, genre_name }
  */
-function upsertGenre(callerEmail, payload) {
+function upsertGenre(callerIdToken, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerEmail);
+    const ctx = getAdminContext(callerIdToken);
     if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
 
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
