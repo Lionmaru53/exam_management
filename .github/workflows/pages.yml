@@ -24,11 +24,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create config.js from secrets
+        env:
+          LIFF_ID: ${{ secrets.LIFF_ID }}
+          GAS_URL: ${{ secrets.GAS_URL }}
         run: |
-          cat > docs/config.js << 'EOF'
-          const LIFF_ID = '${{ secrets.LIFF_ID }}';
-          const GAS_URL  = '${{ secrets.GAS_URL }}';
-          EOF
+          echo "const LIFF_ID = '${LIFF_ID}';" >  docs/config.js
+          echo "const GAS_URL  = '${GAS_URL}';" >> docs/config.js
 
       - uses: actions/configure-pages@v4
 
