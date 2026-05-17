@@ -44,9 +44,9 @@ function ensureSchoolSettingsSheet(ss) {
   return sheet;
 }
 
-function getAdminInitialData(callerIdToken) {
+function getAdminInitialData() {
   try {
-    const adminContext = getAdminContext(callerIdToken || '');
+    const adminContext = getAdminContext();
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     if (!ss) throw new Error('スプレッドシートにアクセスできません。スクリプトがスプレッドシートに紐付けられているか確認してください。');

@@ -1,9 +1,10 @@
 /**
- * 管理者認証・権限チェック（Phase 1: GIS トークン検証）
+ * 管理者認証・権限チェック（Phase 1: Session.getActiveUser() 方式）
  *
- * クライアントサイドで Google Identity Services (GIS) が発行した ID トークンを
- * Google tokeninfo エンドポイントで検証し、メールアドレスを取得する。
- * USER_DEPLOYING モードを維持しているため、SpreadsheetApp へのアクセスは問題なし。
+ * GAS webapp のアクセス設定を「Google アカウントが必要」にすることで
+ * Session.getActiveUser().getEmail() がサーバーサイドで確実にユーザーを特定する。
+ * クライアントからトークンや email を受け取る必要がない。
+ * Execute as: Me (USER_DEPLOYING) を維持するため SpreadsheetApp は問題なし。
  */
 
 const ADMIN_USERS_SHEET = 'admin_users';
@@ -16,39 +17,13 @@ function _getAdminSS() {
 }
 
 /**
- * HTML テンプレートに OAuth クライアント ID を注入するためのヘルパー。
- * Script Properties に OAUTH_CLIENT_ID が未設定の場合は空文字を返す。
- */
-function getOAuthClientId() {
-  return PropertiesService.getScriptProperties().getProperty('OAUTH_CLIENT_ID') || '';
-}
-
-/**
- * GIS が発行した ID トークンを Google tokeninfo API で検証し、メールアドレスを返す。
- * @param {string} idToken
- * @returns {string} 検証済みメールアドレス
- */
-function _verifyIdToken(idToken) {
-  if (!idToken) throw new Error('認証トークンがありません。再ログインしてください。');
-  const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken);
-  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  if (res.getResponseCode() !== 200) {
-    throw new Error('認証トークンの検証に失敗しました。再ログインしてください。');
-  }
-  const payload = JSON.parse(res.getContentText());
-  if (payload.email_verified !== 'true' && payload.email_verified !== true) {
-    throw new Error('メールアドレスが未確認のGoogleアカウントです。');
-  }
-  return String(payload.email || '').trim();
-}
-
-/**
- * ID トークンを検証し、admin_users シートで管理者を照合する。
- * @param {string} idToken  GIS が発行した ID トークン
+ * Session.getActiveUser() で認証済みユーザーを取得し、admin_users シートで照合する。
+ * webapp のアクセス設定が「Google アカウントが必要」の場合に確実に動作する。
  * @returns {{ email: string, role: string, cram_id: string }}
  */
-function getAdminContext(idToken) {
-  const email = _verifyIdToken(idToken);
+function getAdminContext() {
+  const email = Session.getActiveUser().getEmail();
+  if (!email) throw new Error('Google アカウントの取得に失敗しました。管理者に連絡してください。');
 
   const ss    = _getAdminSS();
   const sheet = ss.getSheetByName(ADMIN_USERS_SHEET);
@@ -145,9 +120,9 @@ function setupAdminSS() {
 
 // ---- 管理者ユーザー管理 ----
 
-function getAdminUsers(callerIdToken) {
+function getAdminUsers() {
   try {
-    const ctx = getAdminContext(callerIdToken);
+    const ctx = getAdminContext();
     if (ctx.role !== 'master') return { error: '権限がありません' };
     const rows = getRowsData(_getAdminSS().getSheetByName(ADMIN_USERS_SHEET));
     return { success: true, adminUsers: stringifyDates(rows) };
@@ -156,11 +131,11 @@ function getAdminUsers(callerIdToken) {
   }
 }
 
-function addAdminUser(callerIdToken, payload) {
+function addAdminUser(payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx   = getAdminContext(callerIdToken);
+    const ctx   = getAdminContext();
     if (ctx.role !== 'master') return { error: '権限がありません' };
 
     const sheet = _getAdminSS().getSheetByName(ADMIN_USERS_SHEET);
@@ -182,11 +157,11 @@ function addAdminUser(callerIdToken, payload) {
   }
 }
 
-function deactivateAdminUser(callerIdToken, targetEmail) {
+function deactivateAdminUser(targetEmail) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerIdToken);
+    const ctx = getAdminContext();
     if (ctx.role !== 'master') return { error: '権限がありません' };
     if (ctx.email.toLowerCase() === targetEmail.toLowerCase()) return { error: '自分自身は無効化できません' };
 
@@ -211,11 +186,11 @@ function deactivateAdminUser(callerIdToken, targetEmail) {
   }
 }
 
-function updateAdminUser(callerIdToken, payload) {
+function updateAdminUser(payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ctx = getAdminContext(callerIdToken);
+    const ctx = getAdminContext();
     if (ctx.role !== 'master') return { error: '権限がありません' };
 
     const sheet   = _getAdminSS().getSheetByName(ADMIN_USERS_SHEET);

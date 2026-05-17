@@ -158,26 +158,21 @@ LINE アプリ
 - [x] 校舎管理タブ（プレースホルダー）
 - [x] 生徒インポートタブ（プレースホルダー）
 
-### Phase 1 — 認証強化（作業中 2026-05-18）
-- [x] GAS: `_verifyIdToken(idToken)` で Google tokeninfo API による検証
-- [x] GAS: `getAdminContext()` をトークン検証ベースに変更（callerEmail → idToken）
-- [x] GAS: 全 API 関数のシグネチャを callerEmail → callerIdToken に統一
-- [x] フロント: GIS (Google Identity Services) ボタンでメール入力を置き換え
-- [x] フロント: `window.callerEmail` → `window.callerIdToken` に統一
-- [x] フロント: `admin_logic_master_data.html` の upsertTermTest/upsertGenre に callerIdToken 追加（Phase 0 バグ修正）
-- [ ] **セットアップ必須**: Google Cloud Console で OAuth 2.0 クライアント ID を発行し、GAS Script Properties に `OAUTH_CLIENT_ID` をセット（下記参照）
+### Phase 1 — 認証強化（完了 2026-05-18）
+- [x] GAS: `getAdminContext()` を `Session.getActiveUser().getEmail()` ベースに変更
+- [x] GAS: 全 API 関数のシグネチャから callerEmail/callerIdToken を削除（引数なし）
+- [x] フロント: GIS・ログイン画面・`callerIdToken` を完全削除
+- [x] フロント: ページロード時に自動で `refreshMasterData()` を呼び出すよう変更
 
-#### OAuth クライアント ID のセットアップ手順（管理画面用）
+> **GIS（Google Identity Services）は `script.google.com` を JavaScript オリジンとして登録できないため断念。**
+> 代わりに GAS webapp のアクセス設定を「Google アカウントが必要」にし、
+> `Session.getActiveUser().getEmail()` でサーバーサイドから確実に認証する方式を採用。
 
-> 管理画面は GAS webapp (`?page=admin`) で配信されるため、JavaScript 生成元は `googleusercontent.com` になる。
-> GitHub Pages とは別の設定。
-
-1. [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → 認証情報
-2. 「認証情報を作成」→「OAuth 2.0 クライアント ID」→ アプリケーションの種類: **ウェブアプリケーション**
-3. 承認済みの JavaScript 生成元に `https://n-{hash}-script.googleusercontent.com` を追加  
-   （`{hash}` は GAS プロジェクトの scriptId から生成される固定値。GAS webapp を一度開いて URL を確認する）
-4. クライアント ID をコピー
-5. GAS エディタ → プロジェクトの設定 → スクリプト プロパティ → `OAUTH_CLIENT_ID` = {コピーした値} を追加
+#### デプロイ設定の変更（必須）
+GAS エディタ → デプロイ → デプロイを管理 → 編集（鉛筆アイコン）
+- 実行ユーザー: **自分**（変更なし）
+- アクセスできるユーザー: **全員（ログインが必要）** に変更
+→ 新バージョンとして保存してデプロイ
 
 ### Phase 2 — 校舎管理・子 SS 連携（未着手）
 - [ ] 親 SS・子 SS 間ルーティング設計
