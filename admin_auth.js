@@ -103,6 +103,8 @@ function setupAdminSS() {
     Logger.log('audit_log シートを作成しました。');
   }
 
+  _ensureBranchesSheet(ss);
+
   // 実行者をマスター管理者として登録（未登録の場合のみ）
   const myEmail = Session.getActiveUser().getEmail();
   if (myEmail) {

@@ -78,6 +78,12 @@ function getAdminInitialData() {
       return { ...s, genre_name: g ? g.genre_name : '未設定' };
     });
 
+    // master 管理者には校舎一覧を含める
+    if (adminContext.role === 'master') {
+      const branchSheet = ss.getSheetByName(BRANCHES_SHEET);
+      results.branches = branchSheet ? stringifyDates(getRowsData(branchSheet)) : [];
+    }
+
     return results;
   } catch (e) {
     console.error(e);
