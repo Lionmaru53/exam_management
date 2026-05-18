@@ -79,7 +79,7 @@ function saveMergedExam(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .updateExamDataBatch(items);
+    .updateExamDataBatch(window.selectedCramId, items);
 }
 
 function saveGradeExam(idx) {
@@ -108,7 +108,7 @@ function saveGradeExam(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .updateExamData({
+    .updateExamData(window.selectedCramId, {
       exam_id:    examId || '',
       pattern_id: patternId,
       year:       selectedExamYear,
@@ -447,7 +447,7 @@ function saveMergedExamAutoPattern(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .upsertExamWithAutoPattern({
+    .upsertExamWithAutoPattern(window.selectedCramId, {
       school_name, school_course, sub_course, term_test_id,
       year: selectedExamYear, start_date: startDate, end_date: endDate
     });

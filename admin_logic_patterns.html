@@ -379,7 +379,7 @@ function addSubCourseById(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .addSubCourseGroup({ school_name, school_course, grade, sub_course: newSubCourse });
+    .addSubCourseGroup(window.selectedCramId, { school_name, school_course, grade, sub_course: newSubCourse });
 }
 
 // ---- 階層トグル ----
@@ -450,7 +450,7 @@ function saveGroupSubjectsById(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .batchSetGroupSubjects({ school_name, school_course, grade, sub_course, term_test_ids: termTestIds, selected_subject_ids: selectedIds });
+    .batchSetGroupSubjects(window.selectedCramId, { school_name, school_course, grade, sub_course, term_test_ids: termTestIds, selected_subject_ids: selectedIds });
 }
 
 function savePerTermSubjectsById(idx) {
@@ -479,7 +479,7 @@ function savePerTermSubjectsById(idx) {
       showMessage('通信エラーが発生しました。', 'error');
       setLoading(false);
     })
-    .batchSetPerTermSubjects(items);
+    .batchSetPerTermSubjects(window.selectedCramId, items);
 }
 
 // ---- 教科追加（グループ編集モード中）----

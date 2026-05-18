@@ -124,7 +124,7 @@ function _mdAddTermTest() {
         showMessage((res && res.error) || '追加に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertTermTest({ test_name: name, is_two_terms: isTwoTerms });
 }
 
@@ -146,7 +146,7 @@ function _mdSaveTermTest(idx) {
         showMessage((res && res.error) || '更新に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertTermTest({ term_test_id, test_name: name, is_two_terms: isTwoTerms });
 }
 
@@ -213,7 +213,7 @@ function _mdAddGenre() {
         showMessage((res && res.error) || '追加に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertGenre({ genre_name: name });
 }
 
@@ -234,7 +234,7 @@ function _mdSaveGenre(idx) {
         showMessage((res && res.error) || '更新に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertGenre({ genre_id, genre_name: name });
 }
 

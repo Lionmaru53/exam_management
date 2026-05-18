@@ -1,46 +1,58 @@
 <script>
-let _auStore = [];
-let _auAddMode = false;
-let _auEditEmail = null;
+let _auStore       = [];
+let _auAddMode     = false;
+let _auEditEmail   = null;
+let _auCachedUsers = [];   // 最後に取得した管理者一覧をキャッシュ
 
 function _auPush(obj) {
   _auStore.push(obj);
   return _auStore.length - 1;
 }
 
-function renderAdminUserManager() {
-  _auStore   = [];
-  _auAddMode = false;
-  _auEditEmail = null;
+// ---- 外部から呼ばれるエントリーポイント ----
 
+// タブ切り替え時など、初回表示・データ更新が必要なときに呼ぶ
+function renderAdminUserManager() {
+  _auAddMode   = false;
+  _auEditEmail = null;
+  _auFetchAndRender();
+}
+
+// ---- 内部関数 ----
+
+// API から最新データを取得して再描画
+function _auFetchAndRender() {
   const content = document.getElementById('admin-content');
   content.innerHTML = '<h3>管理者管理</h3><p>読み込み中...</p>';
-
   setLoading(true, '管理者一覧を取得中...');
   google.script.run
     .withSuccessHandler(function (res) {
       setLoading(false);
       if (res && res.success) {
-        _renderAdminUserList(res.adminUsers || []);
+        _auCachedUsers = res.adminUsers || [];
+        _auRerender();
       } else {
         showMessage((res && res.error) || '管理者一覧の取得に失敗しました。', 'error');
         content.innerHTML = '<h3>管理者管理</h3>';
       }
     })
-    .withFailureHandler(function () {
+    .withFailureHandler(function (err) {
+      var m = err && err.message ? err.message : JSON.stringify(err);
+      console.error('[getAdminUsers] failure:', err);
       setLoading(false);
-      showMessage('通信エラーが発生しました。', 'error');
+      showMessage('エラー: ' + m, 'error');
     })
     .getAdminUsers();
 }
 
-function _renderAdminUserList(adminUsers) {
+// キャッシュを使って再描画（API 呼び出しなし）
+function _auRerender() {
   _auStore = [];
   const content = document.getElementById('admin-content');
+  const adminUsers = _auCachedUsers;
 
   let html = '<h3>管理者管理</h3>';
 
-  // 追加フォーム
   if (_auAddMode) {
     html += `
       <div class="admin-genre-container" style="margin-bottom:16px;">
@@ -68,7 +80,6 @@ function _renderAdminUserList(adminUsers) {
     html += `<button onclick="_auStartAdd()" style="margin-bottom:16px;">＋ 管理者を追加</button>`;
   }
 
-  // 一覧テーブル
   html += `<table class="admin-table">
     <thead><tr>
       <th>メールアドレス</th>
@@ -128,12 +139,12 @@ function _renderAdminUserList(adminUsers) {
 function _auStartAdd() {
   _auAddMode   = true;
   _auEditEmail = null;
-  renderAdminUserManager();
+  _auRerender();   // API 呼び出しなしで即座に再描画
 }
 
 function _auCancelAdd() {
   _auAddMode = false;
-  renderAdminUserManager();
+  _auRerender();
 }
 
 function _auRoleChange() {
@@ -156,12 +167,12 @@ function _auSubmitAdd() {
       if (res && res.success) {
         _auAddMode = false;
         showMessage('管理者を追加しました。', 'success');
-        renderAdminUserManager();
+        _auFetchAndRender();   // 追加後は最新データを取得
       } else {
         showMessage((res && res.error) || '追加に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .addAdminUser({ email, role, cram_id });
 }
 
@@ -170,12 +181,12 @@ function _auSubmitAdd() {
 function _auStartEdit(idx) {
   _auEditEmail = _auStore[idx].email;
   _auAddMode   = false;
-  renderAdminUserManager();
+  _auRerender();   // API 呼び出しなしで即座に再描画
 }
 
 function _auCancelEdit() {
   _auEditEmail = null;
-  renderAdminUserManager();
+  _auRerender();
 }
 
 function _auEditRoleChange(idx) {
@@ -196,12 +207,12 @@ function _auSubmitEdit(idx) {
       if (res && res.success) {
         _auEditEmail = null;
         showMessage('管理者情報を更新しました。', 'success');
-        renderAdminUserManager();
+        _auFetchAndRender();
       } else {
         showMessage((res && res.error) || '更新に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .updateAdminUser({ email, role, cram_id });
 }
 
@@ -217,12 +228,12 @@ function _auDeactivate(idx) {
       setLoading(false);
       if (res && res.success) {
         showMessage('管理者を無効化しました。', 'success');
-        renderAdminUserManager();
+        _auFetchAndRender();
       } else {
         showMessage((res && res.error) || '無効化に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function () { setLoading(false); showMessage('通信エラーが発生しました。', 'error'); })
+    .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .deactivateAdminUser(email);
 }
 

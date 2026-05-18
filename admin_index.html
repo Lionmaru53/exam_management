@@ -15,14 +15,15 @@
     <div class="loading-label" id="loading-label">読み込み中...</div>
   </div>
 
-  <nav class="admin-nav" id="admin-nav" style="display:none;"></nav>
+  <div id="branch-selector-wrap" class="branch-selector-wrap"></div>
+  <nav class="admin-nav" id="admin-nav"></nav>
 
   <div id="admin-content">
     <h3>管理パネルへようこそ</h3>
     <p>上のメニューから操作を選択してください。</p>
   </div>
 
-  <div id="pattern-modal" class="modal-backdrop" style="display:none; align-items:center; justify-content:center;" onclick="if (event.target === this) closeModal()">
+  <div id="pattern-modal" class="modal-backdrop" onclick="if (event.target === this) closeModal()">
     <div class="modal-card"></div>
   </div>
 
@@ -38,6 +39,7 @@
     window.masterData     = {};
     window.adminContext   = { role: '', cram_id: '', email: '' };
     window.currentSection = 'patterns';
+    window.selectedCramId = '';  // 操作対象の校舎 cram_id
 
     var _loadingMsgTimer = null;
 
@@ -87,7 +89,7 @@
       nav.innerHTML = tabs.map(t =>
         `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
       ).join('');
-      nav.style.display = '';
+      nav.style.display = 'flex';
       document.getElementById('admin-content').style.display = '';
     }
 
@@ -97,9 +99,11 @@
       google.script.run
         .withSuccessHandler(function (data) {
           if (data && !data.error) {
-            window.masterData   = data;
-            window.adminContext = data.adminContext || window.adminContext;
+            window.masterData     = data;
+            window.adminContext   = data.adminContext   || window.adminContext;
+            window.selectedCramId = data.selectedCramId || window.selectedCramId;
             _renderNav(window.adminContext.role);
+            _renderBranchSelector();
             if (typeof callback === 'function') callback();
           } else {
             var content = document.getElementById('admin-content');
@@ -110,10 +114,41 @@
         })
         .withFailureHandler(function (err) {
           const msg = (err && err.message) ? err.message : JSON.stringify(err);
+          console.error('[refreshMasterData] failure:', err);
           showMessage('エラー: ' + msg, 'error');
           setLoading(false);
         })
-        .getAdminInitialData();
+        .getAdminInitialData(window.selectedCramId);
+    };
+
+    // ---- 校舎セレクター（master のみ表示）----
+    function _renderBranchSelector() {
+      const el = document.getElementById('branch-selector-wrap');
+      if (!el) return;
+      if (window.adminContext.role !== 'master') { el.style.display = 'none'; return; }
+
+      const branches = Array.isArray(window.masterData.branches) ? window.masterData.branches : [];
+      const activeBranches = branches.filter(b =>
+        b.is_active === true || String(b.is_active) === '1' || String(b.is_active) === 'true'
+      );
+
+      let html = '<label style="font-weight:bold; margin-right:8px;">校舎:</label>';
+      html += '<select id="branch-select" onchange="_onBranchChange()" style="padding:4px 8px; border-radius:4px; border:1px solid #ccc;">';
+      html += '<option value="">— 校舎を選択 —</option>';
+      activeBranches.forEach(b => {
+        const selected = window.selectedCramId === b.cram_id ? 'selected' : '';
+        html += `<option value="${b.cram_id}" ${selected}>${b.branch_name || b.cram_id}</option>`;
+      });
+      html += '</select>';
+      el.innerHTML = html;
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+    }
+
+    window._onBranchChange = function () {
+      const sel = document.getElementById('branch-select');
+      window.selectedCramId = sel ? sel.value : '';
+      window.refreshMasterData(() => window.loadSection(window.currentSection));
     };
 
     // ---- セクション切り替え ----
@@ -141,12 +176,12 @@
       });
 
       const renderers = {
-        patterns:   function () { renderPatternManager(window.masterData); },
-        exams:      function () { renderExamManager(window.masterData); },
-        import:     function () { renderImportManager(); },
-        adminUsers: function () { renderAdminUserManager(); },
-        branches:   function () { renderBranchManager(); },
-        masterData: function () { renderMasterDataManager(window.masterData); }
+        patterns:   function () { window.renderPatternManager(window.masterData); },
+        exams:      function () { window.renderExamManager(window.masterData); },
+        import:     function () { window.renderImportManager(); },
+        adminUsers: function () { window.renderAdminUserManager(); },
+        branches:   function () { window.renderBranchManager(); },
+        masterData: function () { window.renderMasterDataManager(window.masterData); }
       };
       (renderers[section] || renderers.patterns)();
     };

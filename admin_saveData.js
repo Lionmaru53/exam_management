@@ -6,11 +6,11 @@ function generateUniqueId(prefix) {
  * exam_schedule への日程保存（upsert）
  * payload: { exam_id, pattern_id, year, start_date, end_date }
  */
-function updateExamData(payload) {
+function updateExamData(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = _getTargetSS(cramId);
     const sheet = ss.getSheetByName('exam_schedule');
     const data = sheet.getDataRange().getValues();
 
@@ -69,11 +69,11 @@ function updateExamData(payload) {
  * exam_patterns への新規パターン追加
  * payload: { school_name, school_course, grade, sub_course, term_test_id }
  */
-function addNewPattern(payload) {
+function addNewPattern(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = _getTargetSS(cramId);
     const sheet = ss.getSheetByName('exam_patterns');
     const rows = getRowsData(sheet);
 
@@ -184,11 +184,11 @@ globalThis.addNewSubject = addNewSubject;
  * グループ一括教科設定: 同じ学校・コース・学年・サブ区分の全試験区分に同じ教科を設定
  * payload: { school_name, school_course, grade, sub_course, term_test_ids, selected_subject_ids }
  */
-function batchSetGroupSubjects(payload) {
+function batchSetGroupSubjects(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss          = SpreadsheetApp.getActiveSpreadsheet();
+    const ss          = _getTargetSS(cramId);
     const patSheet    = ss.getSheetByName('exam_patterns');
     const psSheet     = ss.getSheetByName('pattern_subjects');
     const patternRows = getRowsData(patSheet);
@@ -243,11 +243,11 @@ function batchSetGroupSubjects(payload) {
  * 試験区分ごと一括教科設定
  * items: [{ school_name, school_course, grade, sub_course, term_test_id, selected_subject_ids }]
  */
-function batchSetPerTermSubjects(items) {
+function batchSetPerTermSubjects(cramId, items) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss          = SpreadsheetApp.getActiveSpreadsheet();
+    const ss          = _getTargetSS(cramId);
     const patSheet    = ss.getSheetByName('exam_patterns');
     const psSheet     = ss.getSheetByName('pattern_subjects');
     const patternRows = getRowsData(patSheet);
@@ -388,13 +388,13 @@ function upsertGenre(payload) {
  * サブ区分グループ追加: 全試験区分に対してパターンを作成（教科は空）
  * payload: { school_name, school_course, grade, sub_course }
  */
-function addSubCourseGroup(payload) {
+function addSubCourseGroup(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss           = SpreadsheetApp.getActiveSpreadsheet();
+    const ss           = _getTargetSS(cramId);
     const patSheet     = ss.getSheetByName('exam_patterns');
-    const ttSheet      = ss.getSheetByName('term_tests_master');
+    const ttSheet      = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('term_tests_master');
     const patternRows  = getRowsData(patSheet);
     const termTestRows = getRowsData(ttSheet);
 
@@ -431,11 +431,11 @@ function addSubCourseGroup(payload) {
  * exam_schedule への複数行一括保存（upsert）
  * items: Array<{ exam_id, pattern_id, year, start_date, end_date }>
  */
-function updateExamDataBatch(items) {
+function updateExamDataBatch(cramId, items) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const ss    = _getTargetSS(cramId);
     const sheet = ss.getSheetByName('exam_schedule');
     const data  = sheet.getDataRange().getValues();
 
@@ -504,11 +504,11 @@ function updateExamDataBatch(items) {
  * 教科パターン未登録の試験区分に対して全学年のパターンを自動作成し、試験日程を保存
  * payload: { school_name, school_course, sub_course, term_test_id, year, start_date, end_date }
  */
-function upsertExamWithAutoPattern(payload) {
+function upsertExamWithAutoPattern(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss          = SpreadsheetApp.getActiveSpreadsheet();
+    const ss          = _getTargetSS(cramId);
     const patSheet    = ss.getSheetByName('exam_patterns');
     const schedSheet  = ss.getSheetByName('exam_schedule');
     const patternRows = getRowsData(patSheet);
