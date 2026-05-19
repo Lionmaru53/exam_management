@@ -1,11 +1,111 @@
 /**
- * 生徒データインポート / LINE ID 連携
+ * 生徒データインポート / LINE ID 連携 / 移行ユーティリティ
  *
- * - importStudentData: SheetJS で解析済みの xlsx 行データを受け取り、子 SS の students_master に Upsert
- * - linkLineIds: 外部 SS の「内部生」シート（2行目=ヘッダー、3行目以降=データ）から
- *               管理番号 ↔ LINE ID を読み、子 SS の students_master と
- *               親 SS の student_index に反映する
+ * - importStudentData   : SheetJS 解析済みの xlsx 行データ → 子 SS の students_master に Upsert
+ * - linkLineIds         : 外部 SS の「内部生」シート → student_index + 子 SS に反映
+ * - migrateStudentsFromParentSS : 【移行用・手動実行】旧・親 SS の students_master →
+ *                                 子 SS の students_master + 親 SS の student_index に一括移行
  */
+
+/**
+ * 旧・親 SS の students_master にある生徒データを
+ * 各校舎の子 SS の students_master と親 SS の student_index に移行する。
+ *
+ * GAS エディタから 1 回だけ手動実行する（移行完了後は削除しなくてもよい）。
+ * 既存データは Upsert（重複なし）なので複数回実行しても安全。
+ */
+function migrateStudentsFromParentSS() {
+  const parentSS     = SpreadsheetApp.getActiveSpreadsheet();
+  const oldSheet     = parentSS.getSheetByName('students_master');
+  if (!oldSheet) {
+    Logger.log('親 SS に students_master シートが存在しません。移行不要の可能性があります。');
+    return;
+  }
+
+  const rows = getRowsData(oldSheet);
+  if (rows.length === 0) {
+    Logger.log('students_master にデータがありません。');
+    return;
+  }
+
+  // cram_id ごとにグループ化
+  const byCramId = {};
+  rows.forEach(function (r) {
+    const cid = String(r.cram_id || '').trim();
+    if (!cid) { Logger.log('cram_id が空の行をスキップ: ' + JSON.stringify(r)); return; }
+    if (!byCramId[cid]) byCramId[cid] = [];
+    byCramId[cid].push(r);
+  });
+
+  const cramIds = Object.keys(byCramId);
+  Logger.log('移行対象校舎数: ' + cramIds.length + ' (' + cramIds.join(', ') + ')');
+
+  let totalAdded = 0, totalUpdated = 0, totalIndexed = 0;
+
+  cramIds.forEach(function (cramId) {
+    const students = byCramId[cramId];
+    Logger.log('[' + cramId + '] 生徒数: ' + students.length);
+
+    // 子 SS に Upsert
+    try {
+      const childSS = getChildSS(cramId);
+
+      // students_master（子 SS）
+      const mapped = students.map(function (r) {
+        return {
+          student_id:    String(r.student_id    || '').trim(),
+          name:          String(r.name           || '').trim(),
+          pronunciation: String(r.pronunciation  || '').trim(),
+          cram_id:       cramId,
+          school_name:   String(r.school_name    || '').trim(),
+          school_course: String(r.school_course  || '').trim(),
+          sub_course:    String(r.sub_course     || '').trim(),
+          grade:         String(r.grade          || '').trim(),
+          line_user_id:  String(r.line_user_id   || '').trim(),
+          is_active:     r.is_active === true || String(r.is_active) === '1' || String(r.is_active) === 'true'
+        };
+      }).filter(function (s) { return s.student_id; });
+
+      const result = _upsertStudentsMaster(childSS, mapped);
+      _upsertStudentsBranch(childSS, mapped);
+      totalAdded   += result.added;
+      totalUpdated += result.updated;
+      Logger.log('[' + cramId + '] 子SS 追加: ' + result.added + ', 更新: ' + result.updated);
+
+      // student_index（親 SS）
+      const idxSheet = _ensureStudentIndexSheet(parentSS);
+      const idxData  = idxSheet.getDataRange().getValues();
+      const ixSidCol = idxData[0].indexOf('student_id');
+
+      const idxMap = {};
+      for (var k = 1; k < idxData.length; k++) {
+        var is = String(idxData[k][ixSidCol] || '').trim();
+        if (is) idxMap[is] = k + 1;
+      }
+
+      const newIdxRows = [];
+      mapped.forEach(function (s) {
+        if (!s.line_user_id) return; // LINE ID が空の生徒はインデックス不要
+        const row = [s.student_id, s.line_user_id, cramId];
+        if (idxMap[s.student_id]) {
+          idxSheet.getRange(idxMap[s.student_id], 1, 1, row.length).setValues([row]);
+        } else {
+          newIdxRows.push(row);
+        }
+      });
+      if (newIdxRows.length > 0) {
+        idxSheet.getRange(idxSheet.getLastRow() + 1, 1, newIdxRows.length, 3).setValues(newIdxRows);
+      }
+      totalIndexed += mapped.filter(function (s) { return s.line_user_id; }).length;
+      Logger.log('[' + cramId + '] student_index 登録: ' + newIdxRows.length + ' 件');
+
+    } catch (e) {
+      Logger.log('[' + cramId + '] エラー: ' + e.message);
+    }
+  });
+
+  Logger.log('移行完了 — 子SS 追加: ' + totalAdded + ', 更新: ' + totalUpdated + ', インデックス: ' + totalIndexed);
+}
 
 // ---- student_index（親SS ルーティングテーブル）----
 
