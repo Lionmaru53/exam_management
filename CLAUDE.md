@@ -39,7 +39,7 @@ clasp push
 管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
 
 ### 4. 続きの実装タスク
-- Phase 2-F: `getData.js` の子 SS ルーティング対応（line_user_id → cram_id → 子 SS で全データ取得）
+- Phase 2 完了。Phase 3（生徒向け機能拡張）または LINE 動作確認へ
 
 ---
 

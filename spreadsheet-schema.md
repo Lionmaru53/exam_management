@@ -7,20 +7,34 @@
 
 ## 1. 現在のシート構造
 
-### Sheet: `students_master`
-生徒の基本情報を保持するマスターシート
+### Sheet: `student_index`（親 SS）
+line_user_id → cram_id のルーティングテーブル。`getData.js` / `saveData.js` が最初に参照する。
+
+| 列位置 | 列名 | データ型 | 説明 |
+|--------|------|--------|------|
+| 1 | `student_id` | 文字列 | 生徒 ID |
+| 2 | `line_user_id` | 文字列 | LINE ユーザー ID |
+| 3 | `cram_id` | 文字列 | 校舎 ID（子 SS の特定に使用） |
+
+**主キー**: `student_id`
+
+---
+
+### Sheet: `students_master`（子 SS）
+生徒の基本情報を保持するマスターシート（校舎別）
 
 | 列位置 | 列名 | データ型 | 説明 | 備考 |
 |--------|------|--------|------|------|
 | 1 | `student_id` | 文字列 | 生徒 ID | 例: `405010001` |
 | 2 | `name` | 文字列 | 氏名 | |
-| 3 | `pronunciation` | 文字列 | 読み | UI で `pronunciation` を利用 |
-| 4 | `cram_id` | 文字列 | 塾の校舎ID | 現在未実装 |
-| 5 | `school_name` | 文字列 | 学校名 ||
-| 6 | `school_course` | 文字列 | 学校コース ||
+| 3 | `pronunciation` | 文字列 | 読み | |
+| 4 | `cram_id` | 文字列 | 校舎 ID | |
+| 5 | `school_name` | 文字列 | 学校名 | |
+| 6 | `school_course` | 文字列 | 学校コース | |
 | 7 | `sub_course` | 文字列 | サブコース | 例: `普通科 A` |
 | 8 | `grade` | 文字列 | 学年 | 例: `高1`, `高2`, `高3` |
-| 9 | `line_user_id` | 文字列 | LINE 連携用ユーザー ID | `getInitialData()` の検索キー |
+| 9 | `line_user_id` | 文字列 | LINE 連携用ユーザー ID | LINE ID 連携で設定 |
+| 10 | `is_active` | 真偽値 | 在籍フラグ | |
 
 **主キー**: `student_id`
 
