@@ -25,19 +25,19 @@
 - **原因**: `DriveApp.getFileById().addEditor()` は `drive` スコープが必要だが、SS作成後に初めてこのコードが追加されたため既存の認可トークンにスコープが含まれていなかった。
 - **対処**: `setupBranchSS()` から共有処理を完全に分離し、独立した `shareBranchSS(cramId)` 関数に移動。UI は子SS作成後に「共有設定」ボタンで個別実行する方式に変更。DriveApp スコープの認可が必要なのは「共有設定」実行時のみ（初回は GAS エディタからの手動実行で認可を取得）。
 
+### [fixed] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
+- **場所**: `admin_logic_branches.html` → 内部テンプレートリテラルのインライン `style=` 属性
+- **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style'` が発生し、`window.renderBranchManager is not a function` が連鎖。校舎管理タブが表示されない。
+- **原因**: GAS の `userCodeAppPanel` が JS ファイルのコンテンツを特定行で処理する際、テンプレートリテラル内の `style=` を JS 識別子として解釈して SyntaxError を起こす。行位置依存（4行削除すると 84→80 に正確に移動することで確認）。
+- **対処**: `admin_logic_branches.html` の HTML 生成コードをテンプレートリテラルから文字列連結（`+`）に全面書き換え、すべての `style=` 属性を CSS クラスに置換。対応クラスを `admin_stylesheet.html` に追加。
+- **教訓**: GAS webapp では `<script>` 内のテンプレートリテラルに `style=` が含まれると特定行で SyntaxError が起きる。HTML 生成はテンプレートリテラルを避けて文字列連結か CSS クラスで管理すること。
+
 ### [fixed] #004 子SS リンクの URL が壊れる（スペース + `style=` がパスに混入）
 - **場所**: `admin_logic_branches.html` → `_renderBranchList()` の `ssDisplay`
 - **原因**: テンプレートリテラル内で `<a href="...">` タグを複数行に分けて記述したため、GAS HtmlService の URL 解釈で改行・スペースが href の一部として扱われた。
 - **対処**: `<a>` タグを 1 行に集約。GAS で動的生成する HTML の `<a>` タグは属性を改行で分割してはいけない。
 
 ## open
-
-### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError（Cloudflare経由時のみ）
-- **場所**: `admin_index.html` → HTML 要素のインライン `style` 属性
-- **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style' (at userCodeAppPanel?createOAuthDialog=true:84:20)` が発生。`renderBranchManager is not defined` も連鎖して発生する可能性あり。
-- **原因（推定）**: GAS の `userCodeAppPanel` はヘッドを除いた body コンテンツを 75 行のプリアンブルの後に出力する。Phase 2-D で `branch-selector-wrap` div を nav の前に追加したことで nav が body の 9 行目にシフトし、nav の `style="display:none;"` 属性が `userCodeAppPanel` のちょうど 84 行目に来た。GAS の内部 JS 生成処理がその行で `style` を予期しない識別子として扱い SyntaxError を発生させている。
-- **対処**: `admin_index.html` の HTML 要素（nav・pattern-modal）から inline `style` 属性を除去し、`admin_stylesheet.html` に `#admin-nav { display: none; }` / `#pattern-modal { display: none; }` を追加して CSS で初期非表示を管理するよう変更。`clasp push` 後に確認が必要。
-- **教訓**: GAS webapp では HTML 要素の inline `style` 属性が `userCodeAppPanel` の特定行に来ると SyntaxError を引き起こす。body 構造を変更する場合は inline style を使わず CSS クラス・ID セレクタで管理すること。
 
 ---
 

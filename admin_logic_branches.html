@@ -28,84 +28,80 @@ function _renderBranchList(branches) {
 
   // 追加フォーム
   if (_brAddMode) {
-    html += `
-      <div class="admin-genre-container" style="margin-bottom:16px;">
-        <h4 class="admin-genre-title">校舎を追加</h4>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:600px;">
-          <label>校舎ID（cram_id）<br>
-            <input type="text" id="br_cram_id" placeholder="例: C001" class="admin-input" style="width:100%;" />
-            <span style="font-size:0.8em; color:#888;">別システムで定義済みのIDを入力</span>
-          </label>
-          <label>校舎名<br>
-            <input type="text" id="br_name" placeholder="例: 渋谷校" class="admin-input" style="width:100%;" />
-          </label>
-          <label style="grid-column:1/-1;">子スプレッドシートID（任意）<br>
-            <input type="text" id="br_ss_id" placeholder="Google スプレッドシートの ID（URLの /d/XXXX/ 部分）" class="admin-input" style="width:100%;" />
-            <span style="font-size:0.8em; color:#888;">Phase 2-C 完成後は自動作成予定。現時点では手動で入力。</span>
-          </label>
-        </div>
-        <div style="display:flex; gap:8px; margin-top:12px;">
-          <button class="btn-save-admin" onclick="_brSubmitAdd()">追加</button>
-          <button class="btn-cancel-admin" onclick="_brCancelAdd()">キャンセル</button>
-        </div>
-      </div>`;
+    html += '<div class="admin-genre-container br-add-container">'
+          + '<h4 class="admin-genre-title">校舎を追加</h4>'
+          + '<div class="br-add-grid">'
+          + '<label>校舎ID（cram_id）<br>'
+          + '<input type="text" id="br_cram_id" placeholder="例: C001" class="admin-input" />'
+          + '<span class="br-hint">別システムで定義済みのIDを入力</span>'
+          + '</label>'
+          + '<label>校舎名<br>'
+          + '<input type="text" id="br_name" placeholder="例: 渋谷校" class="admin-input" />'
+          + '</label>'
+          + '<label class="br-full-col">子スプレッドシートID（任意）<br>'
+          + '<input type="text" id="br_ss_id" placeholder="Google スプレッドシートの ID（URLの /d/XXXX/ 部分）" class="admin-input" />'
+          + '<span class="br-hint">Phase 2-C 完成後は自動作成予定。現時点では手動で入力。</span>'
+          + '</label>'
+          + '</div>'
+          + '<div class="br-actions-row">'
+          + '<button class="btn-save-admin" onclick="_brSubmitAdd()">追加</button>'
+          + '<button class="btn-cancel-admin" onclick="_brCancelAdd()">キャンセル</button>'
+          + '</div>'
+          + '</div>';
   } else {
-    html += `<button onclick="_brStartAdd()" style="margin-bottom:16px;">＋ 校舎を追加</button>`;
+    html += '<button onclick="_brStartAdd()" class="br-add-btn">＋ 校舎を追加</button>';
   }
 
   // 一覧テーブル
-  html += `<table class="admin-table">
-    <thead><tr>
-      <th>校舎ID</th>
-      <th>校舎名</th>
-      <th>子SS ID</th>
-      <th>状態</th>
-      <th style="width:160px;">操作</th>
-    </tr></thead>
-    <tbody>`;
+  html += '<table class="admin-table"><thead><tr>'
+        + '<th>校舎ID</th><th>校舎名</th><th>子SS ID</th><th>状態</th>'
+        + '<th class="br-ops-col">操作</th>'
+        + '</tr></thead><tbody>';
 
   if (branches.length === 0) {
-    html += `<tr><td colspan="5" style="text-align:center; color:#aaa; padding:24px;">校舎が登録されていません</td></tr>`;
+    html += '<tr><td colspan="5" class="br-empty-msg">校舎が登録されていません</td></tr>';
   }
 
   branches.forEach(branch => {
-    const isActive  = branch.is_active === true || String(branch.is_active) === '1' || String(branch.is_active) === 'true';
-    const stateLabel = isActive ? '<span style="color:#2a9d2a;">有効</span>' : '<span style="color:#999;">無効</span>';
-    const ssId      = String(branch.spreadsheet_id || '').trim();
-    const ssShort   = ssId.length > 24 ? ssId.slice(0, 24) + '…' : ssId;
-    const ssDisplay = ssId ? `<a href="https://docs.google.com/spreadsheets/d/${ssId}" target="_blank" style="font-size:0.8em;font-family:monospace;color:#1a73e8;">${ssShort}</a>` : '<span style="color:#aaa;">未設定</span>';
+    const isActive   = branch.is_active === true || String(branch.is_active) === '1' || String(branch.is_active) === 'true';
+    const stateLabel = isActive ? '<span class="br-active">有効</span>' : '<span class="br-inactive">無効</span>';
+    const ssId       = String(branch.spreadsheet_id || '').trim();
+    const ssShort    = ssId.length > 24 ? ssId.slice(0, 24) + '…' : ssId;
+    const ssDisplay  = ssId
+      ? '<a href="https://docs.google.com/spreadsheets/d/' + ssId + '" target="_blank" class="br-ss-link">' + ssShort + '</a>'
+      : '<span class="br-unset">未設定</span>';
 
     if (_brEditId === branch.cram_id) {
       const idx = _brPush({ cram_id: branch.cram_id, is_active: isActive });
-      html += `<tr style="background:#fffde7;">
-        <td style="font-family:monospace;">${branch.cram_id}</td>
-        <td><input type="text" id="br_edit_name_${idx}" value="${branch.branch_name || ''}" class="admin-input" style="width:100%;" /></td>
-        <td><input type="text" id="br_edit_ss_${idx}" value="${ssId}" class="admin-input" style="width:100%; font-size:0.85em; font-family:monospace;" placeholder="スプレッドシートID" /></td>
-        <td>${stateLabel}</td>
-        <td>
-          <button class="btn-save-admin" onclick="_brSubmitEdit(${idx})">保存</button>
-          <button class="btn-cancel-admin" onclick="_brCancelEdit()">取消</button>
-        </td>
-      </tr>`;
+      html += '<tr class="tr-editing">'
+            + '<td class="td-mono">' + branch.cram_id + '</td>'
+            + '<td><input type="text" id="br_edit_name_' + idx + '" value="' + (branch.branch_name || '') + '" class="admin-input" /></td>'
+            + '<td><input type="text" id="br_edit_ss_' + idx + '" value="' + ssId + '" class="admin-input br-ss-input" placeholder="スプレッドシートID" /></td>'
+            + '<td>' + stateLabel + '</td>'
+            + '<td>'
+            + '<button class="btn-save-admin" onclick="_brSubmitEdit(' + idx + ')">保存</button>'
+            + '<button class="btn-cancel-admin" onclick="_brCancelEdit()">取消</button>'
+            + '</td>'
+            + '</tr>';
     } else {
       const idx = _brPush({ cram_id: branch.cram_id, is_active: isActive });
-      html += `<tr>
-        <td style="font-family:monospace;">${branch.cram_id}</td>
-        <td>${branch.branch_name || '—'}</td>
-        <td>${ssDisplay}</td>
-        <td>${stateLabel}</td>
-        <td>
-          <button onclick="_brStartEdit('${branch.cram_id}')" style="margin-right:4px;">編集</button>
-          ${!ssId
-            ? `<button onclick="_brSetupSS(${idx})" style="margin-right:4px; background:#1a73e8; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">子SS作成</button>`
-            : `<button onclick="_brShareSS(${idx})" style="margin-right:4px;">共有設定</button>`
-          }
-          ${isActive
-            ? `<button class="btn-cancel-admin" onclick="_brToggleActive(${idx})">無効化</button>`
-            : `<button class="btn-save-admin"   onclick="_brToggleActive(${idx})">有効化</button>`
-          }
-        </td>
-      </tr>`;
+      const setupBtn = !ssId
+        ? '<button onclick="_brSetupSS(' + idx + ')" class="br-row-btn br-setup-btn">子SS作成</button>'
+        : '<button onclick="_brShareSS(' + idx + ')" class="br-row-btn">共有設定</button>';
+      const toggleBtn = isActive
+        ? '<button class="btn-cancel-admin" onclick="_brToggleActive(' + idx + ')">無効化</button>'
+        : '<button class="btn-save-admin" onclick="_brToggleActive(' + idx + ')">有効化</button>';
+      html += '<tr>'
+            + '<td class="td-mono">' + branch.cram_id + '</td>'
+            + '<td>' + (branch.branch_name || '—') + '</td>'
+            + '<td>' + ssDisplay + '</td>'
+            + '<td>' + stateLabel + '</td>'
+            + '<td>'
+            + '<button onclick="_brStartEdit(\'' + branch.cram_id + '\')" class="br-row-btn">編集</button>'
+            + setupBtn
+            + toggleBtn
+            + '</td>'
+            + '</tr>';
     }
   });
 
@@ -165,8 +161,8 @@ function _brCancelEdit() {
 
 function _brSubmitEdit(idx) {
   const { cram_id } = _brStore[idx];
-  const name = document.getElementById(`br_edit_name_${idx}`)?.value.trim();
-  const ssId = document.getElementById(`br_edit_ss_${idx}`)?.value.trim();
+  const name = document.getElementById('br_edit_name_' + idx)?.value.trim();
+  const ssId = document.getElementById('br_edit_ss_' + idx)?.value.trim();
 
   if (!name) { showMessage('校舎名を入力してください。', 'error'); return; }
 
@@ -190,9 +186,7 @@ function _brSubmitEdit(idx) {
 
 function _brSetupSS(idx) {
   const { cram_id } = _brStore[idx];
-  if (!confirm(`"${cram_id}" の子スプレッドシートを新規作成します。\n` +
-               `作成後、branches シートに spreadsheet_id が自動登録されます。\n` +
-               `同じ cram_id を持つ校舎管理者（admin_users）へ自動で共有されます。\n\n続けますか？`)) return;
+  if (!confirm('"' + cram_id + '" の子スプレッドシートを新規作成します。\n作成後、branches シートに spreadsheet_id が自動登録されます。\n同じ cram_id を持つ校舎管理者（admin_users）へ自動で共有されます。\n\n続けますか？')) return;
 
   setLoading(true, [
     '子 SS を作成中...',
@@ -218,7 +212,7 @@ function _brSetupSS(idx) {
 
 function _brShareSS(idx) {
   const { cram_id } = _brStore[idx];
-  if (!confirm(`"${cram_id}" の子 SS を admin_users に登録済みの校舎管理者へ共有します。\n\n続けますか？`)) return;
+  if (!confirm('"' + cram_id + '" の子 SS を admin_users に登録済みの校舎管理者へ共有します。\n\n続けますか？')) return;
 
   setLoading(true, '共有設定中...');
   google.script.run
@@ -226,7 +220,7 @@ function _brShareSS(idx) {
       setLoading(false);
       if (res && res.success) {
         const emails = (res.sharedEmails || []).join(', ') || '（なし）';
-        showMessage(`共有完了: ${emails}`, 'success');
+        showMessage('共有完了: ' + emails, 'success');
       } else {
         showMessage((res && res.error) || '共有に失敗しました。', 'error');
       }
@@ -246,17 +240,17 @@ function _brToggleActive(idx) {
   const { cram_id, is_active } = _brStore[idx];
   const nextState = !is_active;
   const label     = nextState ? '有効化' : '無効化';
-  if (!confirm(`"${cram_id}" を${label}しますか？`)) return;
+  if (!confirm('"' + cram_id + '" を' + label + 'しますか？')) return;
 
-  setLoading(true, `校舎を${label}中...`);
+  setLoading(true, '校舎を' + label + '中...');
   google.script.run
     .withSuccessHandler(function (res) {
       setLoading(false);
       if (res && res.success) {
-        showMessage(`校舎を${label}しました。`, 'success');
+        showMessage('校舎を' + label + 'しました。', 'success');
         refreshMasterData(() => renderBranchManager());
       } else {
-        showMessage((res && res.error) || `${label}に失敗しました。`, 'error');
+        showMessage((res && res.error) || label + 'に失敗しました。', 'error');
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })

@@ -39,8 +39,7 @@ clasp push
 管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
 
 ### 4. 続きの実装タスク
-- **Issue #005** (`userCodeAppPanel:84 style SyntaxError`) の調査・解消（Cloudflare 経由時のみ発生）
-- Phase 2-D の動作確認（校舎選択 → 試験・パターン管理の cramId 切り替え）
+- Phase 2-F: `getData.js` の子 SS ルーティング対応（line_user_id → cram_id → 子 SS で全データ取得）
 
 ---
 
