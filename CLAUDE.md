@@ -23,11 +23,18 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 ---
 
+## 現在の開発状況
+
+- **Phase 0〜2: 完了・main にマージ済み（2026-05-19）**
+- **現在のブランチ**: `feature/admin`（Phase 3 以降の作業用に残存）
+
+---
+
 ## 次回セッション開始手順
 
 ### 1. ブランチ確認
 ```bash
-git checkout feature/admin   # 管理画面の作業ブランチ
+git checkout feature/admin
 ```
 
 ### 2. コードのデプロイ
@@ -35,11 +42,13 @@ git checkout feature/admin   # 管理画面の作業ブランチ
 clasp push
 ```
 
+> ⚠️ `clasp push` 後にコードの変更を本番へ反映するには、GAS エディタで「デプロイ → デプロイを管理 → 新しいバージョン」の作成が必要（生徒用・管理者用の両デプロイ）。
+
 ### 3. 動作確認
 管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
 
 ### 4. 続きの実装タスク
-- Phase 2 完了。Phase 3（生徒向け機能拡張）または LINE 動作確認へ
+- Phase 3（生徒向け機能拡張）またはバックログ参照
 
 ---
 
@@ -47,5 +56,6 @@ clasp push
 
 - **バックエンド**: GAS（clasp で push）
 - **フロントエンド**: GAS HtmlService（管理画面）/ GitHub Pages（LIFF）
-- **DB**: Google スプレッドシート
+- **DB**: Google スプレッドシート（親 SS + 校舎別子 SS）
 - **認証**: `Session.getActiveUser()` + admin_users シート照合（管理者）/ LINE LIFF（生徒）
+- **xlsx 解析**: SheetJS（CDN）でブラウザ側解析 → GAS に JSON 送信（Drive API 不要）

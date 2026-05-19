@@ -17,16 +17,10 @@
 > 登録できないため断念。代わりに GAS webapp のアクセス設定「ログインが必要」+
 > `Session.getActiveUser()` でサーバーサイドから認証する方式を採用。
 
-## Phase 2 — 校舎管理・子 SS 連携（作業中 2026-05-18）
+## Phase 2 — 校舎管理・子 SS 連携（完了 2026-05-19・main マージ済み）
 
-設計方針: 親 SS に `branches` シートを持ち cram_id → 子 SS の spreadsheet_id を管理。
-
-| シート | 配置先 | 状態 |
-|--------|--------|------|
-| `admin_users` / `audit_log` / `branches` | 親 SS | 実装済み |
-| `term_tests_master` / `genres_master` / `subjects_master` | 親 SS（全校舎共通） | 実装済み |
-| `exam_patterns` / `exam_schedule` / `pattern_subjects` | 子 SS | 2-D で移行予定 |
-| `students_master` / `scores_data` / `【設定】学校・科` | 子 SS | 2-D で移行予定 |
+設計方針: 親 SS に `branches` シートを持ち cram_id → 子 SS の spreadsheet_id を管理。  
+生徒データは校舎別の子 SS に格納し、`student_index`（親 SS）でルーティングする。
 
 - [x] **2-A**: `admin_branch.js` 新規作成（`getChildSS` / `getBranches` / `addBranch` / `updateBranch`）
 - [x] **2-A**: `setupAdminSS()` に `branches` シート作成を追加
@@ -35,12 +29,19 @@
 - [x] **2-C**: `setupBranchSS()` 実装（子 SS のシート自動作成・校舎管理者への自動共有）
 - [x] **2-D**: 管理画面フロントエンドの cramId 引数渡し対応（exams / patterns / branches）
 - [x] **2-E**: 生徒データインポート機能（xlsx → 子 SS の students_master / students_branch に Upsert）
-- [x] **2-F**: `getData.js` / `saveData.js` の子 SS ルーティング対応（student_index で line_user_id / student_id → cram_id → 子 SS）
+  - xlsx 解析を SheetJS（ブラウザ側 CDN）で行い Drive API 不要とした
+- [x] **2-F**: `getData.js` / `saveData.js` の子 SS ルーティング対応
+  - 親 SS の `student_index`（student_id / line_user_id / cram_id）でルーティング
+  - `linkLineIds()`: 外部 SS の「内部生」シートから LINE ID を取り込み student_index を更新
+  - `migrateStudentsFromParentSS()`: 旧・親 SS の students_master から子 SS への一括移行ユーティリティ
+
+**Phase 2 で判明した GAS の制約（→ `.claude/rules.md` に追記済み）**
+- GAS テンプレートリテラル内の `style=` が userCodeAppPanel の特定行で SyntaxError を引き起こす
+- Drive API は `appsscript.json` のスコープ宣言だけでは動作しない（OAuth 再認可が必要）
+- `clasp push` は GAS エディタのコードを更新するが、バージョン固定デプロイには反映されない
 
 ## Phase 3 — 生徒向け機能拡張（未着手）
-- [ ] 得点シート表示機能
+- [ ] 得点シート表示機能の改善
 
-## 未確定事項
-
-- Excel の実際の列名（`admin_auth.js` の `STUDENT_COLUMN_MAP` は要確認）
-- マスター管理者向け管理画面の構成詳細（別途設計済み → `.claude/architecture.md` 参照）
+## バックログ（優先度未定）
+→ `.claude/backlog.md` 参照
