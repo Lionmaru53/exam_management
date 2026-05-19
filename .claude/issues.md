@@ -32,7 +32,7 @@
 
 ## open
 
-### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
+### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError（Cloudflare経由時のみ）
 - **場所**: `admin_index.html` → HTML 要素のインライン `style` 属性
 - **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style' (at userCodeAppPanel?createOAuthDialog=true:84:20)` が発生。`renderBranchManager is not defined` も連鎖して発生する可能性あり。
 - **原因（推定）**: GAS の `userCodeAppPanel` はヘッドを除いた body コンテンツを 75 行のプリアンブルの後に出力する。Phase 2-D で `branch-selector-wrap` div を nav の前に追加したことで nav が body の 9 行目にシフトし、nav の `style="display:none;"` 属性が `userCodeAppPanel` のちょうど 84 行目に来た。GAS の内部 JS 生成処理がその行で `style` を予期しない識別子として扱い SyntaxError を発生させている。
