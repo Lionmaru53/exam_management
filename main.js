@@ -9,7 +9,8 @@ function doGet(e) {
     return HtmlService.createTemplateFromFile('admin_index')
       .evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setTitle('成績管理システム - 管理者用');
+      .setTitle('成績管理システム - 管理者用')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   // 得点保存 API（GitHub Pages からの GET リクエスト）
@@ -31,18 +32,21 @@ function doGet(e) {
       tmpl.appData  = JSON.stringify(data);
       return tmpl.evaluate()
         .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-        .setTitle('定期テスト得点確認');
+        .setTitle('定期テスト得点確認')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     } catch (err) {
       return HtmlService.createHtmlOutput(
         `<p style="color:red;padding:20px;">エラー: ${err.toString()}</p>`
-      );
+      )
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
   }
 
   // デフォルト（直接アクセス）
   return HtmlService.createHtmlOutput(
     '<p style="font-family:sans-serif;padding:24px;text-align:center;">LINE アプリからアクセスしてください。</p>'
-  );
+  )
+  .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 /**

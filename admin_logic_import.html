@@ -1,48 +1,183 @@
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 function renderImportManager() {
-  const content = document.getElementById('admin-content');
-  content.innerHTML = `
-    <h3>生徒データインポート</h3>
-    <p>別システムからエクスポートした校舎別の Excel ファイル（.xlsx）をアップロードしてください。</p>
-    <div style="background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:12px 16px; margin-bottom:16px; font-size:0.9em; color:#5d4037;">
-      ⚠ この機能は <strong>Phase 1（親SS・子SS間ルーティング）</strong> 完成後に有効化されます。<br>
-      現在はファイル選択のみ可能で、実際のインポートは行われません。
-    </div>
-    <div style="display:flex; align-items:center; gap:12px; margin:16px 0;">
-      <input type="file" id="import-file" accept=".xlsx" />
-      <button onclick="_doImport()" disabled style="opacity:0.5; cursor:not-allowed;">インポート実行（準備中）</button>
-    </div>
-    <div id="import-result"></div>
-  `;
+  var content    = document.getElementById('admin-content');
+  var cramId     = window.selectedCramId || '';
+  var branchName = _impGetBranchName(cramId);
+
+  if (!cramId) {
+    content.innerHTML = '<h3>生徒データインポート</h3>'
+      + '<p class="imp-no-branch">画面上部のセレクターから校舎を選択してください。</p>';
+    return;
+  }
+
+  content.innerHTML = '<h3>生徒データインポート</h3>'
+    + '<p>対象校舎: <strong>' + branchName + '</strong></p>'
+    + '<p class="imp-desc">「015_名簿作成」からエクスポートした校舎別の Excel ファイル（.xlsx）をアップロードしてください。<br>'
+    + '同じ管理番号の生徒は上書き更新（ただし LINE ID は保持）、新規の生徒は追加されます。</p>'
+    + '<div class="imp-hint">'
+    + '<strong>必須列（1行目のヘッダー名）:</strong> 管理番号 / 姓 / 名 / 姓かな / 名かな / 学校 / 学年'
+    + '</div>'
+    + '<div class="imp-upload-row">'
+    + '<input type="file" id="import-file" accept=".xlsx" onchange="_onFileChange()" />'
+    + '<button id="import-btn" onclick="_doImport()" class="btn-save-admin imp-btn" disabled>インポート実行</button>'
+    + '</div>'
+    + '<div id="import-preview"></div>'
+    + '<div id="import-result"></div>'
+    + '<hr class="imp-divider">'
+    + '<h4>LINE ID 連携</h4>'
+    + '<p class="imp-desc">「校舎公式LINEブック」の URL を貼り付けてください。<br>'
+    + '「内部生」シートの「管理番号」と「生徒」列を読み込み、既存の生徒レコードに LINE ID を紐づけます。</p>'
+    + '<div class="imp-hint">'
+    + 'シート構造: 1行目=タイトル行、<strong>2行目=ヘッダー行（管理番号 / 生徒）</strong>、3行目以降=データ'
+    + '</div>'
+    + '<div class="imp-upload-row">'
+    + '<input type="text" id="line-ss-url" class="admin-input imp-url-input" placeholder="https://docs.google.com/spreadsheets/d/..." />'
+    + '<button onclick="_doLinkLineIds()" class="btn-save-admin imp-btn">連携実行</button>'
+    + '</div>'
+    + '<div id="link-result"></div>';
+}
+
+function _impGetBranchName(cramId) {
+  if (!cramId || !window.masterData || !Array.isArray(window.masterData.branches)) return cramId;
+  var branch = window.masterData.branches.find(function (b) {
+    return String(b.cram_id) === String(cramId);
+  });
+  return branch ? (branch.branch_name || cramId) : cramId;
+}
+
+// ファイル選択時: SheetJS でプレビュー
+function _onFileChange() {
+  var fileInput = document.getElementById('import-file');
+  var btn       = document.getElementById('import-btn');
+  var preview   = document.getElementById('import-preview');
+  var result    = document.getElementById('import-result');
+  result.innerHTML  = '';
+  preview.innerHTML = '';
+  if (btn) btn.disabled = true;
+
+  if (!fileInput || !fileInput.files.length) return;
+  var file = fileInput.files[0];
+
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      var data     = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array' });
+      var sheet    = workbook.Sheets[workbook.SheetNames[0]];
+      var rows     = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (!rows || rows.length < 2) {
+        preview.innerHTML = '<p class="imp-warn">データが空です（ヘッダー行のみ）。</p>';
+        return;
+      }
+
+      var headers  = rows[0].map(function (h) { return String(h).trim(); });
+      var dataRows = rows.slice(1).filter(function (r) {
+        return r.some(function (c) { return String(c || '').trim() !== ''; });
+      });
+
+      // 必須列チェック
+      var required = ['管理番号', '姓', '名', '学年'];
+      var missing  = required.filter(function (col) { return headers.indexOf(col) === -1; });
+      if (missing.length > 0) {
+        preview.innerHTML = '<p class="imp-warn">必須列が見つかりません: ' + missing.join('、') + '</p>';
+        return;
+      }
+
+      var idIdx = headers.indexOf('管理番号');
+      var valid = dataRows.filter(function (r) { return String(r[idIdx] || '').trim() !== ''; });
+
+      preview.innerHTML = '<div class="imp-preview">'
+        + '<strong>プレビュー:</strong> 有効な生徒 <strong>' + valid.length + '</strong> 件 / 全 ' + dataRows.length + ' 行'
+        + '</div>';
+
+      // 有効データがあればボタンを有効化
+      if (valid.length > 0 && btn) btn.disabled = false;
+
+      // 解析済みデータをボタンが参照できるように保持
+      window._importRows = rows;
+
+    } catch (err) {
+      preview.innerHTML = '<p class="imp-warn">ファイルの解析に失敗しました: ' + (err.message || err) + '</p>';
+    }
+  };
+  reader.onerror = function () {
+    preview.innerHTML = '<p class="imp-warn">ファイルの読み込みに失敗しました。</p>';
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 function _doImport() {
-  const fileInput = document.getElementById('import-file');
-  if (!fileInput || !fileInput.files.length) {
-    showMessage('ファイルを選択してください。', 'error');
-    return;
-  }
-  const file   = fileInput.files[0];
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const base64 = e.target.result.split(',')[1];
-    setLoading(true, ['ファイルを解析中...', 'データを変換中...', 'マスターデータに書き込み中...', 'もうしばらくお待ちください...']);
-    google.script.run
-      .withSuccessHandler(function (res) {
-        setLoading(false);
-        if (res && res.success) {
-          showMessage(`インポート完了: ${res.added}件追加、${res.updated}件更新しました。`, 'success');
-        } else {
-          showMessage((res && res.error) || 'インポートに失敗しました。', 'error');
-        }
-      })
-      .withFailureHandler(function () {
-        setLoading(false);
-        showMessage('通信エラーが発生しました。', 'error');
-      })
-      .importStudentData(base64, file.name);
-  };
-  reader.readAsDataURL(file);
+  var cramId = window.selectedCramId || '';
+  if (!cramId)               { showMessage('校舎を選択してください。', 'error'); return; }
+  if (!window._importRows)   { showMessage('ファイルを選択してください。', 'error'); return; }
+
+  document.getElementById('import-result').innerHTML = '';
+
+  setLoading(true, ['データを送信中...', '生徒データを書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        var resultHtml = '<div class="imp-result">'
+          + '<p class="imp-result-title">インポート完了</p>'
+          + '<ul>'
+          + '<li>追加: <strong>' + res.added + '</strong> 件</li>'
+          + '<li>更新: <strong>' + res.updated + '</strong> 件</li>'
+          + '</ul>'
+          + '</div>';
+        document.getElementById('import-result').innerHTML = resultHtml;
+        showMessage('インポートが完了しました。', 'success');
+        window._importRows = null;
+        var btn = document.getElementById('import-btn');
+        if (btn) btn.disabled = true;
+      } else {
+        showMessage((res && res.error) || 'インポートに失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      var msg = (err && err.message) ? err.message : '通信エラーが発生しました。';
+      showMessage('エラー: ' + msg, 'error');
+    })
+    .importStudentData(cramId, window._importRows);
+}
+
+function _doLinkLineIds() {
+  var cramId = window.selectedCramId || '';
+  if (!cramId) { showMessage('校舎を選択してください。', 'error'); return; }
+
+  var urlInput = document.getElementById('line-ss-url');
+  var url = urlInput ? urlInput.value.trim() : '';
+  if (!url) { showMessage('スプレッドシートの URL を入力してください。', 'error'); return; }
+
+  document.getElementById('link-result').innerHTML = '';
+
+  setLoading(true, ['スプレッドシートを読み込み中...', 'LINE ID を照合中...', 'データを更新中...']);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        var resultHtml = '<div class="imp-result">'
+          + '<p class="imp-result-title">LINE ID 連携完了</p>'
+          + '<ul>'
+          + '<li>紐づけ成功: <strong>' + res.linked + '</strong> 件</li>'
+          + '<li>管理番号未登録（スキップ）: <strong>' + res.notFound + '</strong> 件</li>'
+          + '</ul>'
+          + '</div>';
+        document.getElementById('link-result').innerHTML = resultHtml;
+        showMessage('LINE ID の連携が完了しました。', 'success');
+      } else {
+        showMessage((res && res.error) || '連携に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      var msg = (err && err.message) ? err.message : '通信エラーが発生しました。';
+      showMessage('エラー: ' + msg, 'error');
+    })
+    .linkLineIds(cramId, url);
 }
 
 window.renderImportManager = renderImportManager;
