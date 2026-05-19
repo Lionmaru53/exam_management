@@ -70,14 +70,10 @@ function _renderBranchList(branches) {
 
   branches.forEach(branch => {
     const isActive  = branch.is_active === true || String(branch.is_active) === '1' || String(branch.is_active) === 'true';
-    const stateLabel = isActive
-      ? '<span style="color:#2a9d2a;">有効</span>'
-      : '<span style="color:#999;">無効</span>';
+    const stateLabel = isActive ? '<span style="color:#2a9d2a;">有効</span>' : '<span style="color:#999;">無効</span>';
     const ssId      = String(branch.spreadsheet_id || '').trim();
     const ssShort   = ssId.length > 24 ? ssId.slice(0, 24) + '…' : ssId;
-    const ssDisplay = ssId
-      ? `<a href="https://docs.google.com/spreadsheets/d/${ssId}" target="_blank" style="font-size:0.8em;font-family:monospace;color:#1a73e8;">${ssShort}</a>`
-      : '<span style="color:#aaa;">未設定</span>';
+    const ssDisplay = ssId ? `<a href="https://docs.google.com/spreadsheets/d/${ssId}" target="_blank" style="font-size:0.8em;font-family:monospace;color:#1a73e8;">${ssShort}</a>` : '<span style="color:#aaa;">未設定</span>';
 
     if (_brEditId === branch.cram_id) {
       const idx = _brPush({ cram_id: branch.cram_id, is_active: isActive });
