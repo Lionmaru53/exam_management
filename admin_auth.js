@@ -23,7 +23,7 @@ function _getAdminSS() {
  */
 function getAdminContext() {
   const email = Session.getActiveUser().getEmail();
-  if (!email) throw new Error('Google アカウントの取得に失敗しました。管理者に連絡してください。');
+  if (!email) throw new Error('管理者ページには管理者専用 URL からアクセスしてください。Google アカウントでのログインが必要です。');
 
   const ss    = _getAdminSS();
   const sheet = ss.getSheetByName(ADMIN_USERS_SHEET);

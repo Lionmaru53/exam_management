@@ -14,25 +14,32 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 ---
 
+## アクセス URL（確定）
+
+| 用途 | URL | 備考 |
+|------|-----|------|
+| 管理者 | `script.google.com/macros/s/[管理者デプロイID]/exec?page=admin` | Google ログイン必須・Cloudflare 経由なし |
+| 生徒（LIFF） | `wasedazemi-highschool.com/exams/test?userId=...` | Cloudflare 経由・Google ログイン不要 |
+
+---
+
 ## 次回セッション開始手順
 
-### 1. コードのデプロイ
+### 1. ブランチ確認
+```bash
+git checkout feature/admin   # 管理画面の作業ブランチ
+```
+
+### 2. コードのデプロイ
 ```bash
 clasp push
 ```
 
-### 2. GAS 初期セットアップ（未実行の場合のみ）
-GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log / branches シートが作成される）
-
 ### 3. 動作確認
-管理者用 `GAS_URL?page=admin` を開き、Google アカウントでログインできることを確認
+管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
 
-### 4. 続きの実装タスク（現在: Phase 2-B）
-`admin_logic_branches.html` の校舎管理 UI を実装する。
-- 校舎一覧の表示（`getBranches()` を呼ぶ）
-- 校舎の追加フォーム（`addBranch(payload)` を呼ぶ）
-- 校舎の編集（`updateBranch(payload)` を呼ぶ）
-- spreadsheet_id の入力欄（2-C の子SS作成が完成するまでは手動入力）
+### 4. 続きの実装タスク
+- Phase 2 完了。Phase 3（生徒向け機能拡張）または LINE 動作確認へ
 
 ---
 

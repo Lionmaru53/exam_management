@@ -199,6 +199,10 @@ function batchSetGroupSubjects(cramId, payload) {
     const gr  = String(payload.grade        || '').trim();
     const sub = String(payload.sub_course   || '').trim();
 
+    // 同一秒内の複数作成でも重複しないよう連番サフィックスを付与
+    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+    let idCounter = 0;
+
     for (const termTestId of payload.term_test_ids) {
       const existing = patternRows.find(p =>
         String(p.school_name  || '').trim() === sn &&
@@ -210,7 +214,7 @@ function batchSetGroupSubjects(cramId, payload) {
       if (existing) {
         patternIds.push(String(existing.pattern_id));
       } else {
-        const newId = generateUniqueId('P');
+        const newId = 'P' + base + (++idCounter);
         patSheet.appendRow([newId, sn, sc, gr, sub, termTestId]);
         patternIds.push(newId);
       }
@@ -253,6 +257,10 @@ function batchSetPerTermSubjects(cramId, items) {
     const patternRows = getRowsData(patSheet);
     const updates     = [];
 
+    // 同一秒内の複数作成でも重複しないよう連番サフィックスを付与
+    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+    let idCounter = 0;
+
     for (const item of items) {
       const sn   = String(item.school_name  || '').trim();
       const sc   = String(item.school_course || '').trim();
@@ -272,7 +280,7 @@ function batchSetPerTermSubjects(cramId, items) {
       if (existing) {
         patternId = String(existing.pattern_id);
       } else {
-        patternId = generateUniqueId('P');
+        patternId = 'P' + base + (++idCounter);
         patSheet.appendRow([patternId, sn, sc, gr, sub, ttId]);
         patternRows.push({ pattern_id: patternId, school_name: sn, school_course: sc, grade: gr, sub_course: sub, term_test_id: ttId });
       }
@@ -403,6 +411,9 @@ function addSubCourseGroup(cramId, payload) {
     const gr  = String(payload.grade        || '').trim();
     const sub = String(payload.sub_course   || '').trim();
 
+    // 同一秒内の複数作成でも重複しないよう連番サフィックスを付与
+    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+    let idCounter = 0;
     let created = 0;
     for (const tt of termTestRows) {
       const ttId = String(tt.term_test_id || '').trim();
@@ -414,7 +425,7 @@ function addSubCourseGroup(cramId, payload) {
         String(p.term_test_id || '').trim() === ttId
       );
       if (!exists) {
-        patSheet.appendRow([generateUniqueId('P'), sn, sc, gr, sub, ttId]);
+        patSheet.appendRow(['P' + base + (++idCounter), sn, sc, gr, sub, ttId]);
         created++;
       }
     }

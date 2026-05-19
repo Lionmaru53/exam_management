@@ -33,7 +33,9 @@
 - [x] **2-A**: `getAdminInitialData()` に master 向け branches 一覧を追加
 - [x] **2-B**: `admin_logic_branches.html` の実装（校舎一覧・追加・編集 UI）
 - [x] **2-C**: `setupBranchSS()` 実装（子 SS のシート自動作成・校舎管理者への自動共有）
-- [ ] **2-D**: データ関数の SS 切り替え対応
+- [x] **2-D**: 管理画面フロントエンドの cramId 引数渡し対応（exams / patterns / branches）
+- [x] **2-E**: 生徒データインポート機能（xlsx → 子 SS の students_master / students_branch に Upsert）
+- [x] **2-F**: `getData.js` / `saveData.js` の子 SS ルーティング対応（student_index で line_user_id / student_id → cram_id → 子 SS）
 
 ## Phase 3 — 生徒向け機能拡張（未着手）
 - [ ] 得点シート表示機能
