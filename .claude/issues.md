@@ -34,10 +34,17 @@
 - **場所**: `src/appsscript.json` → `oauthScopes`
 - **症状**: 「指定された権限では DriveApp.getFileById を呼び出すことができません。必要な権限: ...auth/drive」エラー。副作用として「A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received」がブラウザコンソールに出る。
 - **原因**: `oauthScopes` に `https://www.googleapis.com/auth/spreadsheets` と `script.container.ui` のみ明示していたため、GAS がその2スコープしか認可しない。`DriveApp.getFileById().addEditor()` は `auth/drive` スコープが必要だが含まれていなかった。
-- **対処**: `appsscript.json` から `oauthScopes` フィールドを削除し、GAS のスコープ自動検出に委ねる（`setup.md` の方針と一致）。自動検出では `DriveApp` の使用を検出して `auth/drive` が自動的にスコープに含まれる。
+- **対処（1/2）**: `appsscript.json` から `oauthScopes` フィールドを削除し、GAS のスコープ自動検出に委ねる（`setup.md` の方針と一致）。自動検出では `DriveApp` の使用を検出して `auth/drive` が自動的にスコープに含まれる。
+- **対処（2/2）**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除（→ #007 参照）。
 - **再認可が必要**: `clasp push` 後、GAS エディタで任意の関数を実行するか新しいデプロイを作成して再認可ダイアログに応じる。
 - **コンソールエラーの補足**: 「message channel closed」はサーバー側エラーによる `google.script.run` の接続切断が原因。DriveApp エラーが解消されれば消える。
 - **#003 との関係**: #003 の「GAS エディタから手動実行で認可を取得」という暫定対処では、新しい認証トークンが発行されても webapp 側のスコープが不足したままになるため根本解決にはなっていなかった。
+
+### [fixed] #007 `clasp push` 時「Drive API の有効化中に権限が拒否されました」エラー
+- **場所**: `src/appsscript.json` → `enabledAdvancedServices`
+- **症状**: `clasp push` 実行時に「プロジェクト XXXXXX への API（drive）の有効化中に権限が拒否されました」エラー。
+- **原因**: `enabledAdvancedServices` に Drive v2（REST API）が記載されていたため、clasp が Cloud プロジェクトで Drive API を有効化しようとした。しかしコードが使っているのは `DriveApp`（GAS 組み込みクラス）であり、Drive Advanced Service（REST API）は一切使用していない。`DriveApp` と `Drive`（Advanced Service）は別物。
+- **対処**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除。
 
 ## open
 
