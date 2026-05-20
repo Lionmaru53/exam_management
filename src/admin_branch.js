@@ -270,3 +270,10 @@ function _ensureBranchesSheet(ss) {
     Logger.log('branches シートは既に存在します。');
   }
 }
+
+// Node.js（Jest）でテストできるよう関数を global に公開する
+if (typeof module !== 'undefined') Object.assign(global, {
+  BRANCHES_SHEET,
+  getChildSS, getBranches, addBranch, updateBranch, setupBranchSS, shareBranchSS,
+  _ensureBranchesSheet, _getTargetSS,
+});

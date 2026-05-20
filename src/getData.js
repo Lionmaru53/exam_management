@@ -173,3 +173,5 @@ function stringifyDates(obj) {
   }
   return obj;
 }
+
+if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData });

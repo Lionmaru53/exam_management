@@ -218,3 +218,11 @@ function updateAdminUser(payload) {
     lock.releaseLock();
   }
 }
+
+// Node.js（Jest）でテストできるよう関数を global に公開する
+// GAS では module が undefined のため、このブロックは実行されない
+if (typeof module !== 'undefined') Object.assign(global, {
+  ADMIN_USERS_SHEET, AUDIT_LOG_SHEET,
+  getAdminContext, writeAuditLog, setupAdminSS,
+  getAdminUsers, addAdminUser, deactivateAdminUser, updateAdminUser,
+});

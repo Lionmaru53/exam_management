@@ -21,33 +21,52 @@ LINE アプリ
 
 `Session.getActiveUser().getEmail()` は「ログインが必要」設定時のみ実際のメールを返す。
 
+## ディレクトリ構成
+
+```
+exam_management/
+├── src/       GAS push 対象（clasp rootDir）。本番コード（.js / .html / appsscript.json）
+├── tests/     テストファイル（GAS push 対象外。push-test.ps1 でテスト用プロジェクトへ）
+├── docs/      GitHub Pages（LIFF エンドポイント）
+├── .claude/   プロジェクトドキュメント
+└── （ルート）  clasp 設定・git 設定・CLAUDE.md 等
+```
+
 ## ファイル構成
 
-### GAS バックエンド
+### GAS バックエンド（`src/`）
 | ファイル | 役割 |
 |---------|------|
-| `main.js` | `doGet()` / `include()` |
+| `main.js` | `doGet()` / `include()` / `jsonpOrJson()` |
 | `getData.js` | 生徒向け: LINE ID → 試験・得点データ |
 | `saveData.js` | 生徒向け: 得点保存 |
 | `admin_auth.js` | 管理者認証 / admin_users CRUD / setupAdminSS |
-| `admin_branch.js` | 校舎管理 / getChildSS / getBranches / addBranch / updateBranch |
-| `admin_getData.js` | 管理者向け初期データ一括取得 |
+| `admin_branch.js` | 校舎管理 / getChildSS / getBranches / addBranch / updateBranch / setupBranchSS / shareBranchSS |
+| `admin_getData.js` | 管理者向け初期データ一括取得（親SS＋子SS） |
 | `admin_saveData.js` | 試験・パターン・教科・term_tests・genres の書き込み |
+| `admin_import.js` | 生徒インポート / LINE ID 連携 / 旧SS移行（importStudentData / linkLineIds / migrateStudentsFromParentSS） |
 | `getRowsData.js` | シート → `{列名: 値}[]` 変換ユーティリティ |
 
-### 管理画面フロントエンド
+### 管理画面フロントエンド（`src/`）
 | ファイル | 役割 |
 |---------|------|
-| `admin_index.html` | エントリーポイント・ログイン・タブ管理 |
+| `admin_index.html` | エントリーポイント・タブ管理・校舎セレクター |
 | `admin_logic_exams.html` | 試験日程管理 |
 | `admin_logic_patterns.html` | 教科パターン管理 |
 | `admin_logic_admin_users.html` | 管理者ユーザー管理（master のみ） |
-| `admin_logic_branches.html` | 校舎管理（Phase 2-B で実装予定） |
-| `admin_logic_import.html` | 生徒インポート（Phase 2 完了後に有効化） |
+| `admin_logic_branches.html` | 校舎管理（一覧・追加・編集・子SS作成・共有設定・有効化/無効化） |
+| `admin_logic_import.html` | 生徒インポート / LINE ID 連携 UI |
 | `admin_logic_master_data.html` | 試験区分・ジャンル CRUD（master のみ） |
 | `admin_stylesheet.html` | 管理画面スタイル |
 
-### 共通
+### 生徒向けフロントエンド（`src/`）
+| ファイル | 役割 |
+|---------|------|
+| `index_app.html` | 生徒アプリのシェル（`appData` を受け取り `renderApp()` を呼ぶ） |
+| `logic_ui_render.html` | 生徒アプリの描画ロジック |
+| `logic_ui_action.html` | 生徒アプリの操作ロジック（得点保存など） |
+
+### 共通（`src/`）
 | ファイル | 役割 |
 |---------|------|
 | `common_stylesheet.html` | 共通スタイル |
@@ -60,20 +79,29 @@ LINE アプリ
 | `docs/config.js` | LIFF_ID / GAS_URL（git 管理外・CI が Secrets から生成） |
 | `docs/config.example.js` | ローカル開発用テンプレート |
 
-## スプレッドシート構造（親 SS）
+## スプレッドシート構造
 
 詳細は [spreadsheet-schema.md](../spreadsheet-schema.md) を参照。
 
-| シート | 役割 | 配置 |
-|--------|------|------|
-| `admin_users` | 管理者一覧 | 親 SS |
-| `audit_log` | 操作ログ | 親 SS |
-| `branches` | cram_id → 子 SS の spreadsheet_id | 親 SS |
-| `term_tests_master` | 試験区分マスター（is_two_terms） | 親 SS（全校舎共通） |
-| `genres_master` | 教科ジャンル | 親 SS（全校舎共通） |
-| `subjects_master` | 教科マスター | 親 SS（全校舎共通） |
-| `exam_patterns` | 学校×コース×学年×sub_course×試験区分 | 子 SS（Phase 2-D 移行予定） |
-| `exam_schedule` | pattern_id × year → 日程 | 子 SS（Phase 2-D 移行予定） |
-| `scores_data` | 得点・順位 | 子 SS（Phase 2-D 移行予定） |
-| `students_master` | 生徒情報（PII） | 子 SS（Phase 2-D 移行予定） |
-| `【設定】学校・科` | 学校名・学期制・コース | 子 SS |
+### 親 SS
+| シート | 役割 |
+|--------|------|
+| `admin_users` | 管理者一覧（email / role / cram_id / is_active / last_login） |
+| `audit_log` | 操作ログ |
+| `branches` | cram_id → 子 SS の spreadsheet_id / is_active |
+| `student_index` | line_user_id → cram_id ルーティングテーブル（LINE ID 連携時に更新） |
+| `term_tests_master` | 試験区分マスター（is_two_terms） |
+| `genres_master` | 教科ジャンル |
+| `subjects_master` | 教科マスター |
+
+### 子 SS（校舎ごと）
+| シート | 役割 |
+|--------|------|
+| `config` | CRAM_ID / PARENT_SS_ID / BRANCH_NAME |
+| `【設定】学校・科` | 学校名・2学期制フラグ・コース一覧 |
+| `exam_patterns` | 学校×コース×学年×sub_course×試験区分 |
+| `exam_schedule` | pattern_id × year → 日程 |
+| `pattern_subjects` | pattern_id → subject_id の紐付け |
+| `students_master` | 生徒情報（PII）/ student_id / line_user_id など |
+| `students_branch` | student_id / grade / is_active（軽量ルーティング用） |
+| `scores_data` | 得点・順位（score_id / exam_id / student_id / subject_id / score / rank） |

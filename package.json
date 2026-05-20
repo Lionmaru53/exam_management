@@ -1,0 +1,11 @@
+{
+  "name": "exam-management",
+  "private": true,
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^29"
+  }
+}

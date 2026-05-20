@@ -407,3 +407,11 @@ function _upsertStudentsBranch(ss, students) {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, 3).setValues(newRows);
   }
 }
+
+// Node.js（Jest）でテストできるよう関数を global に公開する
+if (typeof module !== 'undefined') Object.assign(global, {
+  STUDENT_COLUMN_MAP, STUDENTS_MASTER_HEADERS,
+  importStudentData, linkLineIds,
+  _mapRows, _upsertStudentsMaster, _upsertStudentsBranch,
+  _ensureStudentsMasterSheet, _ensureStudentIndexSheet,
+});
