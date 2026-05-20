@@ -40,11 +40,14 @@
 - **コンソールエラーの補足**: 「message channel closed」はサーバー側エラーによる `google.script.run` の接続切断が原因。DriveApp エラーが解消されれば消える。
 - **#003 との関係**: #003 の「GAS エディタから手動実行で認可を取得」という暫定対処では、新しい認証トークンが発行されても webapp 側のスコープが不足したままになるため根本解決にはなっていなかった。
 
-### [fixed] #007 `clasp push` 時「Drive API の有効化中に権限が拒否されました」エラー
-- **場所**: `src/appsscript.json` → `enabledAdvancedServices`
-- **症状**: `clasp push` 実行時に「プロジェクト XXXXXX への API（drive）の有効化中に権限が拒否されました」エラー。
-- **原因**: `enabledAdvancedServices` に Drive v2（REST API）が記載されていたため、clasp が Cloud プロジェクトで Drive API を有効化しようとした。しかしコードが使っているのは `DriveApp`（GAS 組み込みクラス）であり、Drive Advanced Service（REST API）は一切使用していない。`DriveApp` と `Drive`（Advanced Service）は別物。
-- **対処**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除。
+### [fixed] #007 `shareBranchSS()` 実行時「Drive API の有効化中に権限が拒否されました」エラー（Cloud プロジェクト側の Drive API 未有効化）
+- **場所**: GAS の Cloud プロジェクト設定 / `src/appsscript.json` → `enabledAdvancedServices`
+- **症状**: 管理画面「共有設定」クリック時に「プロジェクト XXXXXX への API（drive）の有効化中に権限が拒否されました」エラー。
+- **原因（1）**: `enabledAdvancedServices` に Drive v2（REST API）が記載されていたため、clasp が Cloud プロジェクトで Drive API を有効化しようとした（clasp push 時）。コードが使っているのは `DriveApp`（GAS 組み込みクラス）であり、Drive Advanced Service（REST API）は不使用。
+- **原因（2）**: GAS の Cloud プロジェクトで Google Drive API が有効化されていなかった。`DriveApp` の実行には Cloud プロジェクトで Drive API が有効である必要がある。Google Workspace 環境や特定の制限下では GAS の自動有効化が失敗するため、手動有効化が必要。
+- **対処（1）**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除。
+- **対処（2）**: Cloud Console（console.cloud.google.com）でプロジェクトを選択 → 「API とサービス」→「API とサービスを有効にする」→「Google Drive API」を検索 → 有効にする。
+- **教訓**: `DriveApp` を使う GAS プロジェクトでは、初回セットアップ時に Cloud Console で Google Drive API を手動有効化する必要がある環境がある（setup.md に手順を追記）。
 
 ## open
 
