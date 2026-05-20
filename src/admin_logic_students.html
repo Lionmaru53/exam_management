@@ -1,0 +1,169 @@
+<script>
+let _stCachedStudents = [];
+let _stShowInactive   = false;  // false = 有効のみ, true = 全員
+
+// ---- 外部から呼ばれるエントリーポイント ----
+
+function renderStudentManager() {
+  _stShowInactive = false;
+  _stFetchAndRender();
+}
+
+// ---- 内部関数 ----
+
+function _stFetchAndRender() {
+  const content = document.getElementById('admin-content');
+  content.innerHTML = '<h3>生徒一覧</h3><p>読み込み中...</p>';
+  setLoading(true, '生徒一覧を取得中...');
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        _stCachedStudents = res.students || [];
+        _stRerender();
+      } else {
+        showMessage((res && res.error) || '生徒一覧の取得に失敗しました。', 'error');
+        content.innerHTML = '<h3>生徒一覧</h3>';
+      }
+    })
+    .withFailureHandler(function (err) {
+      const m = err && err.message ? err.message : JSON.stringify(err);
+      console.error('[getStudentList] failure:', err);
+      setLoading(false);
+      showMessage('エラー: ' + m, 'error');
+    })
+    .getStudentList(window.selectedCramId || '');
+}
+
+function _stRerender() {
+  const content  = document.getElementById('admin-content');
+  const students = _stShowInactive
+    ? _stCachedStudents
+    : _stCachedStudents.filter(s => s.is_active);
+
+  const total   = _stCachedStudents.length;
+  const showing = students.length;
+
+  let html = '<h3>生徒一覧</h3>';
+
+  // ---- フィルターバー ----
+  html += '<div class="st-filter-bar">'
+        + '<span class="st-count">全 ' + total + ' 名中 ' + showing + ' 名表示</span>'
+        + '<label class="st-toggle">'
+        + '<input type="checkbox" onchange="_stToggleInactive(this.checked)"'
+        + (_stShowInactive ? ' checked' : '') + '>'
+        + ' 無効な生徒も表示'
+        + '</label>'
+        + '</div>';
+
+  if (students.length === 0) {
+    html += '<p class="st-empty">表示できる生徒がいません。</p>';
+    content.innerHTML = html;
+    return;
+  }
+
+  // ---- 学校名でグループ化 ----
+  const groups = {};
+  students.forEach(function (s) {
+    const key = s.school_name || '（学校名未設定）';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  });
+
+  Object.keys(groups).sort().forEach(function (schoolName) {
+    const members = groups[schoolName];
+
+    html += '<div class="st-school-group">'
+          + '<div class="st-school-header">'
+          + '<span class="st-school-name">' + _esc(schoolName) + '</span>'
+          + '<span class="st-school-count">' + members.length + ' 名</span>'
+          + '</div>'
+          + '<table class="admin-table st-table">'
+          + '<thead><tr>'
+          + '<th>管理番号</th><th>氏名</th><th>学年</th><th>コース</th>'
+          + '<th class="st-line-col">LINE</th><th>状態</th>'
+          + '</tr></thead><tbody>';
+
+    members.forEach(function (s) {
+      const lineIcon  = s.line_user_id
+        ? '<span class="st-line-ok" title="' + _esc(s.line_user_id) + '">✓</span>'
+        : '<span class="st-line-ng">未連携</span>';
+      const statusBadge = s.is_active
+        ? '<span class="st-badge-active">有効</span>'
+        : '<span class="st-badge-inactive">無効</span>';
+      const courseText = [s.school_course, s.sub_course].filter(Boolean).join(' / ') || '—';
+
+      html += '<tr class="' + (s.is_active ? '' : 'st-row-inactive') + '">'
+            + '<td class="td-mono">' + _esc(s.student_id) + '</td>'
+            + '<td>'
+            + '<span class="st-name">' + _esc(s.name) + '</span>'
+            + (s.pronunciation ? '<span class="st-kana"> （' + _esc(s.pronunciation) + '）</span>' : '')
+            + '</td>'
+            + '<td>' + _esc(s.grade || '—') + '</td>'
+            + '<td>' + _esc(courseText) + '</td>'
+            + '<td class="st-line-col">' + lineIcon + '</td>'
+            + '<td>' + statusBadge + '</td>'
+            + '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+  });
+
+  content.innerHTML = html;
+}
+
+function _stToggleInactive(checked) {
+  _stShowInactive = checked;
+  _stRerender();
+}
+
+function _esc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+window.renderStudentManager = renderStudentManager;
+</script>
+
+<style>
+  .st-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: #f5f7fa;
+    border-radius: 6px;
+    border: 1px solid #e0e4ea;
+  }
+  .st-count { color: #555; font-size: 0.9em; }
+  .st-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9em; color: #444; }
+
+  .st-school-group { margin-bottom: 28px; }
+  .st-school-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #e8eef6;
+    border-left: 4px solid #4a7fc1;
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 6px;
+  }
+  .st-school-name  { font-weight: bold; font-size: 1.05em; color: #2c4a7c; }
+  .st-school-count { font-size: 0.85em; color: #666; }
+
+  .st-table { width: 100%; }
+  .st-line-col { text-align: center; width: 72px; }
+  .st-name     { font-weight: 500; }
+  .st-kana     { color: #888; font-size: 0.85em; }
+
+  .st-line-ok  { color: #2a7d2a; font-weight: bold; }
+  .st-line-ng  { color: #aaa; font-size: 0.85em; }
+
+  .st-badge-active   { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #d4edda; color: #155724; }
+  .st-badge-inactive { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #f8d7da; color: #721c24; }
+
+  .st-row-inactive td { opacity: 0.55; }
+  .st-empty { color: #888; padding: 24px 0; }
+</style>

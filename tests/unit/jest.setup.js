@@ -37,5 +37,6 @@ global.DriveApp = {
 require(path.join(SRC, 'getRowsData.js'));   // 依存なし
 require(path.join(SRC, 'getData.js'));        // stringifyDates を定義
 require(path.join(SRC, 'admin_auth.js'));     // getAdminContext, writeAuditLog 等
-require(path.join(SRC, 'admin_branch.js'));   // getBranches, addBranch 等
+require(path.join(SRC, 'admin_branch.js'));   // getBranches, addBranch 等、getChildSS
 require(path.join(SRC, 'admin_import.js'));   // _mapRows, _upsertStudentsMaster 等
+require(path.join(SRC, 'admin_getData.js'));  // getAdminInitialData, getStudentList 等

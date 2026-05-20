@@ -73,6 +73,43 @@ function getAdminInitialData(targetCramId) {
   }
 }
 
+/**
+ * 校舎の生徒一覧を返す（students_master から取得）。
+ * フロントエンドで学校名グループ化して表示する用途。
+ *
+ * @param {string} [targetCramId] - master のみ指定可。branch_admin は自動使用。
+ * @returns {{ success: boolean, students?: object[], cramId?: string, error?: string }}
+ */
+function getStudentList(targetCramId) {
+  try {
+    const ctx    = getAdminContext();
+    const cramId = ctx.role === 'branch_admin' ? ctx.cram_id : (targetCramId || '');
+    if (!cramId) return { success: false, error: '校舎を選択してください' };
+
+    const childSS     = getChildSS(cramId);
+    const masterSheet = childSS.getSheetByName('students_master');
+    if (!masterSheet) return { success: false, error: 'students_master シートが見つかりません。setupBranchSS() を実行してください。' };
+
+    const students = getRowsData(masterSheet)
+      .map(s => ({
+        student_id:    String(s.student_id    || '').trim(),
+        name:          String(s.name          || '').trim(),
+        pronunciation: String(s.pronunciation || '').trim(),
+        school_name:   String(s.school_name   || '').trim(),
+        school_course: String(s.school_course || '').trim(),
+        sub_course:    String(s.sub_course    || '').trim(),
+        grade:         String(s.grade         || '').trim(),
+        line_user_id:  String(s.line_user_id  || '').trim(),
+        is_active:     s.is_active === true || String(s.is_active) === '1' || String(s.is_active) === 'true',
+      }))
+      .filter(s => s.student_id);
+
+    return { success: true, students, cramId };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 // ---- 補助関数 ----
 
 function getSchoolCoursesFromSettingsSheet(sheet) {
@@ -103,3 +140,8 @@ function _ensureChildSettingsSheet(ss) {
   }
   return sheet;
 }
+
+if (typeof module !== 'undefined') Object.assign(global, {
+  getAdminInitialData, getStudentList,
+  getSchoolCoursesFromSettingsSheet,
+});

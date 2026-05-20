@@ -35,7 +35,8 @@
 - [x] **2-C**: `setupBranchSS()` 実装（子 SS のシート自動作成）
 - [x] **2-C**: `shareBranchSS()` 実装（DriveApp スコープ分離・校舎管理者への共有）
 - [x] **2-E**: `admin_import.js` 実装（`importStudentData` / `linkLineIds` / `migrateStudentsFromParentSS`）
-- [ ] **2-D**: `getData.js` / `saveData.js` の子 SS 切り替え対応（生徒向けデータ取得・保存）
+- [x] **2-D**: `getData.js` / `saveData.js` の子 SS 切り替え対応（実装済みを確認 2026-05-20）
+- [x] **2-F**: `getStudentList()` 実装 + 管理画面「生徒一覧」タブ追加（学校名グループ化）
 
 ## 開発基盤（完了 2026-05-20）
 

@@ -34,6 +34,7 @@
   <?!= include('admin_logic_admin_users'); ?>
   <?!= include('admin_logic_branches'); ?>
   <?!= include('admin_logic_master_data'); ?>
+  <?!= include('admin_logic_students'); ?>
 
   <script>
     window.masterData     = {};
@@ -76,6 +77,7 @@
       const tabs = [
         { section: 'patterns',   label: '教科パターン管理' },
         { section: 'exams',      label: '試験日程管理' },
+        { section: 'students',   label: '生徒一覧' },
         { section: 'import',     label: '生徒インポート' }
       ];
       if (role === 'master') {
@@ -153,7 +155,7 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['patterns', 'exams', 'import', 'adminUsers', 'branches', 'masterData'];
+      const valid = ['patterns', 'exams', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
       window.currentSection = valid.includes(section) ? section : 'patterns';
 
       const overlay = document.getElementById('loading-overlay');
@@ -178,6 +180,7 @@
       const renderers = {
         patterns:   function () { window.renderPatternManager(window.masterData); },
         exams:      function () { window.renderExamManager(window.masterData); },
+        students:   function () { window.renderStudentManager(); },
         import:     function () { window.renderImportManager(); },
         adminUsers: function () { window.renderAdminUserManager(); },
         branches:   function () { window.renderBranchManager(); },
