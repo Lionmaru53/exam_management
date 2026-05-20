@@ -30,6 +30,15 @@
 - **原因**: テンプレートリテラル内で `<a href="...">` タグを複数行に分けて記述したため、GAS HtmlService の URL 解釈で改行・スペースが href の一部として扱われた。
 - **対処**: `<a>` タグを 1 行に集約。GAS で動的生成する HTML の `<a>` タグは属性を改行で分割してはいけない。
 
+### [fixed] #006 `shareBranchSS()` で DriveApp 権限エラー（appsscript.json の oauthScopes 不足）
+- **場所**: `src/appsscript.json` → `oauthScopes`
+- **症状**: 「指定された権限では DriveApp.getFileById を呼び出すことができません。必要な権限: ...auth/drive」エラー。副作用として「A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received」がブラウザコンソールに出る。
+- **原因**: `oauthScopes` に `https://www.googleapis.com/auth/spreadsheets` と `script.container.ui` のみ明示していたため、GAS がその2スコープしか認可しない。`DriveApp.getFileById().addEditor()` は `auth/drive` スコープが必要だが含まれていなかった。
+- **対処**: `appsscript.json` から `oauthScopes` フィールドを削除し、GAS のスコープ自動検出に委ねる（`setup.md` の方針と一致）。自動検出では `DriveApp` の使用を検出して `auth/drive` が自動的にスコープに含まれる。
+- **再認可が必要**: `clasp push` 後、GAS エディタで任意の関数を実行するか新しいデプロイを作成して再認可ダイアログに応じる。
+- **コンソールエラーの補足**: 「message channel closed」はサーバー側エラーによる `google.script.run` の接続切断が原因。DriveApp エラーが解消されれば消える。
+- **#003 との関係**: #003 の「GAS エディタから手動実行で認可を取得」という暫定対処では、新しい認証トークンが発行されても webapp 側のスコープが不足したままになるため根本解決にはなっていなかった。
+
 ## open
 
 ### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
