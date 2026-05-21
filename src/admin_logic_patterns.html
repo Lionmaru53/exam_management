@@ -231,8 +231,6 @@ function renderPatternManager(data) {
                     (s.genre_name || 'その他') === genreName &&
                     String(s.grade || '').trim() === grade
                   );
-                  const inputId = `gsn_${safeKey}_${genreIdx}`;
-                  const addIdx  = _patPush({ groupKey, genreName, inputId, grade });
                   html += `<div class="genre-col">`;
                   html += `<div class="genre-col-title">${genreName}</div>`;
                   genreSubjects.forEach(s => {
@@ -248,10 +246,7 @@ function renderPatternManager(data) {
                              onblur="_patSaveAlias('${snAttr}','${s.subject_id}',this.value)" />
                     </div>`;
                   });
-                  html += `<div class="add-subject-row">`;
-                  html += `<input type="text" id="${inputId}" placeholder="新しい教科名" class="admin-input" />`;
-                  html += `<button onclick="addNewSubjectForGroup(${addIdx})">追加</button>`;
-                  html += `</div></div>`;
+                  html += `</div>`;
                 });
                 html += `</div>`;
                 const termTestNames = group.rows.map(r => r.termTest.test_name).join('、');

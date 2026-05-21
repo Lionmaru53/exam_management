@@ -188,7 +188,7 @@
   }
 
   .genre-col {
-    min-width: 110px;
+    min-width: 160px;
     flex: 1;
   }
 
@@ -210,19 +210,22 @@
   /* 教科行: [checkbox] [正式名] [表示名input] */
   .alias-subject-row {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    align-items: baseline;
+    gap: 4px;
     padding: 3px 0;
+    flex-wrap: wrap;       /* 幅が足りない場合は折り返す */
   }
   .alias-canon-name {
     font-size: 0.88rem;
     color: #444;
-    min-width: 72px;
-    flex-shrink: 0;
+    flex: 1 1 60px;        /* 収縮可、最小 60px */
+    min-width: 0;
   }
   .alias-display-input {
     font-size: 0.82rem;
-    width: 100px;
+    flex: 1 1 80px;        /* 伸縮可、最小 80px */
+    min-width: 80px;
+    width: auto;
     padding: 2px 5px;
     color: #2c4a7c;
   }
