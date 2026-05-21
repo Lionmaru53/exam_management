@@ -82,7 +82,11 @@ function _stRerender() {
   const total   = _stCachedStudents.length;
   const showing = students.length;
 
-  let html = '<h3>生徒一覧</h3>';
+  let html = '<h3>生徒一覧</h3>'
+           + '<p class="tab-desc">'
+           + '校舎に所属する生徒を学校名・学年でグループ化して表示します。<br>'
+           + '<span class="step">▶ <strong>コースを編集</strong> ： チェックボックスで複数の生徒を選択し、コースや文理を一括変更できます。</span>'
+           + '</p>';
 
   // ---- フィルターバー ----
   html += '<div class="st-filter-bar">'

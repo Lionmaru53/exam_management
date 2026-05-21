@@ -92,7 +92,12 @@ function _auRerender() {
   const content    = document.getElementById('admin-content');
   const adminUsers = _auCachedUsers;
 
-  let html = '<h3>管理者管理</h3>';
+  let html = '<h3>管理者管理</h3>'
+           + '<p class="tab-desc">'
+           + '管理者アカウントの追加・変更・無効化を行います。<br>'
+           + '<span class="step">▶ <strong>master</strong> ： 全機能・全校舎にアクセス可能。</span><br>'
+           + '<span class="step">▶ <strong>校舎管理者（branch_admin）</strong> ： 担当校舎のデータのみ操作できます。複数校舎を担当させる場合はチェックボックスで複数選択してください。</span>'
+           + '</p>';
 
   if (_auAddMode) {
     html += `

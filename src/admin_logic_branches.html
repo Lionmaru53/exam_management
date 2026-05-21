@@ -24,7 +24,11 @@ function _renderBranchList(branches) {
   _brStore = [];
   const content = document.getElementById('admin-content');
 
-  let html = '<h3>校舎管理</h3>';
+  let html = '<h3>校舎管理</h3>'
+           + '<p class="tab-desc">'
+           + '校舎の追加と専用スプレッドシート（子SS）の管理を行います。<br>'
+           + '<span class="step">▶ 新規校舎の手順: <strong>① 校舎を追加</strong> → <strong>② 子SS作成</strong>（生徒・得点データの保存先を作成）→ <strong>③ 共有設定</strong>（担当管理者に編集権限を付与）</span>'
+           + '</p>';
 
   // 追加フォーム
   if (_brAddMode) {

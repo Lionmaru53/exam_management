@@ -109,7 +109,12 @@ function renderPatternManager(data) {
       return { school: { school_name, school_course, grade, sub_course }, rows };
     });
 
-  let html = `<h3>学校別教科名・教科パターン管理</h3>`;
+  let html = `<h3>学校別教科名・教科パターン管理</h3>
+<p class="tab-desc">
+  学校・コース・文理・学年ごとに「どの試験区分でどの教科を受けるか」を設定します。<br>
+  <span class="step">▶ <strong>教科を編集</strong> ： 受験教科のチェックボックス選択と、学校別の表示名（例: 数学Ⅰ → 数学①）の設定が可能です。</span><br>
+  <span class="step">▶ <strong>試験区分ごと編集</strong> ： 試験区分によって教科セットが異なる場合に使用します。</span>
+</p>`;
 
   if (patternGroups.length === 0) {
     html += `<p>登録された学校・コースがありません。生徒インポートを実行すると学校名が自動登録されます。</p>`;
