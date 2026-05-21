@@ -37,12 +37,11 @@ function getAdminInitialData(targetCramId) {
       return { ...s, genre_name: g ? g.genre_name : '未設定' };
     });
 
-    // 校舎一覧を返す（master は全件、複数校舎担当の branch_admin は担当分のみ）
-    if (adminContext.role === 'master' ||
-        (adminContext.role === 'branch_admin' && (adminContext.cram_ids || []).length > 1)) {
-      const branchSheet  = parentSS.getSheetByName(BRANCHES_SHEET);
-      const allBranches  = branchSheet ? stringifyDates(getRowsData(branchSheet)) : [];
-      results.branches   = adminContext.role === 'master'
+    // 校舎一覧を返す（master は全件、branch_admin は担当校舎のみ）
+    if (adminContext.role === 'master' || adminContext.role === 'branch_admin') {
+      const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
+      const allBranches = branchSheet ? stringifyDates(getRowsData(branchSheet)) : [];
+      results.branches  = adminContext.role === 'master'
         ? allBranches
         : allBranches.filter(b => (adminContext.cram_ids || []).includes(String(b.cram_id || '').trim()));
     }

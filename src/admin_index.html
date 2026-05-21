@@ -15,8 +15,8 @@
     <div class="loading-label" id="loading-label">読み込み中...</div>
   </div>
 
-  <div id="branch-selector-wrap" class="branch-selector-wrap"></div>
   <nav class="admin-nav" id="admin-nav"></nav>
+  <div id="branch-selector-wrap" class="branch-selector-wrap"></div>
 
   <div id="admin-content">
     <h3>管理パネルへようこそ</h3>
@@ -123,14 +123,12 @@
         .getAdminInitialData(window.selectedCramId);
     };
 
-    // ---- 校舎セレクター（master + 複数校舎担当の branch_admin に表示）----
+    // ---- 校舎セレクター（master / branch_admin 全員に表示）----
     function _renderBranchSelector() {
       const el   = document.getElementById('branch-selector-wrap');
       if (!el) return;
-      const role     = window.adminContext.role;
-      const cramIds  = window.adminContext.cram_ids || [];
-      const isMulti  = role === 'branch_admin' && cramIds.length > 1;
-      if (role !== 'master' && !isMulti) { el.style.display = 'none'; return; }
+      const role = window.adminContext.role;
+      if (role !== 'master' && role !== 'branch_admin') { el.style.display = 'none'; return; }
 
       const branches = Array.isArray(window.masterData.branches) ? window.masterData.branches : [];
       const activeBranches = branches.filter(b =>
