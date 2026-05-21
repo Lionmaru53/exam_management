@@ -244,8 +244,17 @@ function renderPatternManager(data) {
                   html += `<div class="genre-col">`;
                   html += `<div class="genre-col-title">${genreName}</div>`;
                   genreSubjects.forEach(s => {
-                    const chk = groupSubjectIds.includes(s.subject_id) ? 'checked' : '';
-                    html += `<label class="subject-label"><input type="checkbox" name="group_subject_${safeKey}" value="${s.subject_id}" ${chk}> ${_resolveDisplayName(school_name, s.subject_id)}</label>`;
+                    const chk      = groupSubjectIds.includes(s.subject_id) ? 'checked' : '';
+                    const aliasVal = _getAliasValue(school_name, s.subject_id);
+                    const snAttr   = school_name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                    html += `<div class="alias-subject-row">
+                      <label><input type="checkbox" name="group_subject_${safeKey}" value="${s.subject_id}" ${chk}></label>
+                      <span class="alias-canon-name" title="正式名">${s.subject_name}</span>
+                      <input type="text" class="alias-display-input admin-input"
+                             placeholder="表示名（空欄=正式名）"
+                             value="${aliasVal.replace(/"/g,'&quot;')}"
+                             onblur="_patSaveAlias('${snAttr}','${s.subject_id}',this.value)" />
+                    </div>`;
                   });
                   html += `<div class="add-subject-row">`;
                   html += `<input type="text" id="${inputId}" placeholder="新しい教科名" class="admin-input" />`;
@@ -282,8 +291,17 @@ function renderPatternManager(data) {
                         String(s.grade || '').trim() === grade
                       );
                       const checkboxes = genreSubjects.map(s => {
-                        const chk = subjectIds.includes(s.subject_id) ? 'checked' : '';
-                        return `<label class="subject-label"><input type="checkbox" name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}" value="${s.subject_id}" ${chk}> ${_resolveDisplayName(school_name, s.subject_id)}</label>`;
+                        const chk      = subjectIds.includes(s.subject_id) ? 'checked' : '';
+                        const aliasVal = _getAliasValue(school_name, s.subject_id);
+                        const snAttr   = school_name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+                        return `<div class="alias-subject-row">
+                          <label><input type="checkbox" name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}" value="${s.subject_id}" ${chk}></label>
+                          <span class="alias-canon-name" title="正式名">${s.subject_name}</span>
+                          <input type="text" class="alias-display-input admin-input"
+                                 placeholder="表示名（空欄=正式名）"
+                                 value="${aliasVal.replace(/"/g,'&quot;')}"
+                                 onblur="_patSaveAlias('${snAttr}','${s.subject_id}',this.value)" />
+                        </div>`;
                       }).join('');
                       html += `<td>${checkboxes || '<span style="color:#aaa;">-</span>'}</td>`;
                     });
@@ -406,6 +424,49 @@ function toggleGrade(idx) {
 }
 
 // ---- グループ編集 ----
+
+// ---- 表示名エイリアス ----
+
+/** 学校名 × 教科ID の alias 値を返す（未登録なら空文字） */
+function _getAliasValue(schoolName, subjectId) {
+  const aliases = (window.masterData && window.masterData.schoolSubjectAliases) || [];
+  const hit = aliases.find(function (a) {
+    return a.school_name === schoolName && a.subject_id === subjectId;
+  });
+  return hit ? (hit.display_name || '') : '';
+}
+
+/** 表示名を blur 時に自動保存する */
+function _patSaveAlias(schoolName, subjectId, newValue) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && res.conflict) {
+        showMessage('別校舎により変更がありました。表示名を更新します。', 'warning');
+        refreshMasterData(function () {});
+        return;
+      }
+      if (res && res.success) {
+        // in-memory alias を更新（再描画なし）
+        const aliases = window.masterData.schoolSubjectAliases || [];
+        const idx = aliases.findIndex(function (a) {
+          return a.school_name === schoolName && a.subject_id === subjectId;
+        });
+        if (String(newValue || '').trim()) {
+          if (idx >= 0) aliases[idx].display_name = newValue;
+          else aliases.push({ school_name: schoolName, subject_id: subjectId, display_name: newValue, updated_at: '' });
+        } else {
+          if (idx >= 0) aliases.splice(idx, 1);
+        }
+        window.masterData.schoolSubjectAliases = aliases;
+      } else if (res && res.error) {
+        showMessage('表示名保存失敗: ' + res.error, 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      showMessage('表示名保存エラー: ' + ((err && err.message) || ''), 'error');
+    })
+    .upsertSubjectAlias(schoolName, subjectId, newValue, '');
+}
 
 function startGroupEdit(idx) {
   const { groupKey } = _patStore[idx];

@@ -1,10 +1,8 @@
 <script>
-let _mdStore          = [];
-let _mdTab            = 'termTests';
-let _mdEditId         = null;
-let _mdAddMode        = false;
-let _mdAliasSchool    = '';   // 表示名編集中の学校名
-let _mdAliasEditSubId = null; // 表示名インライン編集中の subject_id
+let _mdStore   = [];
+let _mdTab     = 'termTests';
+let _mdEditId  = null;
+let _mdAddMode = false;
 
 function _mdPush(obj) {
   _mdStore.push(obj);
@@ -17,8 +15,7 @@ function renderMasterDataManager(data) {
 
   const tabs = [
     { key: 'termTests', label: '試験区分' },
-    { key: 'genres',    label: '教科ジャンル' },
-    { key: 'subjects',  label: '教科一覧' }
+    { key: 'genres',    label: '教科ジャンル' }
   ];
 
   let html = `<h3>共通マスターデータ管理</h3>`;
@@ -31,10 +28,8 @@ function renderMasterDataManager(data) {
 
   if (_mdTab === 'termTests') {
     html += _renderTermTests(data);
-  } else if (_mdTab === 'genres') {
-    html += _renderGenres(data);
   } else {
-    html += _renderSubjects(data);
+    html += _renderGenres(data);
   }
 
   content.innerHTML = html;
@@ -238,154 +233,6 @@ function _mdSaveGenre(idx) {
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertGenre({ genre_id, genre_name: name });
-}
-
-// ---- 教科一覧 + 学校別表示名 ----
-
-function _renderSubjects(data) {
-  const subjects = Array.isArray(data.subjects) ? data.subjects : [];
-  const aliases  = Array.isArray(data.schoolSubjectAliases) ? data.schoolSubjectAliases : [];
-
-  // 学校名リスト（alias 登録済み + 現在の branch の school_course_master）
-  const schoolsFromAliases  = aliases.map(a => a.school_name).filter(Boolean);
-  const schoolsFromSettings = (data.schoolSettings || []).map(s => s.school_name).filter(Boolean);
-  const schoolNames = [...new Set([...schoolsFromAliases, ...schoolsFromSettings])].sort();
-
-  let html = `<p style="color:#666; font-size:0.9em; margin-bottom:12px;">
-    教科の追加・編集は「教科パターン管理」タブから行ってください。<br>
-    学校を選択すると、その学校での表示名を設定できます。
-  </p>`;
-
-  // 学校選択プルダウン
-  html += `<div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-    <label style="font-weight:bold; white-space:nowrap;">学校を選択:</label>
-    <select id="md_alias_school" class="admin-select" style="width:auto;" onchange="_mdSelectAliasSchool()">
-      <option value="">— 学校を選択 —</option>`;
-  schoolNames.forEach(sn => {
-    const sel = _mdAliasSchool === sn ? 'selected' : '';
-    html += `<option value="${_mdEsc(sn)}" ${sel}>${_mdEsc(sn)}</option>`;
-  });
-  html += `</select>`;
-  if (schoolNames.length === 0) {
-    html += `<span style="font-size:0.85em; color:#999;">（生徒インポートまたはコースを編集すると学校が登録されます）</span>`;
-  }
-  html += `</div>`;
-
-  // 表示名 alias マップ（選択中の学校）
-  const aliasMap = {};
-  if (_mdAliasSchool) {
-    aliases.filter(a => a.school_name === _mdAliasSchool).forEach(a => {
-      aliasMap[a.subject_id] = { display_name: a.display_name, updated_at: a.updated_at || '' };
-    });
-  }
-
-  const hasSchool   = !!_mdAliasSchool;
-  const schoolLabel = hasSchool ? _mdEsc(_mdAliasSchool) : '';
-
-  html += `<table class="admin-table">
-    <thead><tr>
-      <th>ID</th><th>教科名（正式）</th><th>ジャンル</th><th>学年</th>`;
-  if (hasSchool) {
-    html += `<th>${schoolLabel} での表示名</th>`;
-  }
-  html += `</tr></thead><tbody>`;
-
-  subjects.forEach(s => {
-    const alias  = aliasMap[s.subject_id];
-    const dispNm = alias ? alias.display_name : '';
-    const updAt  = alias ? alias.updated_at   : '';
-    const isEdit = hasSchool && _mdAliasEditSubId === s.subject_id;
-
-    html += `<tr>
-      <td style="font-size:0.8em; color:#888;">${_mdEsc(s.subject_id)}</td>
-      <td>${_mdEsc(s.subject_name)}</td>
-      <td>${_mdEsc(s.genre_name || '—')}</td>
-      <td>${_mdEsc(s.grade || '—')}</td>`;
-
-    if (hasSchool) {
-      if (isEdit) {
-        html += `<td>
-          <input type="text" id="md_alias_input" class="admin-input"
-            value="${_mdEsc(dispNm)}" placeholder="空欄 = 正式名を使用" style="width:150px;" />
-          <button class="btn-save-admin" style="margin-left:4px;"
-            onclick="_mdSaveAlias('${_mdEsc(s.subject_id)}','${_mdEsc(updAt)}')">保存</button>
-          <button class="btn-cancel-admin"
-            onclick="_mdCancelAliasEdit()">取消</button>
-        </td>`;
-      } else {
-        const displayCell = dispNm
-          ? `<span style="color:#2c4a7c;">${_mdEsc(dispNm)}</span>`
-          : `<span style="color:#aaa; font-size:0.85em;">（正式名を使用）</span>`;
-        html += `<td>
-          ${displayCell}
-          <button style="margin-left:6px; padding:1px 8px; font-size:0.8em;"
-            onclick="_mdStartAliasEdit('${_mdEsc(s.subject_id)}')">✏</button>
-        </td>`;
-      }
-    }
-
-    html += `</tr>`;
-  });
-
-  html += '</tbody></table>';
-  return html;
-}
-
-function _mdEsc(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-
-function _mdSelectAliasSchool() {
-  const sel = document.getElementById('md_alias_school');
-  _mdAliasSchool    = sel ? sel.value : '';
-  _mdAliasEditSubId = null;
-  renderMasterDataManager(window.masterData);
-}
-
-function _mdStartAliasEdit(subjectId) {
-  _mdAliasEditSubId = subjectId;
-  renderMasterDataManager(window.masterData);
-  // フォーカスを input に当てる
-  setTimeout(function () {
-    const inp = document.getElementById('md_alias_input');
-    if (inp) inp.focus();
-  }, 50);
-}
-
-function _mdCancelAliasEdit() {
-  _mdAliasEditSubId = null;
-  renderMasterDataManager(window.masterData);
-}
-
-function _mdSaveAlias(subjectId, prevUpdatedAt) {
-  const inp   = document.getElementById('md_alias_input');
-  const value = inp ? inp.value : '';
-
-  setLoading(true, '表示名を保存中...');
-  google.script.run
-    .withSuccessHandler(function (res) {
-      setLoading(false);
-      if (res && res.conflict) {
-        showMessage('別校舎により変更がありました。画面を更新します。', 'warning');
-        refreshMasterData(function () {
-          _mdAliasEditSubId = null;
-          renderMasterDataManager(window.masterData);
-        });
-        return;
-      }
-      if (res && res.success) {
-        _mdAliasEditSubId = null;
-        showMessage('表示名を保存しました。', 'success');
-        refreshMasterData(function () { renderMasterDataManager(window.masterData); });
-      } else {
-        showMessage((res && res.error) || '保存に失敗しました。', 'error');
-      }
-    })
-    .withFailureHandler(function (err) {
-      setLoading(false);
-      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
-    })
-    .upsertSubjectAlias(_mdAliasSchool, subjectId, value, prevUpdatedAt);
 }
 
 window.renderMasterDataManager = renderMasterDataManager;
