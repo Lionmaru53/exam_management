@@ -128,7 +128,9 @@ function renderApp(data) {
   listHtml += `</div><div class="tab-content">`;
 
   examTabs.forEach((exam, examIndex) => {
-    const tabId = exam.term_test_id;
+    const tabId      = exam.term_test_id;
+    // exam_id がない場合は pattern_id をキーとして使用（後で saveAllScores が自動作成）
+    const displayKey = exam.exam_id || ('p_' + exam.pattern_id);
     const groupedSubjects = (exam.subjects || []).reduce((acc, sub) => {
       const genre = sub.genre_name || 'その他';
       if (!acc[genre]) acc[genre] = [];
@@ -170,9 +172,9 @@ function renderApp(data) {
             <tr style="background-color:${rowBackground};">
               ${index === 0 ? `<td class="genre-cell" rowspan="${rows.length}" style="background-color:${rowBackground};">${genreName}</td>` : ''}
               <td>${sub.display_name || sub.subject_name}</td>
-              <td><select id="s_${exam.exam_id}_${sub.subject_id}">${sOpt}</select></td>
-              <td><select id="gr_${exam.exam_id}_${sub.subject_id}">${grOpt}</select></td>
-              <td><select id="cr_${exam.exam_id}_${sub.subject_id}">${crOpt}</select></td>
+              <td><select id="s_${displayKey}_${sub.subject_id}">${sOpt}</select></td>
+              <td><select id="gr_${displayKey}_${sub.subject_id}">${grOpt}</select></td>
+              <td><select id="cr_${displayKey}_${sub.subject_id}">${crOpt}</select></td>
             </tr>
           `;
         });
@@ -181,20 +183,14 @@ function renderApp(data) {
 
     listHtml += `</tbody></table>`;
 
-    if (exam.exam_id && Object.keys(groupedSubjects).length > 0) {
+    if (Object.keys(groupedSubjects).length > 0) {
       listHtml += `
         <div class="tab-footer">
           <button type="button" class="btn-save"
-            onclick="handleSave('${s.student_id}', '${exam.exam_id}', this)">
+            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${displayKey}', this)">
             一括保存する
           </button>
         </div>
-      `;
-    } else if (!exam.hasExam) {
-      listHtml += `
-        <p style="text-align:center; color:#aaa; font-size:0.85rem; margin-top:12px;">
-          試験日程が未登録のため、得点入力できません
-        </p>
       `;
     }
 

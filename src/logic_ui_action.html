@@ -1,26 +1,25 @@
 <script>
 /**
  * 保存ボタンがクリックされたときの処理
- * @param {string} studentId - 生徒ID
- * @param {string} examId - 試験ID
+ * @param {string} studentId  - 生徒ID
+ * @param {string} examId     - 試験ID（未設定の場合は空文字）
+ * @param {string} patternId  - パターンID（examId がない場合に使用）
+ * @param {string} displayKey - input 要素の ID プレフィックスキー
  */
-function handleSave(studentId, examId, btn) {
+function handleSave(studentId, examId, patternId, displayKey, btn) {
   const button = btn || document.getElementById('submitBtn');
-  const panel = button ? button.closest('.tab-panel') : document;
+  const panel  = button ? button.closest('.tab-panel') : document;
   const scores = [];
-  const selectPrefix = `s_${examId}_`;
-  
-  // データの収集
-  panel.querySelectorAll(`select[id^="${selectPrefix}"]`).forEach(el => {
-    const subId = el.id.slice(selectPrefix.length);
+  const selectPrefix = `s_${displayKey}_`;
 
-    const scoreVal = el.value;
-    const gradeRankVal = panel.querySelector(`#gr_${examId}_${subId}`)?.value || '';
-    const classRankVal = panel.querySelector(`#cr_${examId}_${subId}`)?.value || '';
+  panel.querySelectorAll(`select[id^="${selectPrefix}"]`).forEach(el => {
+    const subId       = el.id.slice(selectPrefix.length);
+    const gradeRankVal = panel.querySelector(`#gr_${displayKey}_${subId}`)?.value || '';
+    const classRankVal = panel.querySelector(`#cr_${displayKey}_${subId}`)?.value || '';
 
     scores.push({
       subject_id: subId,
-      score: scoreVal,
+      score:      el.value,
       grade_rank: gradeRankVal,
       class_rank: classRankVal
     });
@@ -34,7 +33,6 @@ function handleSave(studentId, examId, btn) {
       const response = JSON.parse(responseString);
       setLoading(false);
       btn.disabled = false;
-
       if (response.success) {
         showMessage("正常に保存されました！", "success");
       } else {
@@ -48,8 +46,9 @@ function handleSave(studentId, examId, btn) {
     })
     .saveAllScores({
       student_id: studentId,
-      exam_id: examId,
-      scores: scores
+      exam_id:    examId    || null,
+      pattern_id: patternId || null,
+      scores:     scores
     });
 }
 

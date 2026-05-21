@@ -155,7 +155,8 @@ function getInitialData(lineUserId) {
       return 0;
     });
 
-    const currentExam = examTabs.find(t => t.exam_id) || examTabs[0] || null;
+    // パターンがある（教科が表示できる）タブを優先して選択
+    const currentExam = examTabs.find(t => t.hasPattern) || examTabs[0] || null;
 
     return stringifyDates({
       student,
