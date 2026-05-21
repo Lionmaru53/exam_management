@@ -51,6 +51,20 @@
 
 ## open
 
+### [open] #008 コンソールに `message channel closed before a response was received` が出る
+- **場所**: ブラウザコンソール（Chrome）
+- **症状**: `Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received`
+- **優先度**: 低（UI の動作には影響しない情報的な警告）
+- **原因**: GAS webapp の `google.script.run` は内部的に Chrome の拡張機能向けメッセージパッシング API（`chrome.runtime.sendMessage` 系）を使ってクライアント JS とサーバー間を橋渡ししている。このメッセージリスナーが「非同期で返答する」と Chrome に宣言（`return true`）した後、何らかの理由で返答が届かない場合に Chrome が出すログ。具体的に発生するケース：
+  - `google.script.run` のサーバー側で例外が発生し、エラーオブジェクトをクライアントに送り返す前に接続が切れる
+  - GAS の認証セッションが切れている状態でサーバー呼び出しが行われる
+  - ページ遷移や再レンダリングが `google.script.run` の応答より先に走り、リスナー側のコンテキストが消える
+  - サーバー側で処理はなされたが、レスポンスのシリアライズ（`JSON.stringify`）が失敗する（巨大オブジェクト・循環参照など）
+- **このエラー単体では何も壊れない**: 本質的な問題は必ず別のエラー（`withFailureHandler` 側の受信エラー、またはサーバー側の実行ログ上のスタックトレース）として表れる。このメッセージは「GAS 内部ブリッジが後始末を報告できなかった」という副作用ノイズ。
+- **調査方法**: GAS エディタ → 「実行」タブ でサーバー側エラーを確認するか、フロント側の `withFailureHandler` で `err.message` をコンソールに出力する。
+- **#006 との関係**: #006（DriveApp 権限エラー）発生時にも同じ警告が出ていた。サーバー例外が原因で `google.script.run` の応答が正常に届かなかったため。DriveApp エラー解消後に消えた。
+- **対処方針**: 原則として放置でよい。ただし UI 上の不具合（ローディングが終わらない・データが表示されないなど）と同時に出ている場合は、GAS 実行ログで根本エラーを探す。
+
 ### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
 - **場所**: `admin_index.html` → HTML 要素のインライン `style` 属性
 - **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style' (at userCodeAppPanel?createOAuthDialog=true:84:20)` が発生。`renderBranchManager is not defined` も連鎖して発生する可能性あり。

@@ -8,11 +8,8 @@
     --bg-color: #f8f9fa;
   }
 
-  /* 慣性スクロールと描画の最適化 */
-  html,
-  body {
+  html, body {
     -webkit-overflow-scrolling: touch;
-    /* iOSの慣性スクロールを有効化 */
     overflow-y: scroll;
     height: 100%;
   }
@@ -25,7 +22,6 @@
   }
 
   select {
-    /* 短い文字(点数等)に最適化した幅と余白 */
     padding: 5px;
     background-color: white;
     border: 1px solid #ccc;
@@ -45,7 +41,6 @@
     color: #333;
   }
 
-  /* 管理画面用テーブルスタイル */
   table th,
   table td {
     padding: 10px;
@@ -54,21 +49,13 @@
     border: 1px solid #ddd;
   }
 
-  #app {
-    will-change: transform;
-    /* 描画をGPUに任せる */
-    padding-bottom: 80px;
-    /* 保存ボタンで隠れないように余裕を */
-  }
+  /* ---- トースト通知 ---- */
 
   #status-message {
     position: fixed;
-    /* 画面に固定 */
     top: -100px;
-    /* 最初は画面の上に隠す */
     left: 50%;
     transform: translateX(-50%);
-    /* 左右中央寄せ */
     width: 80%;
     max-width: 400px;
     z-index: 99999;
@@ -78,18 +65,12 @@
     font-weight: bold;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     opacity: 0;
-    /* 最初は透明 */
     transition: all 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-    /* 弾むような動き */
-    /* 変化をなめらかに（位置と透明度） */
   }
 
-  /* 表示時のクラス */
   #status-message.show {
     top: 20px;
-    /* 20pxの位置まで降りてくる */
     opacity: 1;
-    /* 不透明にする */
   }
 
   .msg-success {
@@ -104,252 +85,8 @@
     border: none;
   }
 
-  #subject-list {
-    display: block;
-    width: 100%;
-  }
+  /* ---- ローディングオーバーレイ ---- */
 
-  .subject-table-container {
-    width: 100%;
-    overflow-x: auto;
-  }
-
-  .tab-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  .tab-button {
-    appearance: none;
-    border: 1px solid #ced4da;
-    background: #ffffff;
-    color: #495057;
-    border-radius: 6px;
-    padding: 10px 14px;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-  }
-
-  .tab-button.active {
-    background: #f1f3f5;
-    border-color: #adb5bd;
-    font-weight: 700;
-  }
-
-  .tab-panel {
-    width: 100%;
-  }
-
-  .tab-footer {
-    margin-top: 14px;
-  }
-
-  .test-name-header {
-    background: #e9ecef;
-    text-align: left;
-    font-size: 1rem;
-    padding: 12px;
-  }
-
-  .subject-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    min-width: 300x;
-  }
-
-  .subject-table th,
-  .subject-table td {
-    border: 1px solid #dee2e6;
-    padding: 10px 12px;
-    text-align: left;
-    vertical-align: middle;
-  }
-
-  .subject-table th {
-    background: #fdfeff;
-    font-weight: 600;
-    color: #343a40;
-  }
-
-  .subject-table .genre-cell {
-    font-weight: 700;
-  }
-
-  /* ジャンルの区画（カード形式） */
-  .genre-container {
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
-    flex: 1 1 100%;
-    /* デフォルトは全幅 */
-    max-width: 100%;
-    /* 画面幅に応じて最大幅を調整 */
-    min-width: 320px;
-  }
-
-  @media (min-width: 768px) {
-    .genre-container {
-      /* 2列並びを優先 */
-      flex: 1 1 calc(50% - 10px);
-      max-width: calc(50% - 10px);
-    }
-  }
-
-  @media (min-width: 1200px) {
-    .genre-container {
-      /* 3列並びに */
-      flex: 1 1 calc(33.33% - 14px);
-      max-width: calc(33.33% - 14px);
-    }
-  }
-
-  .genre-title {
-    font-size: 1.2rem;
-    font-weight: bold;
-    margin: 0 0 15px 0;
-    border-bottom: 1px solid;
-    border-bottom-color: inherit;
-    padding-bottom: 9px;
-  }
-
-  .subject-box {
-    background: white;
-    margin-bottom: 10px;
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid #ddd;
-  }
-
-  .subject-name {
-    display: block;
-    margin-bottom: 10px;
-    font-size: 0.95rem;
-    height: 2.4em;
-    /* 2行分確保して高さを揃える */
-    overflow: hidden;
-  }
-
-  /* 教科ごとのグリッド配置 */
-  .subject-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    width: 100%;
-  }
-
-  /* 教科ごとの独立した枠（カード） */
-  .subject-card {
-    background: #fff;
-    border: 1px solid #eee;
-    border-radius: 10px;
-    padding: 15px;
-    flex: 0 1 calc(50% - 6px);
-    max-width: 100%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  }
-
-  .subject-card:hover {
-    transform: translateY(-2px);
-  }
-
-  /* カードのホバー演出（transform）が重い原因になるので、スマホでは無効化 */
-  @media (hover: none) {
-    .subject-card:hover {
-      transform: none;
-    }
-  }
-
-  .subject-label {
-    display: block;
-    font-size: 1rem;
-    font-weight: bold;
-    margin-bottom: 12px;
-    color: #444;
-    border-bottom: 1px dashed #ddd;
-    padding-bottom: 5px;
-  }
-
-  /* 個別の教科タイル */
-  .subject-tile {
-    background: #f8f9fa;
-    border-radius: 8px;
-    padding: 12px;
-    flex: 1 1 200px;
-    /* 最低200px幅、隙間があれば広がる */
-    max-width: 300px;
-    border: 1px solid #e9ecef;
-  }
-
-  .btn-save {
-    width: 100%;
-    padding: 15px;
-    background: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 5px;
-    font-size: 16px;
-    cursor: pointer;
-    margin-top: 15px;
-  }
-
-  .btn-save:disabled {
-    background: #ccc;
-  }
-
-  .exam-header-container {
-    margin-bottom: 20px;
-    border-bottom: 2px solid #333;
-    padding-bottom: 10px;
-  }
-
-  .student-name {
-    font-size: 1.25rem;
-    font-weight: bold;
-  }
-
-  .student-info {
-    font-size: 0.9rem;
-    color: #555;
-  }
-
-  /* 入力項目のスタック表示（縦並び） */
-  .stack-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .stack-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    font-size: 0.85rem;
-    gap: 10px;
-    color: #666;
-  }
-
-  .stack-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .form-group {
-    margin-bottom: 15px;
-  }
-
-  .form-group label {
-    display: block;
-    font-size: 12px;
-    font-weight: bold;
-    margin-bottom: 5px;
-  }
-
-  /* ローディングオーバーレイ（ユーザー・管理者共通） */
   #loading-overlay {
     display: none;
     position: fixed;
@@ -364,13 +101,16 @@
     gap: 16px;
     animation: overlay-fade-in 0.18s ease forwards;
   }
+
   #loading-overlay.active {
     display: flex;
   }
+
   @keyframes overlay-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
   }
+
   .loading-spinner {
     width: 46px;
     height: 46px;
@@ -379,9 +119,11 @@
     border-radius: 50%;
     animation: spin 0.75s linear infinite;
   }
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
   .loading-label {
     font-size: 0.88rem;
     font-weight: bold;
