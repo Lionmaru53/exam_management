@@ -316,12 +316,14 @@
   }
 
   /* 階層ナビゲーション */
-  .hier-school { margin-bottom: 6px; }
-  .hier-course { margin-top: 2px; }
-  .hier-grade  { margin-top: 2px; }
+  .hier-school     { margin-bottom: 6px; }
+  .hier-course     { margin-top: 2px; }
+  .hier-subcourse  { margin-top: 2px; }
+  .hier-grade      { margin-top: 2px; }
 
   .hier-school-header,
   .hier-course-header,
+  .hier-subcourse-header,
   .hier-grade-header {
     display: flex;
     align-items: center;
@@ -344,16 +346,25 @@
     font-size: 0.95rem;
     font-weight: 600;
   }
+  .hier-subcourse-header {
+    padding: 5px 14px 5px 30px;
+    background: #f0f4fb;
+    border-left: 2px solid #90a4d4;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #3a4f80;
+  }
   .hier-grade-header {
-    padding: 5px 14px 5px 44px;
+    padding: 5px 14px 5px 54px;
     background: #fafafa;
     border-left: 2px solid #b0bec5;
     font-size: 0.9rem;
     font-weight: 600;
   }
-  .hier-school-header:hover { background: #c5cae9; }
-  .hier-course-header:hover { background: #e8eaf6; }
-  .hier-grade-header:hover  { background: #f0f0f0; }
+  .hier-school-header:hover    { background: #c5cae9; }
+  .hier-course-header:hover    { background: #e8eaf6; }
+  .hier-subcourse-header:hover { background: #dde5f5; }
+  .hier-grade-header:hover     { background: #f0f0f0; }
 
   .hier-arrow { font-size: 0.7em; flex-shrink: 0; }
 
@@ -364,9 +375,10 @@
     padding: 2px 7px;
   }
 
-  .hier-school-body { padding-left: 0; }
-  .hier-course-body { padding-left: 14px; }
-  .hier-grade-body  { padding-left: 28px; margin-bottom: 10px; }
+  .hier-school-body    { padding-left: 0; }
+  .hier-course-body    { padding-left: 14px; }
+  .hier-subcourse-body { padding-left: 14px; }
+  .hier-grade-body     { padding-left: 28px; margin-bottom: 10px; }
 
   .sub-course-label {
     padding: 4px 12px;

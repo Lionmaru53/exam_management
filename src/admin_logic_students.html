@@ -130,12 +130,13 @@ function _stRerender() {
 
     // 編集モードの操作バー
     if (isEditing) {
-      const courseOptions = _stGetCourseOptions(schoolName);
+      const courseOptions = _stGetCourseOptions(schoolName, 'school_course');
       html += '<div class="st-edit-bar" id="st-edit-bar">'
             + '<button class="btn-sm" onclick="_stSelectAll()">全選択</button>'
             + '<button class="btn-sm" onclick="_stDeselectAll()">全解除</button>'
             + '&nbsp;対象:&nbsp;'
-            + '<select id="st-edit-field" class="admin-select" style="width:auto;">'
+            + '<select id="st-edit-field" class="admin-select" style="width:auto;"'
+            + ' data-school="' + escapedSN + '" onchange="_stOnFieldChange()">'
             + '<option value="school_course">コース</option>'
             + '<option value="sub_course">サブ区分</option>'
             + '</select>'
@@ -236,14 +237,39 @@ function _stDeselectAll() {
   document.querySelectorAll('.st-cb').forEach(cb => { cb.checked = false; });
 }
 
-/** schoolSettings から当該学校のコース一覧を <option> HTML で返す */
-function _stGetCourseOptions(schoolName) {
+/** field に応じた選択肢 <option> HTML を返す */
+function _stGetCourseOptions(schoolName, field) {
+  if (field === 'sub_course') {
+    const subs = [...new Set(
+      _stCachedStudents
+        .filter(function (s) { return s.school_name === schoolName && s.sub_course; })
+        .map(function (s) { return s.sub_course; })
+    )].sort();
+    return subs.map(function (c) {
+      return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>';
+    }).join('');
+  }
   const settings = (window.masterData && window.masterData.schoolSettings) || [];
-  const courses  = settings
-    .filter(s => s.school_name === schoolName && s.school_course)
-    .map(s => s.school_course);
-  const unique = [...new Set(courses)];
-  return unique.map(c => '<option value="' + _esc(c) + '">' + _esc(c) + '</option>').join('');
+  const courses  = [...new Set(
+    settings.filter(function (s) { return s.school_name === schoolName && s.school_course; })
+            .map(function (s) { return s.school_course; })
+  )];
+  return courses.map(function (c) {
+    return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>';
+  }).join('');
+}
+
+/** 対象フィールド切り替え時に選択肢と placeholder を更新する */
+function _stOnFieldChange() {
+  const fieldEl    = document.getElementById('st-edit-field');
+  const schoolName = (fieldEl && fieldEl.dataset && fieldEl.dataset.school) || '';
+  const field      = (fieldEl && fieldEl.value) || 'school_course';
+  const sel        = document.getElementById('st-edit-value');
+  if (sel) {
+    sel.innerHTML = '<option value="">（空欄にする）</option>' + _stGetCourseOptions(schoolName, field);
+  }
+  const inp = document.getElementById('st-new-course');
+  if (inp) inp.placeholder = field === 'sub_course' ? 'サブ区分名' : 'コース名';
 }
 
 function _stApplyEdit() {
@@ -279,7 +305,20 @@ function _stApplyEdit() {
 function _stAddNewCourse(schoolName) {
   const input = document.getElementById('st-new-course');
   const val   = input ? input.value.trim() : '';
-  if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
+  const field = document.getElementById('st-edit-field') ? document.getElementById('st-edit-field').value : 'school_course';
+  if (!val) { showMessage((field === 'sub_course' ? 'サブ区分名' : 'コース名') + 'を入力してください。', 'error'); return; }
+
+  if (field === 'sub_course') {
+    // サブ区分はマスター不要 — 選択肢に直接追加して選択状態にする
+    const sel = document.getElementById('st-edit-value');
+    if (sel) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = val; opt.selected = true;
+      sel.appendChild(opt);
+    }
+    if (input) input.value = '';
+    return;
+  }
 
   setLoading(true, 'コースを追加中...');
   google.script.run
@@ -287,7 +326,6 @@ function _stAddNewCourse(schoolName) {
       setLoading(false);
       if (res && res.success) {
         showMessage('コース「' + val + '」を追加しました。', 'success');
-        // schoolSettings を再取得してプルダウンに反映
         window.refreshMasterData(function () {
           _stEditSchool = schoolName;
           _stRerender();

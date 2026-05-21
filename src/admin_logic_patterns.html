@@ -2,14 +2,14 @@
 let _patStore = [];
 let editingGroupKey       = null;
 let editingGroupPerTermKey = null;
-let subCourseEditorKey    = null;  // groupKey of the item whose editor is open
 
 // 折りたたみ状態（Set に含まれているキー = 閉じている）
-// _collapseGrades は school||course||grade||sub_course をキーに使用
-let _collapseSchools  = new Set();
-let _collapseCourses  = new Set();
-let _collapseGrades   = new Set();
-let _hierInitialized  = false;
+// _collapseGrades は school||course||sub_course||grade をキーに使用（サブ区分が親になった）
+let _collapseSchools    = new Set();
+let _collapseCourses    = new Set();
+let _collapseSubCourses = new Set();  // school||course||sub_course
+let _collapseGrades     = new Set();  // school||course||sub_course||grade（リーフ）
+let _hierInitialized    = false;
 
 function _patPush(obj) {
   _patStore.push(obj);
@@ -20,8 +20,8 @@ function sanitizePat(str) {
   return String(str).replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-function makeGroupKey(sn, sc, grade, sub) {
-  return `${sn}||${sc}||${grade}||${sub}`;
+function makeGroupKey(sn, sc, sub, grade) {
+  return `${sn}||${sc}||${sub}||${grade}`;
 }
 
 function renderPatternManager(data) {
@@ -48,7 +48,7 @@ function renderPatternManager(data) {
   const grades     = ['高1', '高2', '高3'];
   const gradeOrder = { '高1': 1, '高2': 2, '高3': 3 };
 
-  // グループキーを構築（学年ごとに独立した sub_course を判定）
+  // グループキー: school||course||sub_course||grade
   const groupKeySet = new Set();
   schoolSettings.forEach(setting => {
     const sn = String(setting.school_name).trim();
@@ -60,10 +60,10 @@ function renderPatternManager(data) {
         String(p.grade).trim() === grade
       );
       if (gradePatterns.length === 0) {
-        groupKeySet.add(makeGroupKey(sn, sc, grade, ''));
+        groupKeySet.add(makeGroupKey(sn, sc, '', grade));
       } else {
         const subCourses = [...new Set(gradePatterns.map(p => String(p.sub_course || '').trim()))];
-        subCourses.forEach(sub => groupKeySet.add(makeGroupKey(sn, sc, grade, sub)));
+        subCourses.forEach(sub => groupKeySet.add(makeGroupKey(sn, sc, sub, grade)));
       }
     });
   });
@@ -71,23 +71,23 @@ function renderPatternManager(data) {
     groupKeySet.add(makeGroupKey(
       String(p.school_name).trim(),
       String(p.school_course).trim(),
-      String(p.grade).trim(),
-      String(p.sub_course || '').trim()
+      String(p.sub_course || '').trim(),
+      String(p.grade).trim()
     ));
   });
 
   const patternGroups = Array.from(groupKeySet)
     .sort((a, b) => {
-      const [an, ac, ag, as_] = a.split('||');
-      const [bn, bc, bg, bs]  = b.split('||');
+      const [an, ac, as_, ag] = a.split('||');
+      const [bn, bc, bs,  bg] = b.split('||');
       if (an !== bn) return an.localeCompare(bn, 'ja');
       if (ac !== bc) return ac.localeCompare(bc, 'ja');
+      if (as_ !== bs) return as_.localeCompare(bs, 'ja');
       const agi = gradeOrder[ag] || 99, bgi = gradeOrder[bg] || 99;
-      if (agi !== bgi) return agi - bgi;
-      return as_.localeCompare(bs, 'ja');
+      return agi - bgi;
     })
     .map(key => {
-      const [school_name, school_course, grade, sub_course] = key.split('||');
+      const [school_name, school_course, sub_course, grade] = key.split('||');
       const setting = schoolSettings.find(s =>
         String(s.school_name).trim() === school_name &&
         String(s.school_course).trim() === school_course
@@ -109,7 +109,7 @@ function renderPatternManager(data) {
       return { school: { school_name, school_course, grade, sub_course }, rows };
     });
 
-  let html = `<h3>教科パターン管理</h3>`;
+  let html = `<h3>学校別教科名・教科パターン管理</h3>`;
 
   if (patternGroups.length === 0) {
     html += `<p>登録された学校・コースがありません。生徒インポートを実行すると学校名が自動登録されます。</p>`;
@@ -119,20 +119,25 @@ function renderPatternManager(data) {
 
   const colWidth = Math.max(10, Math.floor(72 / (genreNames.length || 1)));
 
-  // 階層構造を構築: school → course → [groups]
+  // 階層構造を構築: school → course → sub_course → [grade groups]
   const schoolOrder = [];
   const hier = {};
   patternGroups.forEach(group => {
-    const { school_name, school_course } = group.school;
+    const { school_name, school_course, sub_course } = group.school;
     if (!hier[school_name]) {
       schoolOrder.push(school_name);
       hier[school_name] = { courseOrder: [], courses: {} };
     }
     if (!hier[school_name].courses[school_course]) {
       hier[school_name].courseOrder.push(school_course);
-      hier[school_name].courses[school_course] = [];
+      hier[school_name].courses[school_course] = { subCourseOrder: [], subCourses: {} };
     }
-    hier[school_name].courses[school_course].push(group);
+    const cd = hier[school_name].courses[school_course];
+    if (!cd.subCourses[sub_course]) {
+      cd.subCourseOrder.push(sub_course);
+      cd.subCourses[sub_course] = [];
+    }
+    cd.subCourses[sub_course].push(group);
   });
 
   // 初回レンダリング時はすべて閉じた状態にする
@@ -142,7 +147,8 @@ function renderPatternManager(data) {
       const { school_name, school_course, grade, sub_course } = group.school;
       _collapseSchools.add(school_name);
       _collapseCourses.add(`${school_name}||${school_course}`);
-      _collapseGrades.add(makeGroupKey(school_name, school_course, grade, sub_course));
+      _collapseSubCourses.add(`${school_name}||${school_course}||${sub_course}`);
+      _collapseGrades.add(makeGroupKey(school_name, school_course, sub_course, grade));
     });
   }
 
@@ -172,47 +178,33 @@ function renderPatternManager(data) {
 
         if (isCourseOpen) {
           html += `<div class="hier-course-body">`;
+          const cd = hier[schoolName].courses[courseName];
 
-          hier[schoolName].courses[courseName].forEach(group => {
-            const { school_name, school_course, grade, sub_course } = group.school;
-            const groupKey    = makeGroupKey(school_name, school_course, grade, sub_course);
-            const safeKey     = sanitizePat(groupKey);
-            const isItemOpen  = !_collapseGrades.has(groupKey);
-            const isSubCourseEditorOpen = subCourseEditorKey === groupKey;
-            const gradeLabel  = sub_course ? `${grade}(${sub_course})` : grade;
+          cd.subCourseOrder.forEach(subCourseName => {
+            const subCourseKey    = `${schoolName}||${courseName}||${subCourseName}`;
+            const isSubCourseOpen = !_collapseSubCourses.has(subCourseKey);
+            const subCourseLabel  = subCourseName || '(サブ区分なし)';
+            const subCourseIdx    = _patPush({ subCourseKey });
 
-            const itemIdx = _patPush({
-              groupKey,
-              school_name,
-              school_course: courseName,
-              grade,
-              sub_course,
-              safeKey
-            });
-
-            html += `<div class="hier-grade">`;
-            html += `<div class="hier-grade-header" onclick="toggleGrade(${itemIdx})">
-              <span class="hier-arrow">${isItemOpen ? '▼' : '▶'}</span>${gradeLabel}
-              <button class="btn-subcourse btn-subcourse-sm" onclick="event.stopPropagation(); toggleSubCourseEditorForGrade(${itemIdx})">＋サブ区分(文系など)を追加</button>
+            html += `<div class="hier-subcourse">`;
+            html += `<div class="hier-subcourse-header" onclick="toggleSubCourse(${subCourseIdx})">
+              <span class="hier-arrow">${isSubCourseOpen ? '▼' : '▶'}</span>${subCourseLabel}
             </div>`;
 
-            // サブ区分エディタ
-            if (isSubCourseEditorOpen) {
-              const scIdx = _patPush({ school_name, school_course: courseName, grade, safeKey });
-              html += `<div class="sub-course-editor" style="margin-left:28px;">`;
-              html += `<strong>サブ区分を追加</strong>`;
-              html += `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px;">`;
-              html += `<label>既存から選択: <select id="sc_select_${safeKey}" class="admin-select" style="width:auto; padding:4px 8px; display:inline-block;">`;
-              html += `<option value="">(なし)</option>`;
-              allSubCourses.forEach(sc => {
-                html += `<option value="${sc}">${sc}</option>`;
-              });
-              html += `</select></label>`;
-              html += `<label>または新規入力: <input type="text" id="sc_input_${safeKey}" placeholder="例: 文系" class="admin-input" style="width:120px; display:inline-block;" /></label>`;
-              html += `<button class="btn-save-admin" style="padding:6px 12px; flex:none;" onclick="addSubCourseById(${scIdx})">追加</button>`;
-              html += `<button class="btn-cancel-admin" style="padding:6px 12px; flex:none;" onclick="closeSubCourseEditor()">閉じる</button>`;
-              html += `</div></div>`;
-            }
+            if (isSubCourseOpen) {
+              html += `<div class="hier-subcourse-body">`;
+
+              cd.subCourses[subCourseName].forEach(group => {
+                const { school_name, school_course, grade, sub_course } = group.school;
+                const groupKey  = makeGroupKey(school_name, school_course, sub_course, grade);
+                const safeKey   = sanitizePat(groupKey);
+                const isItemOpen = !_collapseGrades.has(groupKey);
+                const itemIdx   = _patPush({ groupKey, school_name, school_course: courseName, grade, sub_course, safeKey });
+
+                html += `<div class="hier-grade">`;
+                html += `<div class="hier-grade-header" onclick="toggleGrade(${itemIdx})">
+                  <span class="hier-arrow">${isItemOpen ? '▼' : '▶'}</span>${grade}
+                </div>`;
 
             if (isItemOpen) {
               html += `<div class="hier-grade-body">`;
@@ -344,8 +336,14 @@ function renderPatternManager(data) {
               html += `</div>`;  // hier-grade-body
             }
 
-            html += `</div>`;  // hier-grade
-          });
+                html += `</div>`;  // hier-grade
+              });  // grade forEach
+
+              html += `</div>`;  // hier-subcourse-body
+            }
+
+            html += `</div>`;  // hier-subcourse
+          });  // subCourse forEach
 
           html += `</div>`;  // hier-course-body
         }
@@ -362,44 +360,6 @@ function renderPatternManager(data) {
   content.innerHTML = html;
 }
 
-// ---- サブ区分エディタ ----
-
-function toggleSubCourseEditorForGrade(idx) {
-  const { groupKey } = _patStore[idx];
-  subCourseEditorKey = subCourseEditorKey === groupKey ? null : groupKey;
-  renderPatternManager(masterData);
-}
-
-function closeSubCourseEditor() {
-  subCourseEditorKey = null;
-  renderPatternManager(masterData);
-}
-
-function addSubCourseById(idx) {
-  const { school_name, school_course, grade, safeKey } = _patStore[idx];
-  const inputVal  = document.getElementById(`sc_input_${safeKey}`)?.value.trim() || '';
-  const selectVal = document.getElementById(`sc_select_${safeKey}`)?.value.trim() || '';
-  const newSubCourse = inputVal || selectVal;
-
-  setLoading(true, ['サブ区分を追加中...', 'パターンを作成中...', 'データを書き込み中...', 'もうしばらくお待ちください...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        subCourseEditorKey = null;
-        showMessage('サブ区分を追加しました', 'success');
-        refreshMasterData(() => loadSection('patterns'));
-      } else {
-        showMessage(response.error || 'サブ区分の追加に失敗しました。', 'error');
-        setLoading(false);
-      }
-    })
-    .withFailureHandler(function() {
-      showMessage('通信エラーが発生しました。', 'error');
-      setLoading(false);
-    })
-    .addSubCourseGroup(window.selectedCramId, { school_name, school_course, grade, sub_course: newSubCourse });
-}
-
 // ---- 階層トグル ----
 
 function toggleSchool(idx) {
@@ -413,6 +373,13 @@ function toggleCourse(idx) {
   const { courseKey } = _patStore[idx];
   if (_collapseCourses.has(courseKey)) _collapseCourses.delete(courseKey);
   else _collapseCourses.add(courseKey);
+  renderPatternManager(masterData);
+}
+
+function toggleSubCourse(idx) {
+  const { subCourseKey } = _patStore[idx];
+  if (_collapseSubCourses.has(subCourseKey)) _collapseSubCourses.delete(subCourseKey);
+  else _collapseSubCourses.add(subCourseKey);
   renderPatternManager(masterData);
 }
 
