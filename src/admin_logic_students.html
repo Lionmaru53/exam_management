@@ -138,7 +138,7 @@ function _stRerender() {
             + '<select id="st-edit-field" class="admin-select" style="width:auto;"'
             + ' data-school="' + escapedSN + '" onchange="_stOnFieldChange()">'
             + '<option value="school_course">コース</option>'
-            + '<option value="sub_course">サブ区分</option>'
+            + '<option value="sub_course">文理</option>'
             + '</select>'
             + '&nbsp;→&nbsp;'
             + '<select id="st-edit-value" class="admin-select" style="width:auto;">'
@@ -146,9 +146,11 @@ function _stRerender() {
             + courseOptions
             + '</select>'
             + '&nbsp;<button class="btn-save-admin" onclick="_stApplyEdit()">選択中の生徒に適用</button>'
+            + '<span id="st-add-course-section">'
             + '<span style="margin-left:12px; color:#666; font-size:0.85em;">新規追加:</span>'
             + '<input type="text" id="st-new-course" class="admin-input" placeholder="コース名" style="width:100px;" />'
             + '<button class="btn-sm" onclick="_stAddNewCourse(\'' + escapedSN + '\')">追加</button>'
+            + '</span>'
             + '</div>';
     }
 
@@ -161,7 +163,7 @@ function _stRerender() {
 
       const cbHeader = isEditing ? '<th style="width:32px;"></th>' : '';
       const theadHtml = '<thead><tr>' + cbHeader + '<th>管理番号</th>' + thName + thCourse
-                      + '<th>サブ区分</th><th class="st-line-col">LINE</th><th>状態</th>'
+                      + '<th>文理</th><th class="st-line-col">LINE</th><th>状態</th>'
                       + '</tr></thead>';
 
       html += '<div class="st-grade-group">'
@@ -240,14 +242,8 @@ function _stDeselectAll() {
 /** field に応じた選択肢 <option> HTML を返す */
 function _stGetCourseOptions(schoolName, field) {
   if (field === 'sub_course') {
-    const subs = [...new Set(
-      _stCachedStudents
-        .filter(function (s) { return s.school_name === schoolName && s.sub_course; })
-        .map(function (s) { return s.sub_course; })
-    )].sort();
-    return subs.map(function (c) {
-      return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>';
-    }).join('');
+    // 文理は固定3択（空欄・文系・理系）
+    return '<option value="文系">文系</option><option value="理系">理系</option>';
   }
   const settings = (window.masterData && window.masterData.schoolSettings) || [];
   const courses  = [...new Set(
@@ -259,7 +255,7 @@ function _stGetCourseOptions(schoolName, field) {
   }).join('');
 }
 
-/** 対象フィールド切り替え時に選択肢と placeholder を更新する */
+/** 対象フィールド切り替え時に選択肢・「新規追加」欄を更新する */
 function _stOnFieldChange() {
   const fieldEl    = document.getElementById('st-edit-field');
   const schoolName = (fieldEl && fieldEl.dataset && fieldEl.dataset.school) || '';
@@ -268,8 +264,9 @@ function _stOnFieldChange() {
   if (sel) {
     sel.innerHTML = '<option value="">（空欄にする）</option>' + _stGetCourseOptions(schoolName, field);
   }
-  const inp = document.getElementById('st-new-course');
-  if (inp) inp.placeholder = field === 'sub_course' ? 'サブ区分名' : 'コース名';
+  // 文理は固定選択肢なので「新規追加」を非表示
+  const addSection = document.getElementById('st-add-course-section');
+  if (addSection) addSection.style.display = field === 'sub_course' ? 'none' : '';
 }
 
 function _stApplyEdit() {
@@ -280,7 +277,7 @@ function _stApplyEdit() {
   if (checked.length === 0) { showMessage('生徒を選択してください。', 'error'); return; }
   if (!field) return;
 
-  const label = field === 'school_course' ? 'コース' : 'サブ区分';
+  const label = field === 'school_course' ? 'コース' : '文理';
   const displayVal = value || '（空欄）';
   if (!confirm(checked.length + ' 名の ' + label + ' を「' + displayVal + '」に変更します。よろしいですか？')) return;
 
@@ -306,7 +303,7 @@ function _stAddNewCourse(schoolName) {
   const input = document.getElementById('st-new-course');
   const val   = input ? input.value.trim() : '';
   const field = document.getElementById('st-edit-field') ? document.getElementById('st-edit-field').value : 'school_course';
-  if (!val) { showMessage((field === 'sub_course' ? 'サブ区分名' : 'コース名') + 'を入力してください。', 'error'); return; }
+  if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
 
   if (field === 'sub_course') {
     // サブ区分はマスター不要 — 選択肢に直接追加して選択状態にする

@@ -183,7 +183,7 @@ function renderPatternManager(data) {
           cd.subCourseOrder.forEach(subCourseName => {
             const subCourseKey    = `${schoolName}||${courseName}||${subCourseName}`;
             const isSubCourseOpen = !_collapseSubCourses.has(subCourseKey);
-            const subCourseLabel  = subCourseName || '(サブ区分なし)';
+            const subCourseLabel  = subCourseName || '(文理指定なし)';
             const subCourseIdx    = _patPush({ subCourseKey });
 
             html += `<div class="hier-subcourse">`;
