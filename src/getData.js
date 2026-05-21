@@ -81,16 +81,29 @@ function getInitialData(lineUserId) {
       patternIds.includes(String(e.pattern_id).trim())
     );
 
-    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master）
+    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master / school_subject_aliases）
     const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
     const allSubjects        = getRowsData(parentSS.getSheetByName('subjects_master'));
     const allGenres          = getRowsData(parentSS.getSheetByName('genres_master'));
+
+    // 学校別表示名エイリアス: { "school_name||subject_id" → display_name }
+    const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
+    const aliasMap   = {};
+    if (aliasSheet) {
+      getRowsData(aliasSheet).forEach(a => {
+        const key = String(a.school_name || '').trim() + '||' + String(a.subject_id || '').trim();
+        if (a.display_name) aliasMap[key] = String(a.display_name).trim();
+      });
+    }
+
     const subjectMap = allSubjects.reduce((map, s) => {
       const gen = allGenres.find(g => g.genre_id === s.genre_id);
+      const aliasKey = String(student.school_name || '').trim() + '||' + String(s.subject_id || '').trim();
       map[s.subject_id] = {
         ...s,
-        genre_id:   gen ? gen.genre_id   : null,
-        genre_name: gen ? gen.genre_name : 'その他'
+        genre_id:     gen ? gen.genre_id   : null,
+        genre_name:   gen ? gen.genre_name : 'その他',
+        display_name: aliasMap[aliasKey] || s.subject_name,
       };
       return map;
     }, {});

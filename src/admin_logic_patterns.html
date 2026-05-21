@@ -245,7 +245,7 @@ function renderPatternManager(data) {
                   html += `<div class="genre-col-title">${genreName}</div>`;
                   genreSubjects.forEach(s => {
                     const chk = groupSubjectIds.includes(s.subject_id) ? 'checked' : '';
-                    html += `<label class="subject-label"><input type="checkbox" name="group_subject_${safeKey}" value="${s.subject_id}" ${chk}> ${s.subject_name}</label>`;
+                    html += `<label class="subject-label"><input type="checkbox" name="group_subject_${safeKey}" value="${s.subject_id}" ${chk}> ${_resolveDisplayName(school_name, s.subject_id)}</label>`;
                   });
                   html += `<div class="add-subject-row">`;
                   html += `<input type="text" id="${inputId}" placeholder="新しい教科名" class="admin-input" />`;
@@ -283,7 +283,7 @@ function renderPatternManager(data) {
                       );
                       const checkboxes = genreSubjects.map(s => {
                         const chk = subjectIds.includes(s.subject_id) ? 'checked' : '';
-                        return `<label class="subject-label"><input type="checkbox" name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}" value="${s.subject_id}" ${chk}> ${s.subject_name}</label>`;
+                        return `<label class="subject-label"><input type="checkbox" name="pt_subject_${safeKey}_${sanitizePat(String(termTestId))}" value="${s.subject_id}" ${chk}> ${_resolveDisplayName(school_name, s.subject_id)}</label>`;
                       }).join('');
                       html += `<td>${checkboxes || '<span style="color:#aaa;">-</span>'}</td>`;
                     });
@@ -292,7 +292,7 @@ function renderPatternManager(data) {
                       const names = subjectIds
                         .map(id => {
                           const s = subjects.find(s => s.subject_id === id);
-                          return s && (s.genre_name || 'その他') === genreName ? s.subject_name : null;
+                          return s && (s.genre_name || 'その他') === genreName ? _resolveDisplayName(school_name, id) : null;
                         })
                         .filter(Boolean);
                       html += `<td>${names.join('<br>') || '<span style="color:#aaa;">-</span>'}</td>`;

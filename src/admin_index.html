@@ -190,6 +190,18 @@
       (renderers[section] || renderers.patterns)();
     };
 
+    // ---- 教科表示名ヘルパー ----
+    window._resolveDisplayName = function (schoolName, subjectId) {
+      const aliases = (window.masterData && window.masterData.schoolSubjectAliases) || [];
+      const hit = aliases.find(function (a) {
+        return a.school_name === schoolName && a.subject_id === subjectId;
+      });
+      if (hit && hit.display_name) return hit.display_name;
+      const subj = ((window.masterData && window.masterData.subjects) || [])
+        .find(function (s) { return s.subject_id === subjectId; });
+      return subj ? subj.subject_name : subjectId;
+    };
+
     window.closeModal = function () {
       const modal = document.getElementById('pattern-modal');
       if (modal) modal.style.display = 'none';

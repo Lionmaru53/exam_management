@@ -127,6 +127,21 @@
 
 ---
 
+### Sheet: `school_subject_aliases`
+学校単位の教科表示名エイリアス（親SS に追加）
+
+| 列位置 | 列名 | データ型 | 説明 | 備考 |
+|--------|------|--------|------|------|
+| 1 | `school_name` | 文字列 | 学校名 | 複合キーの一部 |
+| 2 | `subject_id` | 文字列 | 教科ID | `subjects_master` 参照、複合キーの一部 |
+| 3 | `display_name` | 文字列 | この学校での表示名 | 空欄不可（クリアは行削除） |
+| 4 | `updated_at` | 日時 | 楽観的ロック用タイムスタンプ | |
+
+**複合キー**: `(school_name, subject_id)`
+**備考**: エントリがなければ `subjects_master.subject_name`（canonical name）にフォールバック。複数 branch が同じ学校を持つ場合も一元管理。
+
+---
+
 ### Sheet: `school_course_master`
 学校・コース設定シート（生徒インポート時に自動登録、管理画面から追加も可）
 

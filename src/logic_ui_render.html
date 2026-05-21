@@ -169,7 +169,7 @@ function renderApp(data) {
           listHtml += `
             <tr style="background-color:${rowBackground};">
               ${index === 0 ? `<td class="genre-cell" rowspan="${rows.length}" style="background-color:${rowBackground};">${genreName}</td>` : ''}
-              <td>${sub.subject_name}</td>
+              <td>${sub.display_name || sub.subject_name}</td>
               <td><select id="s_${exam.exam_id}_${sub.subject_id}">${sOpt}</select></td>
               <td><select id="gr_${exam.exam_id}_${sub.subject_id}">${grOpt}</select></td>
               <td><select id="cr_${exam.exam_id}_${sub.subject_id}">${crOpt}</select></td>

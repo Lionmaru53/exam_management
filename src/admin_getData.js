@@ -37,6 +37,10 @@ function getAdminInitialData(targetCramId) {
       return { ...s, genre_name: g ? g.genre_name : '未設定' };
     });
 
+    // 学校別教科表示名エイリアス
+    const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
+    results.schoolSubjectAliases = aliasSheet ? stringifyDates(getRowsData(aliasSheet)) : [];
+
     // 校舎一覧を返す（master は全件、branch_admin は担当校舎のみ）
     if (adminContext.role === 'master' || adminContext.role === 'branch_admin') {
       const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
