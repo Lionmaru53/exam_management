@@ -25,13 +25,28 @@ describe('getAdminContext', () => {
     expect(ctx.role).toBe('master');
     expect(ctx.email).toBe('master@example.com');
     expect(ctx.cram_id).toBe('');
+    expect(ctx.cram_ids).toEqual([]);
   });
 
-  test('branch_admin メールで認証 → role と cram_id が返る', () => {
+  test('branch_admin メールで認証 → role と cram_id / cram_ids が返る', () => {
     global.Session.getActiveUser.mockReturnValue({ getEmail: () => 'branch1@example.com' });
     const ctx = getAdminContext();
     expect(ctx.role).toBe('branch_admin');
     expect(ctx.cram_id).toBe('C001');
+    expect(ctx.cram_ids).toEqual(['C001']);
+  });
+
+  test('複数校舎担当の branch_admin → cram_ids が配列で返る', () => {
+    const multiSheet = makeAdminUsersSheet([
+      { email: 'multi@example.com', role: 'branch_admin', cram_id: 'Z01,Z02,Z03', is_active: true },
+    ]);
+    global.SpreadsheetApp.getActiveSpreadsheet.mockReturnValue(
+      makeFakeSS({ admin_users: multiSheet, audit_log: { appendRow: jest.fn(), getSheetByName: jest.fn() } })
+    );
+    global.Session.getActiveUser.mockReturnValue({ getEmail: () => 'multi@example.com' });
+    const ctx = getAdminContext();
+    expect(ctx.cram_ids).toEqual(['Z01', 'Z02', 'Z03']);
+    expect(ctx.cram_id).toBe('Z01');  // 先頭値が後方互換プロパティに
   });
 
   test('メールの大文字/小文字は区別しない', () => {

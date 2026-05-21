@@ -112,7 +112,7 @@ function renderPatternManager(data) {
   let html = `<h3>教科パターン管理</h3>`;
 
   if (patternGroups.length === 0) {
-    html += `<p>登録された学校・コースがありません。「【設定】学校・科」シートに学校を登録してください。</p>`;
+    html += `<p>登録された学校・コースがありません。生徒インポートを実行すると学校名が自動登録されます。</p>`;
     content.innerHTML = html;
     return;
   }

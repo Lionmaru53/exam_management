@@ -11,9 +11,13 @@ function getAdminInitialData(targetCramId) {
     const parentSS     = SpreadsheetApp.getActiveSpreadsheet();
 
     // 操作対象の cram_id を確定
-    const cramId = adminContext.role === 'branch_admin'
-      ? adminContext.cram_id
-      : (targetCramId || '');
+    let cramId;
+    if (adminContext.role === 'branch_admin') {
+      const ids = adminContext.cram_ids || [];
+      cramId = (targetCramId && ids.includes(String(targetCramId))) ? targetCramId : (ids[0] || '');
+    } else {
+      cramId = targetCramId || '';
+    }
 
     const results = { adminContext, selectedCramId: cramId };
 
@@ -33,10 +37,14 @@ function getAdminInitialData(targetCramId) {
       return { ...s, genre_name: g ? g.genre_name : '未設定' };
     });
 
-    // master には校舎一覧も返す
-    if (adminContext.role === 'master') {
-      const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
-      results.branches = branchSheet ? stringifyDates(getRowsData(branchSheet)) : [];
+    // 校舎一覧を返す（master は全件、複数校舎担当の branch_admin は担当分のみ）
+    if (adminContext.role === 'master' ||
+        (adminContext.role === 'branch_admin' && (adminContext.cram_ids || []).length > 1)) {
+      const branchSheet  = parentSS.getSheetByName(BRANCHES_SHEET);
+      const allBranches  = branchSheet ? stringifyDates(getRowsData(branchSheet)) : [];
+      results.branches   = adminContext.role === 'master'
+        ? allBranches
+        : allBranches.filter(b => (adminContext.cram_ids || []).includes(String(b.cram_id || '').trim()));
     }
 
     // ── 子SS：校舎固有データ（cramId が確定している場合のみ）──
@@ -54,8 +62,8 @@ function getAdminInitialData(targetCramId) {
         results[key] = stringifyDates(getRowsData(sheet));
       }
 
-      // 【設定】学校・科
-      const settingSheet = _ensureChildSettingsSheet(childSS);
+      // school_course_master
+      const settingSheet = _ensureSchoolCourseMasterSheet(childSS);
       results.schoolSettings = getSchoolCoursesFromSettingsSheet(settingSheet);
     } else {
       // 校舎未選択時は空配列
@@ -83,7 +91,10 @@ function getAdminInitialData(targetCramId) {
 function getStudentList(targetCramId) {
   try {
     const ctx    = getAdminContext();
-    const cramId = ctx.role === 'branch_admin' ? ctx.cram_id : (targetCramId || '');
+    const ids    = ctx.cram_ids || [];
+    const cramId = ctx.role === 'branch_admin'
+      ? ((targetCramId && ids.includes(String(targetCramId))) ? targetCramId : (ids[0] || ''))
+      : (targetCramId || '');
     if (!cramId) return { success: false, error: '校舎を選択してください' };
 
     const childSS     = getChildSS(cramId);
@@ -112,36 +123,78 @@ function getStudentList(targetCramId) {
 
 // ---- 補助関数 ----
 
+/**
+ * school_course_master シートを読む。
+ * 列: school_name / school_course / is_two_terms
+ * 戻り値: [{ school_name, school_course, is_two_terms }]
+ */
 function getSchoolCoursesFromSettingsSheet(sheet) {
   if (!sheet) return [];
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];
+
+  const headers   = values[0].map(h => String(h).trim());
+  const schoolCol = headers.indexOf('school_name');
+  const courseCol = headers.indexOf('school_course');
+  const termsCol  = headers.indexOf('is_two_terms');
+  if (schoolCol < 0) return [];
+
   return values.slice(1).reduce((acc, row) => {
-    const schoolName = String(row[0] || '').trim();
+    const schoolName = String(row[schoolCol] || '').trim();
     if (!schoolName) return acc;
-    const isTwoTerms = String(row[1] || '0').trim() === '1' ? 1 : 0;
-    const courses = row.slice(2)
-      .map(c => (c === undefined || c === null) ? '' : String(c).trim())
-      .filter(Boolean);
-    if (courses.length === 0) {
-      acc.push({ school_name: schoolName, school_course: '', is_two_terms: isTwoTerms });
-    } else {
-      courses.forEach(course => acc.push({ school_name: schoolName, school_course: course, is_two_terms: isTwoTerms }));
-    }
+    const isTwoTerms = termsCol >= 0 ? (String(row[termsCol] || '0').trim() === '1' ? 1 : 0) : 0;
+    const course     = courseCol >= 0 ? String(row[courseCol] || '').trim() : '';
+    acc.push({ school_name: schoolName, school_course: course, is_two_terms: isTwoTerms });
     return acc;
   }, []);
 }
 
-function _ensureChildSettingsSheet(ss) {
-  let sheet = ss.getSheetByName('【設定】学校・科');
+/** school_course_master シートを確保する（なければ作成）。 */
+function _ensureSchoolCourseMasterSheet(ss) {
+  let sheet = ss.getSheetByName('school_course_master');
   if (!sheet) {
-    sheet = ss.insertSheet('【設定】学校・科');
-    sheet.getRange(1, 1, 1, 3).setValues([['学校名', '2学期制', '科・コース']]);
+    sheet = ss.insertSheet('school_course_master');
+    sheet.getRange(1, 1, 1, 3).setValues([['school_name', 'school_course', 'is_two_terms']]);
   }
   return sheet;
+}
+
+/**
+ * school_course_master に (school_name, school_course) の行を upsert する。
+ * 同一の組み合わせが既にあればスキップ。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {string} schoolName
+ * @param {string} courseName
+ * @param {number} isTwoTerms 0 or 1
+ */
+function upsertSchoolCourse(ss, schoolName, courseName, isTwoTerms) {
+  const sn = String(schoolName || '').trim();
+  const cn = String(courseName || '').trim();
+  if (!sn) return;
+
+  const sheet   = _ensureSchoolCourseMasterSheet(ss);
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const sc      = headers.indexOf('school_name');
+  const cc      = headers.indexOf('school_course');
+  const tc      = headers.indexOf('is_two_terms');
+  if (sc < 0 || cc < 0) return;
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][sc] || '').trim() === sn &&
+        String(data[i][cc] || '').trim() === cn) return;
+  }
+  const newRow = headers.map((_, i) => {
+    if (i === sc) return sn;
+    if (i === cc) return cn;
+    if (i === tc) return isTwoTerms || 0;
+    return '';
+  });
+  sheet.appendRow(newRow);
 }
 
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList,
   getSchoolCoursesFromSettingsSheet,
+  _ensureSchoolCourseMasterSheet, upsertSchoolCourse,
 });

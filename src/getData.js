@@ -7,7 +7,7 @@
  *
  * 親 SS から読むもの: term_tests_master / genres_master / subjects_master
  * 子 SS から読むもの: students_master / exam_patterns / exam_schedule /
- *                     pattern_subjects / scores_data / 【設定】学校・科
+ *                     pattern_subjects / scores_data / school_course_master
  */
 function getInitialData(lineUserId) {
   try {
@@ -42,15 +42,20 @@ function getInitialData(lineUserId) {
       sub_course: studentRaw.sub_course || ''
     };
 
-    // 4. 学期制（子 SS の【設定】学校・科）
+    // 4. 学期制（子 SS の school_course_master）
     let is_two_terms = false;
-    const settingSheet = ss.getSheetByName('【設定】学校・科');
+    const settingSheet = ss.getSheetByName('school_course_master');
     if (settingSheet) {
       const settingRows = settingSheet.getDataRange().getValues();
-      for (let i = 1; i < settingRows.length; i++) {
-        if (String(settingRows[i][0]).trim() === String(student.school_name).trim()) {
-          is_two_terms = String(settingRows[i][1]).trim() === '1';
-          break;
+      const hdrs        = settingRows[0].map(h => String(h).trim());
+      const snCol       = hdrs.indexOf('school_name');
+      const ttCol       = hdrs.indexOf('is_two_terms');
+      if (snCol >= 0) {
+        for (let i = 1; i < settingRows.length; i++) {
+          if (String(settingRows[i][snCol]).trim() === String(student.school_name).trim()) {
+            is_two_terms = ttCol >= 0 && String(settingRows[i][ttCol]).trim() === '1';
+            break;
+          }
         }
       }
     }

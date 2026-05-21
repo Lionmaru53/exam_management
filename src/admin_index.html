@@ -123,11 +123,14 @@
         .getAdminInitialData(window.selectedCramId);
     };
 
-    // ---- 校舎セレクター（master のみ表示）----
+    // ---- 校舎セレクター（master + 複数校舎担当の branch_admin に表示）----
     function _renderBranchSelector() {
-      const el = document.getElementById('branch-selector-wrap');
+      const el   = document.getElementById('branch-selector-wrap');
       if (!el) return;
-      if (window.adminContext.role !== 'master') { el.style.display = 'none'; return; }
+      const role     = window.adminContext.role;
+      const cramIds  = window.adminContext.cram_ids || [];
+      const isMulti  = role === 'branch_admin' && cramIds.length > 1;
+      if (role !== 'master' && !isMulti) { el.style.display = 'none'; return; }
 
       const branches = Array.isArray(window.masterData.branches) ? window.masterData.branches : [];
       const activeBranches = branches.filter(b =>

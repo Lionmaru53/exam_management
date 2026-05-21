@@ -127,14 +127,17 @@
 
 ---
 
-### Sheet: `【設定】学校・科`
-学校・コース設定シート（管理画面から自動作成）
+### Sheet: `school_course_master`
+学校・コース設定シート（生徒インポート時に自動登録、管理画面から追加も可）
 
-| 列位置 | 説明 | 備考 |
-|--------|------|------|
-| 1 | 学校名 | |
-| 2 | 2学期制フラグ | `1`: 2学期制, `0` or 空: 3学期制 |
-| 3以降 | 科・コース名 | 複数列で複数コースを定義 |
+| 列位置 | 列名 | データ型 | 説明 | 備考 |
+|--------|------|--------|------|------|
+| 1 | `school_name` | 文字列 | 学校名 | 主キーの一部 |
+| 2 | `school_course` | 文字列 | コース名 | 空文字 = コース未設定 |
+| 3 | `is_two_terms` | 数値 | 2学期制フラグ | `1`: 2学期制, `0`: 3学期制 |
+
+**複合キー**: `(school_name, school_course)`
+**備考**: `exam_patterns` の `school_name / school_course` の選択肢として使用。生徒インポート時に `school_name` が自動登録される（`school_course = ''`, `is_two_terms = 0` で初期登録）。
 
 ---
 
@@ -144,10 +147,12 @@
 term_tests_master
     ↑ term_test_id
 exam_patterns ──────────── pattern_subjects ─── subjects_master
-    ↑ pattern_id                                      ↑ genre_id
+    ↑ pattern_id           ↑ subject_id               ↑ genre_id
 exam_schedule                                  genres_master
     ↑ exam_id
 scores_data ─── student_id ─── students_master
+                                    ↑ school_name
+                            school_course_master
 ```
 
 ## 3. 集計クエリの考え方
@@ -175,4 +180,4 @@ scores_data
 
 ---
 
-*更新: 2026-05-07*
+*更新: 2026-05-21*
