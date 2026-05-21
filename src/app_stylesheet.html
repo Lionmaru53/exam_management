@@ -109,6 +109,26 @@
     color: #555;
   }
 
+  /* ---- 得点・順位 テキスト入力 ---- */
+
+  .score-input,
+  .rank-input {
+    width: 64px;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+    text-align: center;
+    -moz-appearance: textfield;
+  }
+
+  .score-input:focus,
+  .rank-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.2);
+  }
+
   /* ---- 保存ボタン ---- */
 
   .btn-save {
