@@ -590,3 +590,171 @@ function upsertExamWithAutoPattern(cramId, payload) {
     lock.releaseLock();
   }
 }
+
+/**
+ * 指定生徒の school_course または sub_course を一括更新する。
+ * @param {string}   cramId
+ * @param {string[]} studentIds
+ * @param {'school_course'|'sub_course'} field
+ * @param {string}   newValue
+ */
+function updateStudentField(cramId, studentIds, field, newValue) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const ctx = getAdminContext();
+    const ctxCramIds = ctx.cram_ids || [];
+    if (ctx.role !== 'master' && !ctxCramIds.includes(String(cramId || '').trim())) {
+      return { success: false, error: '権限がありません' };
+    }
+    if (!['school_course', 'sub_course'].includes(field)) {
+      return { success: false, error: '無効なフィールドです' };
+    }
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return { success: false, error: '生徒が選択されていません' };
+    }
+
+    const ss    = _getTargetSS(cramId);
+    const sheet = ss.getSheetByName('students_master');
+    if (!sheet) return { success: false, error: 'students_master シートが見つかりません' };
+
+    const data      = sheet.getDataRange().getValues();
+    const headers   = data[0].map(h => String(h).trim());
+    const sidCol    = headers.indexOf('student_id');
+    const fieldCol  = headers.indexOf(field);
+    if (sidCol < 0 || fieldCol < 0) return { success: false, error: 'field "' + field + '" not found' };
+
+    const idSet  = new Set(studentIds.map(String));
+    let updated  = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (idSet.has(String(data[i][sidCol]).trim())) {
+        sheet.getRange(i + 1, fieldCol + 1).setValue(String(newValue || ''));
+        updated++;
+      }
+    }
+
+    writeAuditLog(ctx, 'update_student_field', { cram_id: cramId, field, count: updated }, 'success');
+    return { success: true, updated };
+  } catch (e) {
+    console.error('updateStudentField error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * school_course_master に新しいコースを追加する。
+ * @param {string} cramId
+ * @param {string} schoolName
+ * @param {string} newValue
+ */
+function addCourseToMaster(cramId, schoolName, newValue) {
+  try {
+    const ctx = getAdminContext();
+    const ctxCramIds = ctx.cram_ids || [];
+    if (ctx.role !== 'master' && !ctxCramIds.includes(String(cramId || '').trim())) {
+      return { success: false, error: '権限がありません' };
+    }
+    const val = String(newValue || '').trim();
+    if (!val) return { success: false, error: '値を入力してください' };
+
+    const ss = _getTargetSS(cramId);
+    upsertSchoolCourse(ss, schoolName, val, 0);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ---- 教科表示名エイリアス ----
+
+function _ensureSchoolSubjectAliasSheet(ss) {
+  let sheet = ss.getSheetByName('school_subject_aliases');
+  if (!sheet) {
+    sheet = ss.insertSheet('school_subject_aliases');
+    sheet.getRange(1, 1, 1, 4).setValues([['school_name', 'subject_id', 'display_name', 'updated_at']]);
+  }
+  return sheet;
+}
+
+function _getAllAliases(sheet) {
+  return getRowsData(sheet).map(function (r) {
+    return {
+      school_name:  String(r.school_name  || '').trim(),
+      subject_id:   String(r.subject_id   || '').trim(),
+      display_name: String(r.display_name || '').trim(),
+      updated_at:   r.updated_at ? String(r.updated_at) : '',
+    };
+  });
+}
+
+/**
+ * school_subject_aliases を upsert する。
+ * displayName が空文字の場合は行を削除（canonical name にフォールバック）。
+ * prevUpdatedAt と現在の updated_at が不一致の場合は競合として返す。
+ *
+ * @param {string} schoolName
+ * @param {string} subjectId
+ * @param {string} displayName
+ * @param {string} [prevUpdatedAt]  楽観的ロック用タイムスタンプ
+ */
+function upsertSubjectAlias(schoolName, subjectId, displayName, prevUpdatedAt) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = _ensureSchoolSubjectAliasSheet(ss);
+    const data  = sheet.getDataRange().getValues();
+    const hdrs  = data[0].map(function (h) { return String(h).trim(); });
+    const snCol = hdrs.indexOf('school_name');
+    const siCol = hdrs.indexOf('subject_id');
+    const dnCol = hdrs.indexOf('display_name');
+    const utCol = hdrs.indexOf('updated_at');
+
+    const sn = String(schoolName  || '').trim();
+    const si = String(subjectId   || '').trim();
+    const dn = String(displayName || '').trim();
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][snCol]).trim() === sn &&
+          String(data[i][siCol]).trim() === si) {
+        // 競合チェック
+        if (prevUpdatedAt) {
+          var cur = data[i][utCol];
+          if (String(cur) !== String(prevUpdatedAt)) {
+            return { success: false, conflict: true, current: _getAllAliases(sheet) };
+          }
+        }
+        if (!dn) {
+          sheet.deleteRow(i + 1);
+        } else {
+          if (dnCol >= 0) sheet.getRange(i + 1, dnCol + 1).setValue(dn);
+          if (utCol >= 0) sheet.getRange(i + 1, utCol + 1).setValue(new Date());
+        }
+        writeAuditLog(ctx, 'upsert_subject_alias', { schoolName: sn, subjectId: si, displayName: dn }, 'success');
+        return { success: true };
+      }
+    }
+
+    // 新規追加（displayName が空なら何もしない）
+    if (!dn) return { success: true };
+    var newRow = hdrs.map(function (_, idx) {
+      if (idx === snCol) return sn;
+      if (idx === siCol) return si;
+      if (idx === dnCol) return dn;
+      if (idx === utCol) return new Date();
+      return '';
+    });
+    sheet.appendRow(newRow);
+    writeAuditLog(ctx, 'upsert_subject_alias', { schoolName: sn, subjectId: si, displayName: dn }, 'success');
+    return { success: true };
+  } catch (e) {
+    console.error('upsertSubjectAlias error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}

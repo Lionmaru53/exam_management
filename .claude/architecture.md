@@ -32,34 +32,52 @@ LINE アプリ
 - 管理者は Cloudflare を経由しない（直接 GAS URL をブックマーク）
 - `Session.getActiveUser().getEmail()` は「ログインが必要」設定時のみ実際のメールを返す
 
+## ディレクトリ構成
+
+```
+exam_management/
+├── src/       GAS push 対象（clasp rootDir）。本番コード（.js / .html / appsscript.json）
+├── tests/     テストファイル（GAS push 対象外。push-test.ps1 でテスト用プロジェクトへ）
+├── docs/      GitHub Pages（LIFF エンドポイント）
+├── .claude/   プロジェクトドキュメント
+└── （ルート）  clasp 設定・git 設定・CLAUDE.md 等
+```
+
 ## ファイル構成
 
-### GAS バックエンド
+### GAS バックエンド（`src/`）
 | ファイル | 役割 |
 |---------|------|
-| `main.js` | `doGet()` / `include()` |
-| `getData.js` | 生徒向け: LINE ID → student_index → 子 SS → 試験・得点データ取得 |
-| `saveData.js` | 生徒向け: student_index → 子 SS の scores_data へ得点保存 |
+| `main.js` | `doGet()` / `include()` / `jsonpOrJson()` |
+| `getData.js` | 生徒向け: LINE ID → 試験・得点データ |
+| `saveData.js` | 生徒向け: 得点保存 |
 | `admin_auth.js` | 管理者認証 / admin_users CRUD / setupAdminSS |
 | `admin_branch.js` | 校舎管理 / getChildSS / getBranches / addBranch / updateBranch / setupBranchSS / shareBranchSS |
-| `admin_getData.js` | 管理者向け初期データ一括取得 |
-| `admin_saveData.js` | 試験・パターン・教科・term_tests・genres の書き込み（子 SS ルーティング済み） |
-| `admin_import.js` | 生徒インポート（xlsx → 子 SS）/ LINE ID 連携（外部 SS → student_index + 子 SS） |
+| `admin_getData.js` | 管理者向け初期データ一括取得（親SS＋子SS） |
+| `admin_saveData.js` | 試験・パターン・教科・term_tests・genres の書き込み |
+| `admin_import.js` | 生徒インポート / LINE ID 連携 / 旧SS移行（importStudentData / linkLineIds / migrateStudentsFromParentSS） |
 | `getRowsData.js` | シート → `{列名: 値}[]` 変換ユーティリティ |
 
-### 管理画面フロントエンド
+### 管理画面フロントエンド（`src/`）
 | ファイル | 役割 |
 |---------|------|
-| `admin_index.html` | エントリーポイント・ログイン・タブ管理・校舎セレクター |
+| `admin_index.html` | エントリーポイント・タブ管理・校舎セレクター |
 | `admin_logic_exams.html` | 試験日程管理 |
 | `admin_logic_patterns.html` | 教科パターン管理 |
 | `admin_logic_admin_users.html` | 管理者ユーザー管理（master のみ） |
-| `admin_logic_branches.html` | 校舎管理（一覧・追加・編集・子 SS 作成・共有） |
-| `admin_logic_import.html` | 生徒インポート（xlsx）/ LINE ID 連携（外部 SS URL 貼り付け） |
+| `admin_logic_branches.html` | 校舎管理（一覧・追加・編集・子SS作成・共有設定・有効化/無効化） |
+| `admin_logic_import.html` | 生徒インポート / LINE ID 連携 UI |
 | `admin_logic_master_data.html` | 試験区分・ジャンル CRUD（master のみ） |
 | `admin_stylesheet.html` | 管理画面スタイル |
 
-### 共通
+### 生徒向けフロントエンド（`src/`）
+| ファイル | 役割 |
+|---------|------|
+| `index_app.html` | 生徒アプリのシェル（`appData` を受け取り `renderApp()` を呼ぶ） |
+| `logic_ui_render.html` | 生徒アプリの描画ロジック |
+| `logic_ui_action.html` | 生徒アプリの操作ロジック（得点保存など） |
+
+### 共通（`src/`）
 | ファイル | 役割 |
 |---------|------|
 | `common_stylesheet.html` | 共通スタイル |
@@ -76,72 +94,25 @@ LINE アプリ
 
 詳細は [spreadsheet-schema.md](../spreadsheet-schema.md) を参照。
 
-### 親 SS（管理 SS・GAS プロジェクトのバインド先）
-
+### 親 SS
 | シート | 役割 |
 |--------|------|
-| `admin_users` | 管理者一覧（email / role / cram_id） |
+| `admin_users` | 管理者一覧（email / role / cram_id / is_active / last_login） |
 | `audit_log` | 操作ログ |
-| `branches` | cram_id → 子 SS の spreadsheet_id |
-| `student_index` | line_user_id / student_id → cram_id のルーティングテーブル |
-| `term_tests_master` | 試験区分マスター（is_two_terms）全校舎共通 |
-| `genres_master` | 教科ジャンル 全校舎共通 |
-| `subjects_master` | 教科マスター 全校舎共通 |
+| `branches` | cram_id → 子 SS の spreadsheet_id / is_active |
+| `student_index` | line_user_id → cram_id ルーティングテーブル（LINE ID 連携時に更新） |
+| `term_tests_master` | 試験区分マスター（is_two_terms） |
+| `genres_master` | 教科ジャンル |
+| `subjects_master` | 教科マスター |
 
-### 子 SS（校舎別・branches シートで管理）
-
+### 子 SS（校舎ごと）
 | シート | 役割 |
 |--------|------|
 | `config` | CRAM_ID / PARENT_SS_ID / BRANCH_NAME |
-| `【設定】学校・科` | 学校名・学期制・コース定義 |
-| `students_master` | 生徒情報（xlsx インポートで登録・LINE ID 連携で更新） |
-| `students_branch` | 生徒の在籍状態サマリ（student_id / grade / is_active） |
+| `【設定】学校・科` | 学校名・2学期制フラグ・コース一覧 |
 | `exam_patterns` | 学校×コース×学年×sub_course×試験区分 |
 | `exam_schedule` | pattern_id × year → 日程 |
 | `pattern_subjects` | pattern_id → subject_id の紐付け |
-| `scores_data` | 得点・順位 |
-
-## データフロー概要
-
-### 生徒インポート（管理者操作）
-
-```
-管理画面「インポート」タブ
-  → xlsx ファイル選択
-  → SheetJS（ブラウザ）で解析
-  → importStudentData(cramId, rows)
-        → 子 SS の students_master に Upsert
-        → 子 SS の students_branch に Upsert
-```
-
-### LINE ID 連携（管理者操作）
-
-```
-管理画面「インポート」タブ → LINE ID 連携セクション
-  → 外部 SS の URL を入力（「内部生」シート: 2行目=ヘッダー, 3行目以降=データ）
-  → linkLineIds(cramId, url)
-        → SpreadsheetApp.openByUrl() で外部 SS を開く
-        → 「管理番号」「生徒」列を読み取る
-        → 子 SS の students_master.line_user_id を更新
-        → 親 SS の student_index に Upsert（student_id / line_user_id / cram_id）
-```
-
-### 生徒向けデータ取得（LINE アクセス時）
-
-```
-getInitialData(lineUserId)
-  → 親 SS の student_index で line_user_id → cram_id
-  → getChildSS(cram_id) で子 SS を開く
-  → 子 SS: students_master, exam_patterns, exam_schedule,
-            pattern_subjects, scores_data, 【設定】学校・科
-  → 親 SS: term_tests_master, genres_master, subjects_master
-```
-
-### 得点保存（生徒操作）
-
-```
-saveAllScores({ student_id, exam_id, scores })
-  → 親 SS の student_index で student_id → cram_id
-  → getChildSS(cram_id) で子 SS を開く
-  → 子 SS の scores_data に Upsert
-```
+| `students_master` | 生徒情報（PII）/ student_id / line_user_id など |
+| `students_branch` | student_id / grade / is_active（軽量ルーティング用） |
+| `scores_data` | 得点・順位（score_id / exam_id / student_id / subject_id / score / rank） |

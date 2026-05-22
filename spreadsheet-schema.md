@@ -231,33 +231,55 @@ LINE ID 連携（`linkLineIds()`）実行時に自動更新される。
 
 ---
 
-## テーブル間のリレーション
+### Sheet: `school_subject_aliases`
+学校単位の教科表示名エイリアス（親SS に追加）
 
-```
-【親 SS】
-term_tests_master ──────────────────────────────────────┐
-genres_master ─── subjects_master                       │
-student_index (line_user_id → cram_id)                  │
-branches      (cram_id → spreadsheet_id)                │
-                                                        │
-【子 SS（校舎別）】                                       │
-exam_patterns ──────────── pattern_subjects ─── subjects_master（親SS参照）
-    ↑ pattern_id          │      ↑ subject_id
-    │  ↑ term_test_id ────┘
-exam_schedule
-    ↑ exam_id
-scores_data ─── student_id ─── students_master
-                                    ↑ line_user_id → student_index（親SS）
-```
+| 列位置 | 列名 | データ型 | 説明 | 備考 |
+|--------|------|--------|------|------|
+| 1 | `school_name` | 文字列 | 学校名 | 複合キーの一部 |
+| 2 | `subject_id` | 文字列 | 教科ID | `subjects_master` 参照、複合キーの一部 |
+| 3 | `display_name` | 文字列 | この学校での表示名 | 空欄不可（クリアは行削除） |
+| 4 | `updated_at` | 日時 | 楽観的ロック用タイムスタンプ | |
+
+**複合キー**: `(school_name, subject_id)`
+**備考**: エントリがなければ `subjects_master.subject_name`（canonical name）にフォールバック。複数 branch が同じ学校を持つ場合も一元管理。
+
+---
+
+### Sheet: `school_course_master`
+学校・コース設定シート（生徒インポート時に自動登録、管理画面から追加も可）
+
+| 列位置 | 列名 | データ型 | 説明 | 備考 |
+|--------|------|--------|------|------|
+| 1 | `school_name` | 文字列 | 学校名 | 主キーの一部 |
+| 2 | `school_course` | 文字列 | コース名 | 空文字 = コース未設定 |
+| 3 | `is_two_terms` | 数値 | 2学期制フラグ | `1`: 2学期制, `0`: 3学期制 |
+
+**複合キー**: `(school_name, school_course)`
+**備考**: `exam_patterns` の `school_name / school_course` の選択肢として使用。生徒インポート時に `school_name` が自動登録される（`school_course = ''`, `is_two_terms = 0` で初期登録）。
 
 ---
 
 ## 集計クエリの考え方
 
-- **学校・コース別**: `exam_patterns.school_name / school_course` でフィルタ
-- **学年別**: `exam_patterns.grade` でフィルタ（試験時点の学年）
-- **年度別**: `exam_schedule.year` でフィルタ
-- **サブコース別**: `exam_patterns.sub_course` でフィルタ
+```
+term_tests_master
+    ↑ term_test_id
+exam_patterns ──────────── pattern_subjects ─── subjects_master
+    ↑ pattern_id           ↑ subject_id               ↑ genre_id
+exam_schedule                                  genres_master
+    ↑ exam_id
+scores_data ─── student_id ─── students_master
+                                    ↑ school_name
+                            school_course_master
+```
+
+## 3. 集計クエリの考え方
+
+- **学校・コース別集計**: `exam_patterns.school_name / school_course` でフィルタ
+- **学年別集計**: `exam_patterns.grade` でフィルタ（試験時点の学年を表す）
+- **年度別集計**: `exam_schedule.year` でフィルタ
+- **サブコース別集計**: `exam_patterns.sub_course` でフィルタ
 
 例: 「2024年度・A高校・理系・高1の1学期中間の全得点」
 ```
@@ -269,14 +291,4 @@ scores_data
 
 ---
 
-## 推奨事項
-
-- シート名とヘッダー行の列名はコードと厳密に一致させること
-- `students_master.line_user_id` は LINE 連携キーのため、LINE ID 連携実行後に必ず確認する
-- `exam_patterns` は安定テーブルのため、削除より追加を基本とする
-- `student_index` は LINE ID 連携のたびに自動 Upsert される（手動編集不要）
-- 子 SS を新規作成したあとは `setupBranchSS()` → `shareBranchSS()` の順で初期化すること
-
----
-
-*更新: 2026-05-19*
+*更新: 2026-05-21*

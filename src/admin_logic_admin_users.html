@@ -45,13 +45,59 @@ function _auFetchAndRender() {
     .getAdminUsers();
 }
 
+// ---- 校舎チェックボックスヘルパー ----
+
+/** アクティブな branches 一覧からチェックボックス HTML を生成 */
+function _auBranchCheckboxes(name, selectedIds) {
+  const branches = ((window.masterData && window.masterData.branches) || [])
+    .filter(b => b.is_active === true || String(b.is_active) === '1' || String(b.is_active) === 'true');
+  if (branches.length === 0) {
+    // branches データがない場合はテキスト入力にフォールバック
+    return `<input type="text" id="${name}_fallback" class="admin-input"
+              placeholder="例: Z01,Z02" style="width:100%;" value="${selectedIds.join(',')}" />`;
+  }
+  return branches.map(b => {
+    const checked = selectedIds.includes(String(b.cram_id || '').trim()) ? 'checked' : '';
+    const label   = b.branch_name ? `${b.branch_name}（${b.cram_id}）` : b.cram_id;
+    return `<label style="display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer;">
+      <input type="checkbox" name="${name}" value="${b.cram_id}" ${checked} />
+      <span>${label}</span>
+    </label>`;
+  }).join('');
+}
+
+/** チェックボックスグループから選択済み cram_id 配列を取得 */
+function _auGetCheckedIds(name) {
+  const fallback = document.getElementById(name + '_fallback');
+  if (fallback) {
+    return fallback.value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`))
+    .map(cb => cb.value);
+}
+
+/** cram_id 文字列（カンマ区切り可）をバッジ表示用 HTML に変換 */
+function _auCramBadges(cramId) {
+  const ids = (cramId || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (ids.length === 0) return '—';
+  return ids.map(id =>
+    `<span style="display:inline-block; background:#e8f4fd; border:1px solid #b3d4f0;
+                  border-radius:3px; padding:1px 6px; margin:1px; font-size:0.85em;">${id}</span>`
+  ).join('');
+}
+
 // キャッシュを使って再描画（API 呼び出しなし）
 function _auRerender() {
   _auStore = [];
-  const content = document.getElementById('admin-content');
+  const content    = document.getElementById('admin-content');
   const adminUsers = _auCachedUsers;
 
-  let html = '<h3>管理者管理</h3>';
+  let html = '<h3>管理者管理</h3>'
+           + '<p class="tab-desc">'
+           + '管理者アカウントの追加・変更・無効化を行います。<br>'
+           + '<span class="step">▶ <strong>master</strong> ： 全機能・全校舎にアクセス可能。</span><br>'
+           + '<span class="step">▶ <strong>校舎管理者（branch_admin）</strong> ： 担当校舎のデータのみ操作できます。複数校舎を担当させる場合はチェックボックスで複数選択してください。</span>'
+           + '</p>';
 
   if (_auAddMode) {
     html += `
@@ -67,9 +113,12 @@ function _auRerender() {
               <option value="master">マスター管理者</option>
             </select>
           </label>
-          <label id="au_cram_label">担当校舎ID<br>
-            <input type="text" id="au_cram_id" placeholder="例: C001" class="admin-input" style="width:100%;" />
-          </label>
+          <div id="au_cram_label">
+            <span style="display:block; margin-bottom:4px;">担当校舎</span>
+            <div style="border:1px solid #ddd; border-radius:4px; padding:8px; max-height:160px; overflow-y:auto;">
+              ${_auBranchCheckboxes('au_cram', [])}
+            </div>
+          </div>
           <div style="display:flex; gap:8px;">
             <button class="btn-save-admin" onclick="_auSubmitAdd()">追加</button>
             <button class="btn-cancel-admin" onclick="_auCancelAdd()">キャンセル</button>
@@ -84,7 +133,7 @@ function _auRerender() {
     <thead><tr>
       <th>メールアドレス</th>
       <th>ロール</th>
-      <th>担当校舎ID</th>
+      <th>担当校舎</th>
       <th>状態</th>
       <th style="width:200px;">操作</th>
     </tr></thead><tbody>`;
@@ -94,6 +143,7 @@ function _auRerender() {
     const roleLabel  = user.role === 'master' ? 'マスター' : '校舎管理者';
     const stateLabel = isActive ? '<span style="color:#2a9d2a;">有効</span>' : '<span style="color:#999;">無効</span>';
     const isEditing  = _auEditEmail === user.email;
+    const selIds     = (user.cram_id || '').split(',').map(s => s.trim()).filter(Boolean);
 
     if (isEditing) {
       const editIdx = _auPush({ email: user.email });
@@ -103,7 +153,12 @@ function _auRerender() {
           <option value="branch_admin" ${user.role !== 'master' ? 'selected' : ''}>校舎管理者</option>
           <option value="master" ${user.role === 'master' ? 'selected' : ''}>マスター管理者</option>
         </select></td>
-        <td><input type="text" id="au_edit_cram_${editIdx}" value="${user.cram_id || ''}" class="admin-input" style="width:80px;" /></td>
+        <td id="au_cram_cell_${editIdx}" ${user.role === 'master' ? 'style="display:none;"' : ''}>
+          <div style="border:1px solid #ddd; border-radius:4px; padding:6px; max-height:130px; overflow-y:auto; min-width:140px;">
+            ${_auBranchCheckboxes(`au_edit_cram_${editIdx}`, selIds)}
+          </div>
+        </td>
+        <td ${user.role === 'master' ? '' : 'style="display:none;"'} id="au_cram_cell_empty_${editIdx}"></td>
         <td>${stateLabel}</td>
         <td>
           <button class="btn-save-admin" onclick="_auSubmitEdit(${editIdx})">保存</button>
@@ -115,7 +170,7 @@ function _auRerender() {
       html += `<tr>
         <td>${user.email}</td>
         <td>${roleLabel}</td>
-        <td>${user.cram_id || '—'}</td>
+        <td>${user.role === 'master' ? '—' : _auCramBadges(user.cram_id)}</td>
         <td>${stateLabel}</td>
         <td>`;
       if (user.email !== adminContext.email) {
@@ -139,7 +194,7 @@ function _auRerender() {
 function _auStartAdd() {
   _auAddMode   = true;
   _auEditEmail = null;
-  _auRerender();   // API 呼び出しなしで即座に再描画
+  _auRerender();
 }
 
 function _auCancelAdd() {
@@ -154,9 +209,9 @@ function _auRoleChange() {
 }
 
 function _auSubmitAdd() {
-  const email   = document.getElementById('au_email')?.value.trim();
-  const role    = document.getElementById('au_role')?.value;
-  const cram_id = role === 'master' ? '' : (document.getElementById('au_cram_id')?.value.trim() || '');
+  const email    = document.getElementById('au_email')?.value.trim();
+  const role     = document.getElementById('au_role')?.value;
+  const cram_ids = role === 'master' ? [] : _auGetCheckedIds('au_cram');
 
   if (!email) { showMessage('メールアドレスを入力してください。', 'error'); return; }
 
@@ -167,13 +222,13 @@ function _auSubmitAdd() {
       if (res && res.success) {
         _auAddMode = false;
         showMessage('管理者を追加しました。', 'success');
-        _auFetchAndRender();   // 追加後は最新データを取得
+        _auFetchAndRender();
       } else {
         showMessage((res && res.error) || '追加に失敗しました。', 'error');
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .addAdminUser({ email, role, cram_id });
+    .addAdminUser({ email, role, cram_ids });
 }
 
 // ---- 編集 ----
@@ -181,7 +236,7 @@ function _auSubmitAdd() {
 function _auStartEdit(idx) {
   _auEditEmail = _auStore[idx].email;
   _auAddMode   = false;
-  _auRerender();   // API 呼び出しなしで即座に再描画
+  _auRerender();
 }
 
 function _auCancelEdit() {
@@ -190,15 +245,17 @@ function _auCancelEdit() {
 }
 
 function _auEditRoleChange(idx) {
-  const role   = document.getElementById(`au_edit_role_${idx}`)?.value;
-  const cramEl = document.getElementById(`au_edit_cram_${idx}`);
-  if (cramEl) cramEl.style.display = role === 'master' ? 'none' : '';
+  const role      = document.getElementById(`au_edit_role_${idx}`)?.value;
+  const cramCell  = document.getElementById(`au_cram_cell_${idx}`);
+  const emptyCell = document.getElementById(`au_cram_cell_empty_${idx}`);
+  if (cramCell)  cramCell.style.display  = role === 'master' ? 'none' : '';
+  if (emptyCell) emptyCell.style.display = role === 'master' ? '' : 'none';
 }
 
 function _auSubmitEdit(idx) {
   const { email } = _auStore[idx];
   const role      = document.getElementById(`au_edit_role_${idx}`)?.value;
-  const cram_id   = role === 'master' ? '' : (document.getElementById(`au_edit_cram_${idx}`)?.value.trim() || '');
+  const cram_ids  = role === 'master' ? [] : _auGetCheckedIds(`au_edit_cram_${idx}`);
 
   setLoading(true, '管理者情報を更新中...');
   google.script.run
@@ -213,7 +270,7 @@ function _auSubmitEdit(idx) {
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .updateAdminUser({ email, role, cram_id });
+    .updateAdminUser({ email, role, cram_ids });
 }
 
 // ---- 無効化 ----

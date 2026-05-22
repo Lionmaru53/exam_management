@@ -24,3 +24,5 @@ function getRowsData(sheet) {
     return obj;
   });
 }
+
+if (typeof module !== 'undefined') Object.assign(global, { getRowsData });

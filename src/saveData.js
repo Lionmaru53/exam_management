@@ -23,8 +23,28 @@ function saveAllScores(payload) {
     const cramId = String(idxEntry.cram_id || '').trim();
     if (!cramId) throw new Error('校舎情報が未設定です');
 
-    // 子 SS の scores_data に書き込む
-    const ss    = getChildSS(cramId);
+    // 子 SS を開く
+    const ss = getChildSS(cramId);
+
+    // exam_id が未設定の場合、pattern_id から既存エントリを探すか新規作成する
+    let examId = String(payload.exam_id || '').trim();
+    if (!examId && payload.pattern_id) {
+      const schedSheet = ss.getSheetByName('exam_schedule');
+      if (!schedSheet) throw new Error('exam_schedule シートが見つかりません');
+      const schedData = schedSheet.getDataRange().getValues();
+      for (let i = 1; i < schedData.length; i++) {
+        if (String(schedData[i][1]).trim() === String(payload.pattern_id).trim()) {
+          examId = String(schedData[i][0]).trim();
+          break;
+        }
+      }
+      if (!examId) {
+        examId = 'EX' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+        schedSheet.appendRow([examId, payload.pattern_id, new Date().getFullYear(), '', '']);
+      }
+    }
+    if (!examId) throw new Error('exam_id が取得できませんでした');
+
     const sheet = ss.getSheetByName('scores_data');
     if (!sheet) throw new Error('scores_data シートが見つかりません');
 
@@ -33,7 +53,7 @@ function saveAllScores(payload) {
     payload.scores.forEach(newScore => {
       let rowIndex = -1;
       for (let i = 1; i < data.length; i++) {
-        if (String(data[i][1]) === String(payload.exam_id) &&
+        if (String(data[i][1]) === examId &&
             String(data[i][2]) === String(payload.student_id) &&
             String(data[i][3]) === String(newScore.subject_id)) {
           rowIndex = i + 1;
@@ -43,7 +63,7 @@ function saveAllScores(payload) {
 
       const rowValues = [
         rowIndex > 0 ? data[rowIndex - 1][0] : 'SC' + Utilities.getUuid(),
-        payload.exam_id,
+        examId,
         payload.student_id,
         newScore.subject_id,
         newScore.score,

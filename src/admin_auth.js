@@ -19,7 +19,7 @@ function _getAdminSS() {
 /**
  * Session.getActiveUser() で認証済みユーザーを取得し、admin_users シートで照合する。
  * webapp のアクセス設定が「Google アカウントが必要」の場合に確実に動作する。
- * @returns {{ email: string, role: string, cram_id: string }}
+ * @returns {{ email: string, role: string, cram_id: string, cram_ids: string[] }}
  */
 function getAdminContext() {
   const email = Session.getActiveUser().getEmail();
@@ -39,10 +39,13 @@ function getAdminContext() {
 
   _updateLastLogin(sheet, rows, email);
 
+  const cramIdRaw = String(admin.cram_id || '').trim();
+  const cram_ids  = cramIdRaw ? cramIdRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
   return {
-    email:   email,
-    role:    String(admin.role    || '').trim(),
-    cram_id: String(admin.cram_id || '').trim()
+    email:    email,
+    role:     String(admin.role || '').trim(),
+    cram_id:  cram_ids[0] || '',   // 後方互換のため先頭値を保持
+    cram_ids: cram_ids,
   };
 }
 
@@ -103,6 +106,14 @@ function setupAdminSS() {
     Logger.log('audit_log シートを作成しました。');
   }
 
+  if (!ss.getSheetByName('liff_access_log')) {
+    const liffLogSheet = ss.insertSheet('liff_access_log');
+    liffLogSheet.getRange(1, 1, 1, 6).setValues([[
+      'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'
+    ]]);
+    Logger.log('liff_access_log シートを作成しました。');
+  }
+
   _ensureBranchesSheet(ss);
 
   // 実行者をマスター管理者として登録（未登録の場合のみ）
@@ -148,8 +159,11 @@ function addAdminUser(payload) {
       return { error: '既に登録されているメールアドレスです' };
     }
 
-    const adminId = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    sheet.appendRow([adminId, payload.email.trim(), payload.cram_id || '', payload.role || 'branch_admin', true, new Date(), '']);
+    const adminId   = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+    const cramIdStr = Array.isArray(payload.cram_ids)
+      ? payload.cram_ids.map(s => String(s).trim()).filter(Boolean).join(',')
+      : String(payload.cram_id || '').trim();
+    sheet.appendRow([adminId, payload.email.trim(), cramIdStr, payload.role || 'branch_admin', true, new Date(), '']);
     writeAuditLog(ctx, 'add_admin', { email: payload.email, role: payload.role }, 'success');
     return { success: true };
   } catch (e) {
@@ -205,8 +219,13 @@ function updateAdminUser(payload) {
     const target = String(payload.email || '').trim().toLowerCase();
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][emailCol - 1] || '').trim().toLowerCase() === target) {
-        if (payload.role    !== undefined && roleCol   > 0) sheet.getRange(i + 1, roleCol).setValue(payload.role);
-        if (payload.cram_id !== undefined && cramIdCol > 0) sheet.getRange(i + 1, cramIdCol).setValue(payload.cram_id);
+        if (payload.role     !== undefined && roleCol   > 0) sheet.getRange(i + 1, roleCol).setValue(payload.role);
+        if (payload.cram_ids !== undefined && cramIdCol > 0) {
+          const cramIdStr = Array.isArray(payload.cram_ids)
+            ? payload.cram_ids.map(s => String(s).trim()).filter(Boolean).join(',')
+            : String(payload.cram_ids || '').trim();
+          sheet.getRange(i + 1, cramIdCol).setValue(cramIdStr);
+        }
         writeAuditLog(ctx, 'update_admin', payload, 'success');
         return { success: true };
       }
@@ -218,3 +237,11 @@ function updateAdminUser(payload) {
     lock.releaseLock();
   }
 }
+
+// Node.js（Jest）でテストできるよう関数を global に公開する
+// GAS では module が undefined のため、このブロックは実行されない
+if (typeof module !== 'undefined') Object.assign(global, {
+  ADMIN_USERS_SHEET, AUDIT_LOG_SHEET,
+  getAdminContext, writeAuditLog, setupAdminSS,
+  getAdminUsers, addAdminUser, deactivateAdminUser, updateAdminUser,
+});

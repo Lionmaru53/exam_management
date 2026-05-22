@@ -182,7 +182,7 @@ function setupBranchSS(cramId) {
  */
 function _createChildSheets(ss) {
   const defs = [
-    { name: '【設定】学校・科',  headers: ['学校名', '2学期制', '科・コース'] },
+    { name: 'school_course_master', headers: ['school_name', 'school_course', 'is_two_terms'] },
     { name: 'exam_patterns',     headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id'] },
     { name: 'exam_schedule',     headers: ['exam_id', 'pattern_id', 'year', 'start_date', 'end_date'] },
     { name: 'pattern_subjects',  headers: ['pattern_id', 'subject_id'] },
@@ -218,12 +218,14 @@ function shareBranchSS(cramId) {
     const adminSheet = parentSS.getSheetByName(ADMIN_USERS_SHEET);
     if (!adminSheet) return { success: false, error: 'admin_users シートが見つかりません' };
 
-    const adminRows     = getRowsData(adminSheet);
-    const targetAdmins  = adminRows.filter(r =>
-      String(r.cram_id || '').trim() === String(cramId).trim() &&
-      r.role === 'branch_admin' &&
-      (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true')
-    );
+    const adminRows    = getRowsData(adminSheet);
+    const targetCramId = String(cramId).trim();
+    const targetAdmins = adminRows.filter(r => {
+      const ids = String(r.cram_id || '').split(',').map(s => s.trim()).filter(Boolean);
+      return ids.includes(targetCramId) &&
+        r.role === 'branch_admin' &&
+        (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true');
+    });
 
     if (targetAdmins.length === 0) return { success: false, error: 'この校舎に有効な校舎管理者が登録されていません' };
 
@@ -270,3 +272,10 @@ function _ensureBranchesSheet(ss) {
     Logger.log('branches シートは既に存在します。');
   }
 }
+
+// Node.js（Jest）でテストできるよう関数を global に公開する
+if (typeof module !== 'undefined') Object.assign(global, {
+  BRANCHES_SHEET,
+  getChildSS, getBranches, addBranch, updateBranch, setupBranchSS, shareBranchSS,
+  _ensureBranchesSheet, _getTargetSS,
+});

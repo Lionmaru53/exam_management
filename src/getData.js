@@ -1,3 +1,27 @@
+const LIFF_ACCESS_LOG_SHEET = 'liff_access_log';
+
+function _writeLiffLog(parentSS, lineUserId, result, studentId, cramId, studentName) {
+  try {
+    let sheet = parentSS.getSheetByName(LIFF_ACCESS_LOG_SHEET);
+    if (!sheet) {
+      sheet = parentSS.insertSheet(LIFF_ACCESS_LOG_SHEET);
+      sheet.getRange(1, 1, 1, 6).setValues([[
+        'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'
+      ]]);
+    }
+    sheet.appendRow([
+      new Date(),
+      String(lineUserId || ''),
+      String(result || ''),
+      String(studentId || ''),
+      String(cramId || ''),
+      String(studentName || '')
+    ]);
+  } catch (e) {
+    console.warn('liff_access_log 書き込み失敗:', e.message);
+  }
+}
+
 /**
  * LINE IDから生徒情報・試験情報・既存スコアをまとめて取得
  *
@@ -7,7 +31,7 @@
  *
  * 親 SS から読むもの: term_tests_master / genres_master / subjects_master
  * 子 SS から読むもの: students_master / exam_patterns / exam_schedule /
- *                     pattern_subjects / scores_data / 【設定】学校・科
+ *                     pattern_subjects / scores_data / school_course_master
  */
 function getInitialData(lineUserId) {
   try {
@@ -15,16 +39,25 @@ function getInitialData(lineUserId) {
 
     // 1. student_index で line_user_id → cram_id を解決
     const idxSheet = parentSS.getSheetByName('student_index');
-    if (!idxSheet) return { error: '生徒未登録' };
+    if (!idxSheet) {
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_1');
+      return { error: '生徒未登録_1' };
+    }
 
     const idxRows  = getRowsData(idxSheet);
     const idxEntry = idxRows.find(r =>
       String(r.line_user_id || '').trim() === String(lineUserId).trim()
     );
-    if (!idxEntry) return { error: '生徒未登録' };
+    if (!idxEntry) {
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_2');
+      return { error: '生徒未登録_2' };
+    }
 
     const cramId = String(idxEntry.cram_id || '').trim();
-    if (!cramId)  return { error: '生徒未登録' };
+    if (!cramId) {
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_3');
+      return { error: '生徒未登録_3' };
+    }
 
     // 2. 子 SS を開く
     const ss = getChildSS(cramId);
@@ -34,7 +67,10 @@ function getInitialData(lineUserId) {
     const studentRaw = students.find(row =>
       String(row.line_user_id || '').trim() === String(lineUserId).trim()
     );
-    if (!studentRaw) return { error: '生徒未登録' };
+    if (!studentRaw) {
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_4', '', cramId);
+      return { error: '生徒未登録_4' };
+    }
 
     const student = {
       ...studentRaw,
@@ -42,15 +78,20 @@ function getInitialData(lineUserId) {
       sub_course: studentRaw.sub_course || ''
     };
 
-    // 4. 学期制（子 SS の【設定】学校・科）
+    // 4. 学期制（子 SS の school_course_master）
     let is_two_terms = false;
-    const settingSheet = ss.getSheetByName('【設定】学校・科');
+    const settingSheet = ss.getSheetByName('school_course_master');
     if (settingSheet) {
       const settingRows = settingSheet.getDataRange().getValues();
-      for (let i = 1; i < settingRows.length; i++) {
-        if (String(settingRows[i][0]).trim() === String(student.school_name).trim()) {
-          is_two_terms = String(settingRows[i][1]).trim() === '1';
-          break;
+      const hdrs        = settingRows[0].map(h => String(h).trim());
+      const snCol       = hdrs.indexOf('school_name');
+      const ttCol       = hdrs.indexOf('is_two_terms');
+      if (snCol >= 0) {
+        for (let i = 1; i < settingRows.length; i++) {
+          if (String(settingRows[i][snCol]).trim() === String(student.school_name).trim()) {
+            is_two_terms = ttCol >= 0 && String(settingRows[i][ttCol]).trim() === '1';
+            break;
+          }
         }
       }
     }
@@ -76,16 +117,29 @@ function getInitialData(lineUserId) {
       patternIds.includes(String(e.pattern_id).trim())
     );
 
-    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master）
+    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master / school_subject_aliases）
     const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
     const allSubjects        = getRowsData(parentSS.getSheetByName('subjects_master'));
     const allGenres          = getRowsData(parentSS.getSheetByName('genres_master'));
+
+    // 学校別表示名エイリアス: { "school_name||subject_id" → display_name }
+    const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
+    const aliasMap   = {};
+    if (aliasSheet) {
+      getRowsData(aliasSheet).forEach(a => {
+        const key = String(a.school_name || '').trim() + '||' + String(a.subject_id || '').trim();
+        if (a.display_name) aliasMap[key] = String(a.display_name).trim();
+      });
+    }
+
     const subjectMap = allSubjects.reduce((map, s) => {
       const gen = allGenres.find(g => g.genre_id === s.genre_id);
+      const aliasKey = String(student.school_name || '').trim() + '||' + String(s.subject_id || '').trim();
       map[s.subject_id] = {
         ...s,
-        genre_id:   gen ? gen.genre_id   : null,
-        genre_name: gen ? gen.genre_name : 'その他'
+        genre_id:     gen ? gen.genre_id   : null,
+        genre_name:   gen ? gen.genre_name : 'その他',
+        display_name: aliasMap[aliasKey] || s.subject_name,
       };
       return map;
     }, {});
@@ -137,7 +191,10 @@ function getInitialData(lineUserId) {
       return 0;
     });
 
-    const currentExam = examTabs.find(t => t.exam_id) || examTabs[0] || null;
+    // パターンがある（教科が表示できる）タブを優先して選択
+    const currentExam = examTabs.find(t => t.hasPattern) || examTabs[0] || null;
+
+    _writeLiffLog(parentSS, lineUserId, 'success', student.student_id, cramId, student.name);
 
     return stringifyDates({
       student,
@@ -150,6 +207,9 @@ function getInitialData(lineUserId) {
     });
 
   } catch (e) {
+    try {
+      _writeLiffLog(SpreadsheetApp.getActiveSpreadsheet(), lineUserId, 'error: ' + e.message);
+    } catch (_) {}
     return { error: 'GAS実行エラー: ' + e.toString() };
   }
 }
@@ -173,3 +233,5 @@ function stringifyDates(obj) {
   }
   return obj;
 }
+
+if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData });

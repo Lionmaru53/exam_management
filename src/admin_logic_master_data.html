@@ -1,8 +1,8 @@
 <script>
-let _mdStore       = [];
-let _mdTab         = 'termTests';
-let _mdEditId      = null;
-let _mdAddMode     = false;
+let _mdStore   = [];
+let _mdTab     = 'termTests';
+let _mdEditId  = null;
+let _mdAddMode = false;
 
 function _mdPush(obj) {
   _mdStore.push(obj);
@@ -15,11 +15,15 @@ function renderMasterDataManager(data) {
 
   const tabs = [
     { key: 'termTests', label: '試験区分' },
-    { key: 'genres',    label: '教科ジャンル' },
-    { key: 'subjects',  label: '教科一覧' }
+    { key: 'genres',    label: '教科ジャンル' }
   ];
 
-  let html = `<h3>共通マスターデータ管理</h3>`;
+  let html = `<h3>共通マスターデータ管理</h3>
+<p class="tab-desc">
+  全校舎共通のマスターデータを管理します。<br>
+  <span class="step">▶ <strong>試験区分</strong> ： 1学期中間・前期末などの試験名称と2学期制フラグを定義します。教科パターンの絞り込みに使用されます。</span><br>
+  <span class="step">▶ <strong>教科ジャンル</strong> ： 文系・理系など、教科のグループ分け名称を定義します。</span>
+</p>`;
   html += `<div style="display:flex; gap:8px; margin-bottom:16px;">`;
   tabs.forEach(t => {
     const active = _mdTab === t.key ? 'background:#4a90d9; color:#fff;' : 'background:#eee;';
@@ -29,10 +33,8 @@ function renderMasterDataManager(data) {
 
   if (_mdTab === 'termTests') {
     html += _renderTermTests(data);
-  } else if (_mdTab === 'genres') {
-    html += _renderGenres(data);
   } else {
-    html += _renderSubjects(data);
+    html += _renderGenres(data);
   }
 
   content.innerHTML = html;
@@ -236,30 +238,6 @@ function _mdSaveGenre(idx) {
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertGenre({ genre_id, genre_name: name });
-}
-
-// ---- 教科一覧（参照のみ）----
-
-function _renderSubjects(data) {
-  const subjects = Array.isArray(data.subjects) ? data.subjects : [];
-  let html = `<p style="color:#666; font-size:0.9em; margin-bottom:12px;">
-    教科の追加・編集は「教科パターン管理」タブから行ってください。
-  </p>
-  <table class="admin-table">
-    <thead><tr><th>ID</th><th>教科名</th><th>ジャンル</th><th>学年</th></tr></thead>
-    <tbody>`;
-
-  subjects.forEach(s => {
-    html += `<tr>
-      <td style="font-size:0.8em; color:#888;">${s.subject_id}</td>
-      <td>${s.subject_name}</td>
-      <td>${s.genre_name || '—'}</td>
-      <td>${s.grade || '—'}</td>
-    </tr>`;
-  });
-
-  html += '</tbody></table>';
-  return html;
 }
 
 window.renderMasterDataManager = renderMasterDataManager;

@@ -184,14 +184,18 @@ function renderExamManager(data) {
   ).join('');
 
   let html = `
-    <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
       <h3 style="margin:0;">試験日程管理</h3>
       <label style="font-weight:bold;">年度:
         <select id="exam-year-select" onchange="changeExamYear()" style="margin-left:6px; padding:4px 8px;">
           ${yearOptions}
         </select>
       </label>
-    </div>`;
+    </div>
+    <p class="tab-desc">
+      年度・試験期間を学校・コース・学年ごとに登録します。日程を保存すると生徒が LIFF から得点入力できるようになります。<br>
+      <span class="step">▶ 教科パターンが未設定の場合は先に <strong>学校別教科名・教科パターン管理</strong> で設定してください。</span>
+    </p>`;
 
   ['0', '1'].forEach(typeKey => {
     const label           = typeKey === '1' ? '2学期制' : '3学期制';
