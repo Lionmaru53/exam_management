@@ -106,6 +106,14 @@ function setupAdminSS() {
     Logger.log('audit_log シートを作成しました。');
   }
 
+  if (!ss.getSheetByName('liff_access_log')) {
+    const liffLogSheet = ss.insertSheet('liff_access_log');
+    liffLogSheet.getRange(1, 1, 1, 6).setValues([[
+      'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'
+    ]]);
+    Logger.log('liff_access_log シートを作成しました。');
+  }
+
   _ensureBranchesSheet(ss);
 
   // 実行者をマスター管理者として登録（未登録の場合のみ）
