@@ -50,31 +50,6 @@ window.setLoading = function(active, messages, intervalMs) {
   }
 };
 
-// ---- オプションキャッシュ ----
-
-let scoreOptionsCache = "";
-let rankOptionsCache  = "";
-
-function prepareOptions() {
-  scoreOptionsCache = '<option value="" disabled selected hidden>点数</option>';
-  for (let i = 100; i >= 0; i--) {
-    scoreOptionsCache += `<option value="${i}">${i}</option>`;
-  }
-  rankOptionsCache = '<option value="" disabled selected hidden>順位</option>';
-  for (let i = 1; i <= 400; i++) {
-    rankOptionsCache += `<option value="${i}">${i}</option>`;
-  }
-}
-
-function getOptionsHtml(cache, selectedValue) {
-  if (selectedValue === undefined || selectedValue === null || selectedValue === "") {
-    return cache;
-  }
-  cache = cache.replace('disabled selected hidden', 'selected');
-  cache = cache.replace(`value="${selectedValue}"`, `value="${selectedValue}" selected`);
-  return cache;
-}
-
 // ---- メイン描画 ----
 
 function renderApp(data) {
@@ -87,13 +62,12 @@ function renderApp(data) {
     return;
   }
 
-  prepareOptions();
   document.getElementById('app').style.display = 'block';
 
   // ヘッダー：タイトル＋生徒情報
   const s = data.student;
   const infoItems = [s.school_name, s.school_course_name, s.grade, s.sub_course].filter(Boolean);
-  const infoText  = infoItems.join('　');  // 全角スペース区切り
+  const infoText  = infoItems.join('　');
 
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container">
@@ -130,7 +104,6 @@ function renderApp(data) {
 
   examTabs.forEach((exam, examIndex) => {
     const tabId      = exam.term_test_id;
-    // exam_id がない場合は pattern_id をキーとして使用（後で saveAllScores が自動作成）
     const displayKey = exam.exam_id || ('p_' + exam.pattern_id);
     const groupedSubjects = (exam.subjects || []).reduce((acc, sub) => {
       const genre = sub.genre_name || 'その他';
@@ -165,17 +138,26 @@ function renderApp(data) {
         const rows = groupedSubjects[genreName];
         const rowBackground = getGenreColor(genreName, 0.12);
         rows.forEach((sub, index) => {
-          const sc  = (exam.scores || []).find(x => x.subject_id === sub.subject_id) || {};
-          const sOpt  = getOptionsHtml(scoreOptionsCache, sc.score);
-          const grOpt = getOptionsHtml(rankOptionsCache, sc.grade_rank);
-          const crOpt = getOptionsHtml(rankOptionsCache, sc.class_rank);
+          const sc = (exam.scores || []).find(x => x.subject_id === sub.subject_id) || {};
+          const scoreVal = (sc.score !== undefined && sc.score !== null) ? sc.score : '';
+          const grVal    = (sc.grade_rank !== undefined && sc.grade_rank !== null) ? sc.grade_rank : '';
+          const crVal    = (sc.class_rank !== undefined && sc.class_rank !== null) ? sc.class_rank : '';
           listHtml += `
             <tr style="background-color:${rowBackground};">
               ${index === 0 ? `<td class="genre-cell" rowspan="${rows.length}" style="background-color:${rowBackground};">${genreName}</td>` : ''}
               <td>${sub.display_name || sub.subject_name}</td>
-              <td><select id="s_${displayKey}_${sub.subject_id}">${sOpt}</select></td>
-              <td><select id="gr_${displayKey}_${sub.subject_id}">${grOpt}</select></td>
-              <td><select id="cr_${displayKey}_${sub.subject_id}">${crOpt}</select></td>
+              <td><input type="text" inputmode="numeric" class="score-input"
+                id="s_${displayKey}_${sub.subject_id}" value="${scoreVal}"
+                placeholder="点数" maxlength="3"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'')" /></td>
+              <td><input type="text" inputmode="numeric" class="rank-input"
+                id="gr_${displayKey}_${sub.subject_id}" value="${grVal}"
+                placeholder="順位" maxlength="4"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'')" /></td>
+              <td><input type="text" inputmode="numeric" class="rank-input"
+                id="cr_${displayKey}_${sub.subject_id}" value="${crVal}"
+                placeholder="順位" maxlength="4"
+                oninput="this.value=this.value.replace(/[^0-9]/g,'')" /></td>
             </tr>
           `;
         });

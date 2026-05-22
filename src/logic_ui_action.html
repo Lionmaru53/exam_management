@@ -10,20 +10,56 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
   const button = btn || document.getElementById('submitBtn');
   const panel  = button ? button.closest('.tab-panel') : document;
   const scores = [];
-  const selectPrefix = `s_${displayKey}_`;
+  const scorePrefix = `s_${displayKey}_`;
 
-  panel.querySelectorAll(`select[id^="${selectPrefix}"]`).forEach(el => {
-    const subId       = el.id.slice(selectPrefix.length);
-    const gradeRankVal = panel.querySelector(`#gr_${displayKey}_${subId}`)?.value || '';
-    const classRankVal = panel.querySelector(`#cr_${displayKey}_${subId}`)?.value || '';
+  // 得点・順位を収集しながらバリデーション
+  let validationError = null;
+
+  panel.querySelectorAll(`input[id^="${scorePrefix}"]`).forEach(el => {
+    if (validationError) return;
+
+    const subId        = el.id.slice(scorePrefix.length);
+    const scoreVal     = el.value.trim();
+    const gradeRankVal = (panel.querySelector(`#gr_${displayKey}_${subId}`)?.value || '').trim();
+    const classRankVal = (panel.querySelector(`#cr_${displayKey}_${subId}`)?.value || '').trim();
+
+    // 点数：0〜200 の整数（空欄は未入力として許可）
+    if (scoreVal !== '') {
+      const n = Number(scoreVal);
+      if (!Number.isInteger(n) || n < 0 || n > 200) {
+        validationError = '点数は 0〜200 の整数で入力してください。';
+        return;
+      }
+    }
+
+    // 学年順位・クラス順位：1 以上の整数（空欄は未入力として許可）
+    if (gradeRankVal !== '') {
+      const n = Number(gradeRankVal);
+      if (!Number.isInteger(n) || n < 1) {
+        validationError = '学年順位は 1 以上の整数で入力してください。';
+        return;
+      }
+    }
+    if (classRankVal !== '') {
+      const n = Number(classRankVal);
+      if (!Number.isInteger(n) || n < 1) {
+        validationError = 'クラス順位は 1 以上の整数で入力してください。';
+        return;
+      }
+    }
 
     scores.push({
       subject_id: subId,
-      score:      el.value,
+      score:      scoreVal,
       grade_rank: gradeRankVal,
       class_rank: classRankVal
     });
   });
+
+  if (validationError) {
+    showMessage(validationError, 'error');
+    return;
+  }
 
   button.disabled = true;
   setLoading(true, ['得点データを保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
@@ -51,5 +87,4 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
       scores:     scores
     });
 }
-
 </script>

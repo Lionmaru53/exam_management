@@ -8,11 +8,8 @@
     --bg-color: #f8f9fa;
   }
 
-  /* 慣性スクロールと描画の最適化 */
-  html,
-  body {
+  html, body {
     -webkit-overflow-scrolling: touch;
-    /* iOSの慣性スクロールを有効化 */
     overflow-y: scroll;
     height: 100%;
   }
@@ -25,7 +22,6 @@
   }
 
   select {
-    /* 短い文字(点数等)に最適化した幅と余白 */
     padding: 5px;
     background-color: white;
     border: 1px solid #ccc;
@@ -45,7 +41,6 @@
     color: #333;
   }
 
-  /* 管理画面用テーブルスタイル */
   table th,
   table td {
     padding: 10px;
@@ -54,21 +49,13 @@
     border: 1px solid #ddd;
   }
 
-  #app {
-    will-change: transform;
-    /* 描画をGPUに任せる */
-    padding-bottom: 80px;
-    /* 保存ボタンで隠れないように余裕を */
-  }
+  /* ---- トースト通知 ---- */
 
   #status-message {
     position: fixed;
-    /* 画面に固定 */
     top: -100px;
-    /* 最初は画面の上に隠す */
     left: 50%;
     transform: translateX(-50%);
-    /* 左右中央寄せ */
     width: 80%;
     max-width: 400px;
     z-index: 99999;
@@ -78,18 +65,12 @@
     font-weight: bold;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     opacity: 0;
-    /* 最初は透明 */
     transition: all 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-    /* 弾むような動き */
-    /* 変化をなめらかに（位置と透明度） */
   }
 
-  /* 表示時のクラス */
   #status-message.show {
     top: 20px;
-    /* 20pxの位置まで降りてくる */
     opacity: 1;
-    /* 不透明にする */
   }
 
   .msg-success {
@@ -104,10 +85,7 @@
     border: none;
   }
 
-  #subject-list {
-    display: block;
-    width: 100%;
-  }
+  /* ---- ローディングオーバーレイ ---- */
 
   .subject-table-container {
     width: 100%;
@@ -375,13 +353,16 @@
     gap: 16px;
     animation: overlay-fade-in 0.18s ease forwards;
   }
+
   #loading-overlay.active {
     display: flex;
   }
+
   @keyframes overlay-fade-in {
     from { opacity: 0; }
     to   { opacity: 1; }
   }
+
   .loading-spinner {
     width: 46px;
     height: 46px;
@@ -390,9 +371,11 @@
     border-radius: 50%;
     animation: spin 0.75s linear infinite;
   }
+
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+
   .loading-label {
     font-size: 0.88rem;
     font-weight: bold;

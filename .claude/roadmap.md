@@ -25,14 +25,15 @@
 | シート | 配置先 | 状態 |
 |--------|--------|------|
 | `admin_users` / `audit_log` / `branches` / `student_index` | 親 SS | 実装済み |
-| `term_tests_master` / `genres_master` / `subjects_master` | 親 SS（全校舎共通） | 実装済み |
+| `term_tests_master` / `genres_master` / `subjects_master` / `school_subject_aliases` | 親 SS（全校舎共通） | 実装済み |
 | `exam_patterns` / `exam_schedule` / `pattern_subjects` | 子 SS | 実装済み |
-| `students_master` / `students_branch` / `scores_data` / `【設定】学校・科` | 子 SS | 実装済み |
+| `students_master` / `scores_data` / `school_course_master` | 子 SS | 実装済み |
 
+### 2-A〜2-F: 基盤実装（完了）
 - [x] **2-A**: `admin_branch.js` 新規作成（`getChildSS` / `getBranches` / `addBranch` / `updateBranch`）
 - [x] **2-A**: `setupAdminSS()` に `branches` シート作成を追加
 - [x] **2-A**: `getAdminInitialData()` に master 向け branches 一覧を追加・子SS参照対応
-- [x] **2-B**: `admin_logic_branches.html` の実装（校舎一覧・追加・編集・有効化/無効化 UI）
+- [x] **2-B**: `admin_logic_branches.html` 実装（校舎一覧・追加・編集・有効化/無効化 UI）
 - [x] **2-C**: `setupBranchSS()` 実装（子 SS のシート自動作成）
 - [x] **2-C**: `shareBranchSS()` 実装（DriveApp スコープ分離・校舎管理者への共有）
 - [x] **2-D**: 管理画面フロントエンドの cramId 引数渡し対応（exams / patterns / branches）
@@ -44,28 +45,62 @@
   - `migrateStudentsFromParentSS()`: 旧・親 SS の students_master から子 SS への一括移行ユーティリティ
 - [x] **2-F**: `getStudentList()` 実装 + 管理画面「生徒一覧」タブ追加（学校名グループ化）
 
+### 2-G: 管理者・校舎の拡張（完了）
+- [x] 管理者が複数校舎を担当可能に（`admin_users.cram_id` → カンマ区切り `cram_ids`）
+- [x] `branch_admin` でも校舎セレクタープルダウンを表示（nav の下に配置）
+- [x] 生徒インポート時に校舎列（`_cram_id`）でフィルタリング
+
 **Phase 2 で判明した GAS の制約（→ `.claude/rules.md` に追記済み）**
 - GAS テンプレートリテラル内の `style=` が userCodeAppPanel の特定行で SyntaxError を引き起こす
 - Drive API は `appsscript.json` のスコープ宣言だけでは動作しない（OAuth 再認可が必要）
 - `clasp push` は GAS エディタのコードを更新するが、バージョン固定デプロイには反映されない
 
-## 開発基盤（完了 2026-05-20）
+## 開発基盤
 
-- [x] ファイル階層化: GAS ソースを `src/`、GAS テストを `tests/`、Jest テストを `tests/unit/` に整理
-- [x] 環境分離: `.clasp.dev.json`（テスト環境）/ `.clasp.json`（本番、git 管理外）
+### 学校設定の正規化（完了）
+- [x] 旧横並びシート `【設定】学校・科` を廃止し `school_course_master`（縦テーブル）に移行
+- [x] 生徒インポート時に `school_name` を `school_course_master` へ自動登録（upsert）
+- [x] migrate 系関数を削除
+
+### 生徒一覧の強化（完了）
+- [x] 学校→学年の2段階階層表示
+- [x] 氏名（読み）・コースでのソート
+- [x] コース列・文理列（sub_course）の追加
+- [x] 複数生徒のコース・文理を一括変更（チェックボックス＋プルダウン）
+- [x] サブ区分の名称を「文理」に統一、選択肢を文系/理系に固定
+
+### 2-H: 教科表示名エイリアス（完了）
+- [x] 親SS に `school_subject_aliases` シート追加（`school_name × subject_id → display_name`）
+- [x] `getData.js` で alias lookup を実装（エントリなければ canonical name にフォールバック）
+- [x] 管理画面タブ名を「学校別教科名・教科パターン管理」に変更
+- [x] 教科パターン管理タブの編集パネルに表示名入力欄を追加（onblur で自動保存）
+- [x] 楽観的ロック: `updated_at` による競合検出 → 自動更新
+
+### 教科パターン管理の改善（完了）
+- [x] 階層構造を 学校 / コース / 文理 / 学年 の4段階に変更
+- [x] 「教科を編集」パネルに checkbox・正式名・表示名 input を並べる UI
+- [x] 試験日程を任意化（日程未設定でも生徒が得点入力可能、保存時に自動作成）
+
+### 得点入力 UI 改善（完了 2026-05-22）
+- [x] 点数・順位の入力を `<select>` から `<input type="text">` に変更
+- [x] 半角数字のみ入力制限（`oninput` フィルタ＋`inputmode="numeric"`）
+- [x] 保存時バリデーション: 点数 0〜200 の整数、順位 1 以上の整数、空欄は許可
+
+## 開発基盤
+
+- [x] ファイル階層化: GAS ソースを `src/`、Jest テストを `tests/unit/`、GAS テストを `tests/` に整理
+- [x] 環境分離: `.clasp.dev.json`（開発環境）/ `.clasp.json`（本番、git 管理外）
 - [x] テスト用 push スクリプト: `push-test.ps1`（`src/` + `tests/` を GAS テスト環境へ）
-- [x] Node.js + Jest ユニットテスト導入（`npm test`）
-  - `getAdminContext()` を含む権限チェック付き関数が初めてテスト可能に
-  - 29 テスト・4スイート、全 PASS
-  - GAS API モック: `SpreadsheetApp`, `Session`, `LockService`, `Utilities`, `DriveApp`
+- [x] Node.js + Jest ユニットテスト導入（`npm test`）: 42 テスト・5スイート、全 PASS
+- [x] **src/ ファイル整理**（2026-05-22）
+  - `admin_saveData.js`（760行）を3分割: `admin_save_exams.js` / `admin_save_master.js` / `admin_save_students.js`
+  - `common_stylesheet.html` を共通スタイルのみに絞り込み、生徒アプリ専用の `app_stylesheet.html` を新設
 
-## Phase 3 — 生徒向け機能拡張（未着手）
-- [ ] 得点シート表示機能の改善
+## Phase 3 — 生徒向け機能拡張（一部完了）
 
-## 未確定事項
-
-- Excel の実際の列名（`src/admin_auth.js` の `STUDENT_COLUMN_MAP` は要確認）
-- マスター管理者向け管理画面の構成詳細（別途設計済み → `.claude/architecture.md` 参照）
+- [x] 得点・順位の入力フォーム（テキスト入力・バリデーション）
+- [ ] 得点シート・過去成績の表示機能
+- [ ] 証拠写真・評定のアップロード（[backlog.md](backlog.md) 参照）
 
 ## バックログ（優先度未定）
 → `.claude/backlog.md` 参照

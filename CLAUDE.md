@@ -57,8 +57,21 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 詳細は [testing.md](.claude/testing.md) を参照。
 
-### 5. 続きの実装タスク
-- Phase 3（生徒向け機能拡張）またはバックログ参照
+### 5. 現在の状況
+
+Phase 2 の大部分が完了。詳細は [roadmap.md](.claude/roadmap.md) を参照。
+
+**次に着手できる項目（バックログより）**
+- 得点シート・過去成績の表示機能（Phase 3）
+- 教科ごとの満点設定・バリデーション強化
+- 証拠写真・評定のアップロード機能
+
+**push 後の反映手順**（重要）
+```
+clasp push --project .clasp.dev.json
+→ GAS エディタ → デプロイ → デプロイを管理 → 新しいバージョン → デプロイ
+```
+`/dev` URL は push 直後に反映。`/exec` URL は新バージョン作成が必要。
 
 ---
 
