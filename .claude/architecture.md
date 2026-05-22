@@ -43,6 +43,20 @@ exam_management/
 └── （ルート）  clasp 設定・git 設定・CLAUDE.md 等
 ```
 
+## GAS プロジェクト構成（ライブラリ方式）
+
+2026-05-23 より3プロジェクト構成に移行。
+
+```
+src/   ← ライブラリ本体（全ロジック・HTML）  .clasp.lib.json → scriptId: 1x10D8HGL5TAz3dDXyIgS7jGQRqf_8wjaNvh0RQBBKGHD28CTEZ5GqleO
+dev/   ← 開発 main（2ファイルのみ）          .clasp.dev.json → 開発用 SS にバインド
+prod/  ← 本番 main（2ファイルのみ）          .clasp.json     → 本番 SS にバインド（git 管理外）
+```
+
+**`google.script.run` の制約**: クライアント JS からはライブラリ関数を直接呼べない。`dev/main.js` と `prod/main.js` に全サーバー関数のラッパーが定義されている（`ExamLib.xxx(...args)` に委譲）。新しい公開関数をライブラリに追加したら両方の `main.js` にも追加すること。
+
+---
+
 ## ファイル構成
 
 ### GAS バックエンド（`src/`）

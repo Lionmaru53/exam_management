@@ -1,26 +1,31 @@
 # 環境構築・デプロイ手順
 
-## 環境の種類
+## GAS プロジェクト構成（ライブラリ方式）
 
-| 環境 | clasp 設定ファイル | 用途 |
-|------|-----------------|------|
-| **テスト/開発（通常）** | `.clasp.dev.json` | 開発中の動作確認 |
-| **テスト/開発（テストコード込み）** | `.clasp.test.json` (push-test.ps1 経由) | テスト実行 |
-| **本番** | `.clasp.json`（git 管理外） | リリース |
+2026-05-23 時点で**3プロジェクト構成**に移行済み。
+
+| clasp 設定 | GAS プロジェクト | rootDir | 役割 |
+|---|---|---|---|
+| `.clasp.lib.json` | ライブラリ（`scriptId: 1x10D8HGL5TAz3dDXyIgS7jGQRqf_8wjaNvh0RQBBKGHD28CTEZ5GqleO`） | `src/` | 全ロジック・HTML |
+| `.clasp.dev.json` | 開発 main | `dev/` | developmentMode でライブラリを参照 |
+| `.clasp.json`（git 管理外） | 本番 main | `prod/` | 特定バージョンを固定参照 |
+
+`dev/main.js` と `prod/main.js` には `doGet` 委譲と `google.script.run` 用ラッパー関数のみ。
 
 ---
 
-## テスト/開発環境のセットアップ（新しい PC / 環境）
+## 新しい PC・環境でのセットアップ
 
 ```bash
 npm install -g @google/clasp
 clasp login
 ```
 
-`.clasp.dev.json` と `.clasp.test.json` はリポジトリに含まれているため、追加設定不要。
+`.clasp.lib.json` と `.clasp.dev.json` はリポジトリに含まれているため追加設定不要。
 
+**開発中の通常 push:**
 ```bash
-clasp push --project .clasp.dev.json
+clasp push --project .clasp.lib.json
 ```
 
 ---
@@ -29,14 +34,25 @@ clasp push --project .clasp.dev.json
 
 1. Google Drive で**本番用スプレッドシート**を新規作成
 2. そのスプレッドシートから「拡張機能」→「Apps Script」でバインドされた GAS プロジェクトを開く
-3. GAS エディタの URL から `scriptId` を取得（`/projects/{scriptId}/edit` の `{scriptId}` 部分）
-4. `.clasp.json.example` をコピーして `.clasp.json` を作成し、`scriptId` を入力
-5. `clasp push` でコードをデプロイ
-6. GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log / branches シート作成）
-7. GAS エディタ → デプロイを作成
+3. GAS エディタの URL から `scriptId` を取得
+4. `.clasp.json.example` をコピーして `.clasp.json` を作成し、`scriptId` と `rootDir: "prod"` を設定
+5. `prod/appsscript.json` の `libraryId` がライブラリの scriptId と一致しているか確認
+6. `clasp push` で本番 main を push
+7. GAS エディタで `setupAdminSS()` を手動実行（ライブラリ関数を GAS エディタから直接実行）
+8. GAS エディタ → デプロイを作成
 
 ```bash
 clasp push
+```
+
+## 本番バージョンのリリース手順
+
+```
+1. clasp push --project .clasp.lib.json    # ライブラリを更新
+2. GAS エディタでライブラリの新バージョンを発行（デプロイ → ライブラリとして公開）
+3. prod/appsscript.json の "version" を新バージョン番号に更新
+4. clasp push                              # 本番 main を更新
+5. GAS エディタで本番デプロイの新バージョンを作成
 ```
 
 ## GAS 初期セットアップ（未実行の場合のみ）

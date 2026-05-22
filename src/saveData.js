@@ -7,7 +7,7 @@
 function saveAllScores(payload) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(20000);
 
     // student_index で student_id → cram_id を解決
     const parentSS = SpreadsheetApp.getActiveSpreadsheet();
