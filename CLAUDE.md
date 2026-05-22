@@ -42,13 +42,21 @@ GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log /
 
 詳細は [testing.md](.claude/testing.md) を参照。
 
-### 5. 続きの実装タスク（現在: Phase 2-D）
-`src/getData.js` / `src/saveData.js` の子 SS 切り替え対応。
-現状は親 SS に直接アクセスしているため、`student_index` → cram_id → 子SS のルーティングに変更する。
+### 5. 現在の状況
 
-- `src/getData.js`: `getInitialData(userId)` で `student_index` を参照して cram_id を特定 → `getChildSS(cramId)` で子SS を開く
-- `src/saveData.js`: `saveAllScores(payload)` も同様に子SS への書き込みに変更
-- 実装後は `npm test` でローカルテストを確認してから `clasp push --project .clasp.dev.json` でテスト環境にデプロイ
+Phase 2 の大部分が完了。詳細は [roadmap.md](.claude/roadmap.md) を参照。
+
+**次に着手できる項目（バックログより）**
+- 得点シート・過去成績の表示機能（Phase 3）
+- 教科ごとの満点設定・バリデーション強化
+- 証拠写真・評定のアップロード機能
+
+**push 後の反映手順**（重要）
+```
+clasp push --project .clasp.dev.json
+→ GAS エディタ → デプロイ → デプロイを管理 → 新しいバージョン → デプロイ
+```
+`/dev` URL は push 直後に反映。`/exec` URL は新バージョン作成が必要。
 
 ---
 

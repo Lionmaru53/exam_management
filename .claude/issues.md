@@ -18,8 +18,6 @@
 - **原因**: Phase 2-A のコード反映前に `setupAdminSS()` を実行していたため、`branches` シートがメイン SS に存在しない状態でシート操作をしようとした。
 - **対処**: `setupBranchSS()` / `addBranch()` / `updateBranch()` の冒頭で `_ensureBranchesSheet()` を呼び、シートが存在しない場合は自動作成するよう変更。
 
----
-
 ### [fixed] #003 `setupBranchSS()` の DriveApp 権限エラー
 - **場所**: `admin_branch.js` → `setupBranchSS()`
 - **原因**: `DriveApp.getFileById().addEditor()` は `drive` スコープが必要だが、SS作成後に初めてこのコードが追加されたため既存の認可トークンにスコープが含まれていなかった。
@@ -30,24 +28,31 @@
 - **原因**: テンプレートリテラル内で `<a href="...">` タグを複数行に分けて記述したため、GAS HtmlService の URL 解釈で改行・スペースが href の一部として扱われた。
 - **対処**: `<a>` タグを 1 行に集約。GAS で動的生成する HTML の `<a>` タグは属性を改行で分割してはいけない。
 
+### [fixed] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
+- **場所**: `admin_index.html` → HTML 要素のインライン `style` 属性
+- **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style'` が発生。
+- **原因（推定）**: GAS の `userCodeAppPanel` のプリアンブル行数と HTML 構造の組み合わせで、nav の `style="display:none;"` 属性が GAS 内部 JS 生成処理の解釈で SyntaxError を引き起こしていた。
+- **対処**: `admin_index.html` の HTML 要素（nav・pattern-modal）から inline `style` 属性を除去し、`admin_stylesheet.html` に `#admin-nav { display: none; }` / `#pattern-modal { display: none; }` を追加して CSS で初期非表示を管理。
+- **教訓**: GAS webapp では body 構造を変更する際、inline style を使わず CSS クラス・ID セレクタで管理すること。
+
 ### [fixed] #006 `shareBranchSS()` で DriveApp 権限エラー（appsscript.json の oauthScopes 不足）
 - **場所**: `src/appsscript.json` → `oauthScopes`
-- **症状**: 「指定された権限では DriveApp.getFileById を呼び出すことができません。必要な権限: ...auth/drive」エラー。副作用として「A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received」がブラウザコンソールに出る。
-- **原因**: `oauthScopes` に `https://www.googleapis.com/auth/spreadsheets` と `script.container.ui` のみ明示していたため、GAS がその2スコープしか認可しない。`DriveApp.getFileById().addEditor()` は `auth/drive` スコープが必要だが含まれていなかった。
-- **対処（1/2）**: `appsscript.json` から `oauthScopes` フィールドを削除し、GAS のスコープ自動検出に委ねる（`setup.md` の方針と一致）。自動検出では `DriveApp` の使用を検出して `auth/drive` が自動的にスコープに含まれる。
+- **症状**: 「指定された権限では DriveApp.getFileById を呼び出すことができません」エラー。
+- **原因**: `oauthScopes` に `auth/spreadsheets` と `script.container.ui` のみ明示していたため `auth/drive` が含まれていなかった。
+- **対処（1/2）**: `appsscript.json` から `oauthScopes` フィールドを削除し、GAS のスコープ自動検出に委ねる。
 - **対処（2/2）**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除（→ #007 参照）。
 - **再認可が必要**: `clasp push` 後、GAS エディタで任意の関数を実行するか新しいデプロイを作成して再認可ダイアログに応じる。
-- **コンソールエラーの補足**: 「message channel closed」はサーバー側エラーによる `google.script.run` の接続切断が原因。DriveApp エラーが解消されれば消える。
-- **#003 との関係**: #003 の「GAS エディタから手動実行で認可を取得」という暫定対処では、新しい認証トークンが発行されても webapp 側のスコープが不足したままになるため根本解決にはなっていなかった。
 
-### [fixed] #007 `shareBranchSS()` 実行時「Drive API の有効化中に権限が拒否されました」エラー（Cloud プロジェクト側の Drive API 未有効化）
-- **場所**: GAS の Cloud プロジェクト設定 / `src/appsscript.json` → `enabledAdvancedServices`
-- **症状**: 管理画面「共有設定」クリック時に「プロジェクト XXXXXX への API（drive）の有効化中に権限が拒否されました」エラー。
-- **原因（1）**: `enabledAdvancedServices` に Drive v2（REST API）が記載されていたため、clasp が Cloud プロジェクトで Drive API を有効化しようとした（clasp push 時）。コードが使っているのは `DriveApp`（GAS 組み込みクラス）であり、Drive Advanced Service（REST API）は不使用。
-- **原因（2）**: GAS の Cloud プロジェクトで Google Drive API が有効化されていなかった。`DriveApp` の実行には Cloud プロジェクトで Drive API が有効である必要がある。Google Workspace 環境や特定の制限下では GAS の自動有効化が失敗するため、手動有効化が必要。
+### [fixed] #007 `shareBranchSS()` 実行時「Drive API の有効化中に権限が拒否されました」エラー
+- **場所**: GAS の Cloud プロジェクト設定 / `src/appsscript.json`
+- **症状**: 管理画面「共有設定」クリック時に「プロジェクトへの API（drive）の有効化中に権限が拒否されました」エラー。
+- **原因（1）**: `enabledAdvancedServices` に Drive v2（REST API）が記載されていたため、clasp が Cloud プロジェクトで Drive API を有効化しようとした。コードが使っているのは `DriveApp`（GAS 組み込みクラス）であり REST API は不使用。
+- **原因（2）**: Cloud プロジェクトで Google Drive API が有効化されていなかった。
 - **対処（1）**: `appsscript.json` の `enabledAdvancedServices` から Drive v2 エントリを削除。
-- **対処（2）**: Cloud Console（console.cloud.google.com）でプロジェクトを選択 → 「API とサービス」→「API とサービスを有効にする」→「Google Drive API」を検索 → 有効にする。
+- **対処（2）**: Cloud Console → 「API とサービス」→「Google Drive API」を有効にする。
 - **教訓**: `DriveApp` を使う GAS プロジェクトでは、初回セットアップ時に Cloud Console で Google Drive API を手動有効化する必要がある環境がある（setup.md に手順を追記）。
+
+---
 
 ## open
 
@@ -55,26 +60,17 @@
 - **場所**: ブラウザコンソール（Chrome）
 - **症状**: `Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received`
 - **優先度**: 低（UI の動作には影響しない情報的な警告）
-- **原因**: GAS webapp の `google.script.run` は内部的に Chrome の拡張機能向けメッセージパッシング API（`chrome.runtime.sendMessage` 系）を使ってクライアント JS とサーバー間を橋渡ししている。このメッセージリスナーが「非同期で返答する」と Chrome に宣言（`return true`）した後、何らかの理由で返答が届かない場合に Chrome が出すログ。具体的に発生するケース：
-  - `google.script.run` のサーバー側で例外が発生し、エラーオブジェクトをクライアントに送り返す前に接続が切れる
-  - GAS の認証セッションが切れている状態でサーバー呼び出しが行われる
-  - ページ遷移や再レンダリングが `google.script.run` の応答より先に走り、リスナー側のコンテキストが消える
-  - サーバー側で処理はなされたが、レスポンスのシリアライズ（`JSON.stringify`）が失敗する（巨大オブジェクト・循環参照など）
-- **このエラー単体では何も壊れない**: 本質的な問題は必ず別のエラー（`withFailureHandler` 側の受信エラー、またはサーバー側の実行ログ上のスタックトレース）として表れる。このメッセージは「GAS 内部ブリッジが後始末を報告できなかった」という副作用ノイズ。
-- **調査方法**: GAS エディタ → 「実行」タブ でサーバー側エラーを確認するか、フロント側の `withFailureHandler` で `err.message` をコンソールに出力する。
-- **#006 との関係**: #006（DriveApp 権限エラー）発生時にも同じ警告が出ていた。サーバー例外が原因で `google.script.run` の応答が正常に届かなかったため。DriveApp エラー解消後に消えた。
-- **対処方針**: 原則として放置でよい。ただし UI 上の不具合（ローディングが終わらない・データが表示されないなど）と同時に出ている場合は、GAS 実行ログで根本エラーを探す。
-
-### [open] #005 `userCodeAppPanel:84:20` — `Unexpected identifier 'style'` SyntaxError
-- **場所**: `admin_index.html` → HTML 要素のインライン `style` 属性
-- **症状**: ページ読み込み直後に `Uncaught SyntaxError: Unexpected identifier 'style' (at userCodeAppPanel?createOAuthDialog=true:84:20)` が発生。`renderBranchManager is not defined` も連鎖して発生する可能性あり。
-- **原因（推定）**: GAS の `userCodeAppPanel` はヘッドを除いた body コンテンツを 75 行のプリアンブルの後に出力する。Phase 2-D で `branch-selector-wrap` div を nav の前に追加したことで nav が body の 9 行目にシフトし、nav の `style="display:none;"` 属性が `userCodeAppPanel` のちょうど 84 行目に来た。GAS の内部 JS 生成処理がその行で `style` を予期しない識別子として扱い SyntaxError を発生させている。
-- **対処**: `admin_index.html` の HTML 要素（nav・pattern-modal）から inline `style` 属性を除去し、`admin_stylesheet.html` に `#admin-nav { display: none; }` / `#pattern-modal { display: none; }` を追加して CSS で初期非表示を管理するよう変更。`clasp push` 後に確認が必要。
-- **教訓**: GAS webapp では HTML 要素の inline `style` 属性が `userCodeAppPanel` の特定行に来ると SyntaxError を引き起こす。body 構造を変更する場合は inline style を使わず CSS クラス・ID セレクタで管理すること。
+- **原因**: GAS の `google.script.run` は内部的に Chrome のメッセージパッシング API を使ってクライアント JS とサーバー間を橋渡ししている。このリスナーが「非同期で返答する」と宣言した後、何らかの理由で返答が届かない場合に Chrome が出すログ。具体的なケース：
+  - `google.script.run` のサーバー側で例外が発生し返答が届かない
+  - GAS の認証セッションが切れた状態でサーバー呼び出しが行われる
+  - ページ遷移・再レンダリングが応答より先に走り、リスナーコンテキストが消える
+- **このエラー単体では何も壊れない**: 本質的な問題は別のエラー（`withFailureHandler` や GAS 実行ログ）として表れる。
+- **調査方法**: GAS エディタ →「実行」タブ でサーバー側エラーを確認するか、`withFailureHandler` で `err.message` をコンソールに出力する。
+- **対処方針**: 原則として放置でよい。UI 上の不具合（ローディングが終わらない・データが表示されない）と同時に出ている場合は GAS 実行ログで根本エラーを探す。
 
 ---
 
 ## 運用メモ
 
 - 新しい Issue が発覚したら「原因」「対処（または暫定対応）」とともにここに追記する
-- `clasp push` → HEAD でテスト → 修正確認 → `fixed` に移動する流れで管理する
+- `clasp push` → `/dev` URL でテスト → 修正確認 → `fixed` に移動する流れで管理する
