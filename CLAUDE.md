@@ -15,6 +15,22 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 ---
 
+## アクセス URL（確定）
+
+| 用途 | URL | 備考 |
+|------|-----|------|
+| 管理者 | `script.google.com/macros/s/[管理者デプロイID]/exec?page=admin` | Google ログイン必須・Cloudflare 経由なし |
+| 生徒（LIFF） | `wasedazemi-highschool.com/exams/test?userId=...` | Cloudflare 経由・Google ログイン不要 |
+
+---
+
+## 現在の開発状況
+
+- **Phase 0〜2: 完了・main にマージ済み（2026-05-19）**
+- **現在のブランチ**: `feature/admin`（Phase 3 以降の作業用に残存）
+
+---
+
 ## 次回セッション開始手順
 
 ### 1. コードのデプロイ
@@ -27,11 +43,10 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 > 本番環境のセットアップ手順は [setup.md](.claude/setup.md) を参照。
 
-### 2. GAS 初期セットアップ（未実行の場合のみ）
-GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log / branches シートが作成される）
+> ⚠️ `clasp push` 後にコードの変更を本番へ反映するには、GAS エディタで「デプロイ → デプロイを管理 → 新しいバージョン」の作成が必要（生徒用・管理者用の両デプロイ）。
 
 ### 3. 動作確認
-管理者用 `GAS_URL?page=admin` を開き、Google アカウントでログインできることを確認
+管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
 
 ### 4. テスト実行
 
@@ -42,13 +57,8 @@ GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log /
 
 詳細は [testing.md](.claude/testing.md) を参照。
 
-### 5. 続きの実装タスク（現在: Phase 2-D）
-`src/getData.js` / `src/saveData.js` の子 SS 切り替え対応。
-現状は親 SS に直接アクセスしているため、`student_index` → cram_id → 子SS のルーティングに変更する。
-
-- `src/getData.js`: `getInitialData(userId)` で `student_index` を参照して cram_id を特定 → `getChildSS(cramId)` で子SS を開く
-- `src/saveData.js`: `saveAllScores(payload)` も同様に子SS への書き込みに変更
-- 実装後は `npm test` でローカルテストを確認してから `clasp push --project .clasp.dev.json` でテスト環境にデプロイ
+### 5. 続きの実装タスク
+- Phase 3（生徒向け機能拡張）またはバックログ参照
 
 ---
 
@@ -56,5 +66,6 @@ GAS エディタで `setupAdminSS()` を手動実行（admin_users / audit_log /
 
 - **バックエンド**: GAS（clasp で push）
 - **フロントエンド**: GAS HtmlService（管理画面）/ GitHub Pages（LIFF）
-- **DB**: Google スプレッドシート
+- **DB**: Google スプレッドシート（親 SS + 校舎別子 SS）
 - **認証**: `Session.getActiveUser()` + admin_users シート照合（管理者）/ LINE LIFF（生徒）
+- **xlsx 解析**: SheetJS（CDN）でブラウザ側解析 → GAS に JSON 送信（Drive API 不要）

@@ -6,20 +6,31 @@
 LINE アプリ
   └─→ LIFF エンドポイント（GitHub Pages: docs/index.html）
         └─ LIFF SDK で LINE userId 取得
-        └─→ GAS_URL?userId=xxx → GAS webapp（生徒データ表示）
+        └─→ wasedazemi-highschool.com/exams/test?userId=xxx  ← Cloudflare 経由
+              └─→ 生徒用 GAS デプロイ（ANYONE_ANONYMOUS）
+                    └─ getInitialData(lineUserId)
+                          └─ 親 SS の student_index で line_user_id → cram_id を解決
+                          └─ getChildSS(cram_id) で校舎別子 SS を開く
+                          └─ 子 SS から試験・得点データを取得
 
 管理者（Google アカウントでログイン）
-  └─→ GAS_URL?page=admin → GAS webapp（管理画面）
+  └─→ script.google.com/macros/s/[管理者デプロイID]/exec?page=admin  ← 直接 GAS URL（Cloudflare 経由なし）
+        └─→ 管理者用 GAS デプロイ（ANYONE = Google ログイン必須）
+              └─→ Session.getActiveUser() → admin_users シート照合
 ```
 
-## デプロイ構成
+## デプロイ構成（同一プロジェクト・コード共有）
 
-| デプロイ | executeAs | access | 用途 |
-|---------|-----------|--------|------|
-| LIFF用 | USER_DEPLOYING | ANYONE_ANONYMOUS | 生徒向け（LINE認証） |
-| 管理者用 | USER_DEPLOYING | **全員（ログインが必要）** | 管理者向け（Google認証） |
+| デプロイ | executeAs | access | アクセス方法 | 用途 |
+|---------|-----------|--------|------------|------|
+| 生徒用 | USER_DEPLOYING | ANYONE_ANONYMOUS | Cloudflare 経由 | 生徒向け（LINE認証・Google不要） |
+| 管理者用 | USER_DEPLOYING | **全員（ログインが必要）** | 直接 GAS URL | 管理者向け（Google認証必須） |
 
-`Session.getActiveUser().getEmail()` は「ログインが必要」設定時のみ実際のメールを返す。
+- 同一 GAS プロジェクトから 2 つのデプロイを作成（コードは共通）
+- `appsscript.json` の `access` は `ANYONE_ANONYMOUS`（生徒用デフォルト値）
+- 管理者用デプロイは GAS エディタから手動で `ANYONE` で作成
+- 管理者は Cloudflare を経由しない（直接 GAS URL をブックマーク）
+- `Session.getActiveUser().getEmail()` は「ログインが必要」設定時のみ実際のメールを返す
 
 ## ディレクトリ構成
 
