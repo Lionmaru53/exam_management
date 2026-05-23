@@ -147,6 +147,14 @@ function getInitialData(lineUserId) {
     // 8. 得点（子 SS）
     const allScores = getRowsData(ss.getSheetByName('scores_data'));
 
+    // 8-b. ファイル一覧（子 SS）- 生徒自身のものだけ返す
+    const filesSheetRaw = ss.getSheetByName(STUDENT_FILES_SHEET);
+    const studentFiles  = filesSheetRaw
+      ? getRowsData(filesSheetRaw).filter(f =>
+          String(f.student_id || '').trim() === String(student.student_id).trim()
+        )
+      : [];
+
     // 9. 全試験区分に対してタブデータを構築
     const examTabs = relevantTermTests.map(termTest => {
       const pattern = studentPatterns.find(p =>
@@ -203,7 +211,8 @@ function getInitialData(lineUserId) {
       scores:   currentExam ? currentExam.scores   : [],
       history:  examTabs.filter(t => t.exam_id),
       examTabs,
-      genres: allGenres
+      genres:  allGenres,
+      files:   studentFiles
     });
 
   } catch (e) {

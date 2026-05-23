@@ -38,3 +38,7 @@ function updateStudentField(...args){ return ExamLib.updateStudentField(...args)
 function addCourseToMaster(...args) { return ExamLib.addCourseToMaster(...args); }
 
 function saveAllScores(...args){ return ExamLib.saveAllScores(...args); }
+
+function uploadStudentFile(...args)       { return ExamLib.uploadStudentFile(...args); }
+function deleteStudentFile(...args)       { return ExamLib.deleteStudentFile(...args); }
+function getStudentFilesForAdmin(...args) { return ExamLib.getStudentFilesForAdmin(...args); }
