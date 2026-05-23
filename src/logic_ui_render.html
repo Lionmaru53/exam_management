@@ -177,14 +177,6 @@ function renderApp(data) {
       `;
     }
 
-    // ---- ファイルアップロードセクション（exam_id がある場合のみ表示）----
-    if (exam.exam_id) {
-      const examFiles = (data.files || []).filter(f =>
-        String(f.exam_id || '').trim() === String(exam.exam_id).trim()
-      );
-      listHtml += renderFileSection(s.student_id, exam.exam_id, examFiles);
-    }
-
     listHtml += `</div></div>`;
   });
 
@@ -201,52 +193,5 @@ function switchExamTab(tabId) {
   document.querySelectorAll('.tab-panel').forEach(panel => {
     panel.style.display = panel.dataset.tabId === tabId ? 'block' : 'none';
   });
-}
-
-// ---- ファイルセクション ----
-
-var FILE_TYPE_LABELS = {
-  score_proof: '証拠写真',
-  evaluation:  '評定・通知表',
-  other:       'その他'
-};
-
-function renderFileSection(studentId, examId, files) {
-  var typeSections = Object.keys(FILE_TYPE_LABELS).map(function(ft) {
-    var label = FILE_TYPE_LABELS[ft];
-    var typeFiles = files.filter(function(f) { return f.file_type === ft; });
-    var fileListHtml = typeFiles.map(function(f) {
-      return '<div class="file-item">' +
-        '<a href="https://drive.google.com/file/d/' + f.drive_file_id + '/view" target="_blank" class="file-link">' +
-          '<span class="file-icon">📄</span>' +
-          '<span class="file-name">' + escapeHtml(f.file_name || 'ファイル') + '</span>' +
-          '<span class="file-date">' + (f.uploaded_at ? f.uploaded_at.substring(0, 10) : '') + '</span>' +
-        '</a>' +
-        '<button class="btn-file-delete" onclick="handleFileDelete(\'' + studentId + '\', \'' + f.file_id + '\', this)">削除</button>' +
-      '</div>';
-    }).join('');
-
-    return '<div class="file-type-block">' +
-      '<div class="file-type-label">' + label + '</div>' +
-      (fileListHtml || '<p class="file-empty">未アップロード</p>') +
-      '<label class="btn-file-upload-label">' +
-        '+ アップロード' +
-        '<input type="file" accept="image/*,application/pdf" style="display:none"' +
-          ' data-student-id="' + studentId + '"' +
-          ' data-exam-id="' + examId + '"' +
-          ' data-file-type="' + ft + '"' +
-          ' onchange="handleFileSelected(this)">' +
-      '</label>' +
-    '</div>';
-  }).join('');
-
-  return '<div class="file-section">' +
-    '<h4 class="file-section-title">証拠写真・ファイル</h4>' +
-    typeSections +
-  '</div>';
-}
-
-function escapeHtml(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 </script>
