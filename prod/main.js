@@ -1,5 +1,9 @@
 function doGet(e) { return ExamLib.doGet(e); }
 
+// ---- GAS エディタから手動実行する初期設定・ユーティリティ ----
+
+function setupAdminSS() { return ExamLib.setupAdminSS(); }
+
 // ---- google.script.run ラッパー（ライブラリ関数はクライアントから直接呼べないため委譲） ----
 
 function getAdminInitialData(...args) { return ExamLib.getAdminInitialData(...args); }
