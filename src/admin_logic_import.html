@@ -23,19 +23,7 @@ function renderImportManager() {
     + '<button id="import-btn" onclick="_doImport()" class="btn-save-admin imp-btn" disabled>インポート実行</button>'
     + '</div>'
     + '<div id="import-preview"></div>'
-    + '<div id="import-result"></div>'
-    + '<hr class="imp-divider">'
-    + '<h4>LINE ID 連携</h4>'
-    + '<p class="imp-desc">「校舎公式LINEブック」の URL を貼り付けてください。<br>'
-    + '「内部生」シートの「管理番号」と「生徒」列を読み込み、既存の生徒レコードに LINE ID を紐づけます。</p>'
-    + '<div class="imp-hint">'
-    + 'シート構造: 1行目=タイトル行、<strong>2行目=ヘッダー行（管理番号 / 生徒）</strong>、3行目以降=データ'
-    + '</div>'
-    + '<div class="imp-upload-row">'
-    + '<input type="text" id="line-ss-url" class="admin-input imp-url-input" placeholder="https://docs.google.com/spreadsheets/d/..." />'
-    + '<button onclick="_doLinkLineIds()" class="btn-save-admin imp-btn">連携実行</button>'
-    + '</div>'
-    + '<div id="link-result"></div>';
+    + '<div id="import-result"></div>';
 }
 
 function _impGetBranchName(cramId) {
@@ -142,42 +130,6 @@ function _doImport() {
       showMessage('エラー: ' + msg, 'error');
     })
     .importStudentData(cramId, window._importRows);
-}
-
-function _doLinkLineIds() {
-  var cramId = window.selectedCramId || '';
-  if (!cramId) { showMessage('校舎を選択してください。', 'error'); return; }
-
-  var urlInput = document.getElementById('line-ss-url');
-  var url = urlInput ? urlInput.value.trim() : '';
-  if (!url) { showMessage('スプレッドシートの URL を入力してください。', 'error'); return; }
-
-  document.getElementById('link-result').innerHTML = '';
-
-  setLoading(true, ['スプレッドシートを読み込み中...', 'LINE ID を照合中...', 'データを更新中...']);
-  google.script.run
-    .withSuccessHandler(function (res) {
-      setLoading(false);
-      if (res && res.success) {
-        var resultHtml = '<div class="imp-result">'
-          + '<p class="imp-result-title">LINE ID 連携完了</p>'
-          + '<ul>'
-          + '<li>紐づけ成功: <strong>' + res.linked + '</strong> 件</li>'
-          + '<li>管理番号未登録（スキップ）: <strong>' + res.notFound + '</strong> 件</li>'
-          + '</ul>'
-          + '</div>';
-        document.getElementById('link-result').innerHTML = resultHtml;
-        showMessage('LINE ID の連携が完了しました。', 'success');
-      } else {
-        showMessage((res && res.error) || '連携に失敗しました。', 'error');
-      }
-    })
-    .withFailureHandler(function (err) {
-      setLoading(false);
-      var msg = (err && err.message) ? err.message : '通信エラーが発生しました。';
-      showMessage('エラー: ' + msg, 'error');
-    })
-    .linkLineIds(cramId, url);
 }
 
 window.renderImportManager = renderImportManager;

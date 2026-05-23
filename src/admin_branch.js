@@ -139,10 +139,12 @@ function setupBranchSS(cramId) {
       return { success: false, error: '既に子 SS が設定されています。上書きする場合は編集ボタンから spreadsheet_id を変更してください。' };
     }
 
-    // 子 SS を新規作成
-    const branchName = String(branch.branch_name || cramId).trim();
-    const childSS    = SpreadsheetApp.create(`[子SS] ${branchName}`);
-    const childSSId  = childSS.getId();
+    // 子 SS を新規作成（親 SS と同じフォルダに配置）
+    const branchName   = String(branch.branch_name || cramId).trim();
+    const childSS      = SpreadsheetApp.create(`[子SS] ${cramId}_${branchName}`);
+    const childSSId    = childSS.getId();
+    const parentFolder = DriveApp.getFileById(parentSS.getId()).getParents().next();
+    DriveApp.getFileById(childSSId).moveTo(parentFolder);
 
     // config シート（デフォルトシートを改名して使用）
     const configSheet = childSS.getActiveSheet();
@@ -221,8 +223,9 @@ function shareBranchSS(cramId) {
     const adminRows    = getRowsData(adminSheet);
     const targetCramId = String(cramId).trim();
     const targetAdmins = adminRows.filter(r => {
-      const ids = String(r.cram_id || '').split(',').map(s => s.trim()).filter(Boolean);
-      return ids.includes(targetCramId) &&
+      const val        = r[targetCramId];
+      const isAssigned = val === true || String(val || '').trim().toUpperCase() === 'TRUE' || String(val || '').trim() === '1';
+      return isAssigned &&
         r.role === 'branch_admin' &&
         (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true');
     });

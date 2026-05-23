@@ -63,9 +63,11 @@ function getInitialData(lineUserId) {
     const ss = getChildSS(cramId);
 
     // 3. 生徒情報を取得（子 SS）
+    // student_index から得た student_id で検索する（保護者 LINE ID でもアクセス可能にするため）
+    const studentId  = String(idxEntry.student_id || '').trim();
     const students   = getRowsData(ss.getSheetByName('students_master'));
     const studentRaw = students.find(row =>
-      String(row.line_user_id || '').trim() === String(lineUserId).trim()
+      String(row.student_id || '').trim() === studentId
     );
     if (!studentRaw) {
       _writeLiffLog(parentSS, lineUserId, '生徒未登録_4', '', cramId);

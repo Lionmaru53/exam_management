@@ -27,9 +27,10 @@ function doGet(e) {
   // 生徒アプリ：GitHub Pages で userId 取得後リダイレクトされてくる
   if (params.userId) {
     try {
-      const data    = getInitialData(params.userId);
-      const tmpl    = HtmlService.createTemplateFromFile('index_app');
-      tmpl.appData  = JSON.stringify(data);
+      const data = getInitialData(params.userId);
+      const tmpl = HtmlService.createTemplateFromFile('index_app');
+      // </script> を壊す < > を split/join でエスケープ（regex を使わない）
+      tmpl.appData = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
       return tmpl.evaluate()
         .addMetaTag('viewport', 'width=device-width, initial-scale=1')
         .setTitle('定期テスト得点確認')
@@ -37,8 +38,7 @@ function doGet(e) {
     } catch (err) {
       return HtmlService.createHtmlOutput(
         `<p style="color:red;padding:20px;">エラー: ${err.toString()}</p>`
-      )
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
   }
 

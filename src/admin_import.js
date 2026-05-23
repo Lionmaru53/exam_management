@@ -1,140 +1,10 @@
 /**
- * 生徒データインポート / LINE ID 連携
+ * 生徒データインポート
  *
  * - importStudentData : SheetJS 解析済みの xlsx 行データ → 子 SS の students_master に Upsert
- * - linkLineIds       : 外部 SS の「内部生」シート → student_index + 子 SS に反映
- */
-
-// ---- student_index（親SS ルーティングテーブル）----
-
-const STUDENT_INDEX_SHEET   = 'student_index';
-const STUDENT_INDEX_HEADERS = ['student_id', 'line_user_id', 'cram_id'];
-
-function _ensureStudentIndexSheet(ss) {
-  var sheet = ss.getSheetByName(STUDENT_INDEX_SHEET);
-  if (!sheet) {
-    sheet = ss.insertSheet(STUDENT_INDEX_SHEET);
-    sheet.getRange(1, 1, 1, STUDENT_INDEX_HEADERS.length).setValues([STUDENT_INDEX_HEADERS]);
-  }
-  return sheet;
-}
-
-/**
- * 外部 SS の「内部生」シートから LINE ID を読み込み、以下を更新する。
- *   1. 子 SS の students_master.line_user_id
- *   2. 親 SS の student_index（line_user_id → cram_id ルーティング用）
  *
- * シート構造: 1行目=タイトル行（無視）、2行目=ヘッダー行、3行目以降=データ
- *
- * @param {string} cramId          - 対象校舎の cram_id
- * @param {string} spreadsheetUrl  - LINE ID 管理スプレッドシートの URL
- * @returns {{ success, linked, notFound, error? }}
+ * student_index は line_student_import シートのスプレッドシート数式で自動管理される。
  */
-function linkLineIds(cramId, spreadsheetUrl) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-    const ctx = getAdminContext();
-    const ctxCramIds = ctx.cram_ids || [];
-    if (ctx.role !== 'master' && !ctxCramIds.includes(String(cramId || '').trim())) {
-      return { success: false, error: '権限がありません' };
-    }
-    if (!cramId)          return { success: false, error: '校舎を選択してください' };
-    if (!spreadsheetUrl)  return { success: false, error: 'スプレッドシート URL を入力してください' };
-
-    // 外部 SS を開く
-    var extSS;
-    try {
-      extSS = SpreadsheetApp.openByUrl(spreadsheetUrl.trim());
-    } catch (e) {
-      return { success: false, error: 'スプレッドシートを開けません。URL と共有設定を確認してください: ' + e.message };
-    }
-
-    var extSheet = extSS.getSheetByName('内部生');
-    if (!extSheet) return { success: false, error: '「内部生」シートが見つかりません' };
-
-    var extData = extSheet.getDataRange().getValues();
-    // 1行目=タイトル行、2行目=ヘッダー行、3行目以降=データ
-    if (extData.length < 3) return { success: false, error: 'データが不足しています（3行目以降にデータが必要です）' };
-
-    var extHeaders = extData[1].map(function (h) { return String(h).trim(); }); // 2行目
-    var sidCol     = extHeaders.indexOf('管理番号');
-    var lidCol     = extHeaders.indexOf('生徒');
-
-    if (sidCol < 0) return { success: false, error: '「管理番号」列が見つかりません（2行目のヘッダーを確認してください）' };
-    if (lidCol < 0) return { success: false, error: '「生徒」列が見つかりません（2行目のヘッダーを確認してください）' };
-
-    // 3行目以降から有効な行だけ抽出（両方に値がある行）
-    var mappings = [];
-    for (var i = 2; i < extData.length; i++) {
-      var sid = String(extData[i][sidCol] || '').trim();
-      var lid = String(extData[i][lidCol] || '').trim();
-      if (sid && lid) mappings.push({ student_id: sid, line_user_id: lid });
-    }
-    if (mappings.length === 0) {
-      return { success: false, error: '有効なデータが見つかりませんでした（管理番号または生徒列が空）' };
-    }
-
-    // 1. 子 SS の students_master を更新
-    const childSS     = getChildSS(cramId);
-    const masterSheet = _ensureStudentsMasterSheet(childSS);
-    const masterData  = masterSheet.getDataRange().getValues();
-    const mHeaders    = masterData[0];
-    const mSidCol     = mHeaders.indexOf('student_id');
-    const mLidCol     = mHeaders.indexOf('line_user_id');
-
-    var studentMap = {};
-    for (var j = 1; j < masterData.length; j++) {
-      var s = String(masterData[j][mSidCol] || '').trim();
-      if (s) studentMap[s] = j + 1; // 1-based row
-    }
-
-    var linked   = 0;
-    var notFound = 0;
-    mappings.forEach(function (m) {
-      if (studentMap[m.student_id] && mLidCol >= 0) {
-        masterSheet.getRange(studentMap[m.student_id], mLidCol + 1).setValue(m.line_user_id);
-        linked++;
-      } else {
-        notFound++;
-      }
-    });
-
-    // 2. 親 SS の student_index を Upsert
-    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-    const idxSheet = _ensureStudentIndexSheet(parentSS);
-    const idxData  = idxSheet.getDataRange().getValues();
-    const ixSidCol = idxData[0].indexOf('student_id');
-
-    var idxMap = {};
-    for (var k = 1; k < idxData.length; k++) {
-      var is = String(idxData[k][ixSidCol] || '').trim();
-      if (is) idxMap[is] = k + 1;
-    }
-
-    var newIdxRows = [];
-    mappings.forEach(function (m) {
-      var row = [m.student_id, m.line_user_id, cramId];
-      if (idxMap[m.student_id]) {
-        idxSheet.getRange(idxMap[m.student_id], 1, 1, row.length).setValues([row]);
-      } else {
-        newIdxRows.push(row);
-      }
-    });
-    if (newIdxRows.length > 0) {
-      idxSheet.getRange(idxSheet.getLastRow() + 1, 1, newIdxRows.length, 3).setValues(newIdxRows);
-    }
-
-    writeAuditLog(ctx, 'link_line_ids', { cram_id: cramId, linked: linked, notFound: notFound }, 'success');
-    return { success: true, linked: linked, notFound: notFound };
-
-  } catch (e) {
-    console.error('linkLineIds error:', e);
-    return { success: false, error: e.message };
-  } finally {
-    lock.releaseLock();
-  }
-}
 
 // Excel 1行目のヘッダー名 → 内部フィールド名のマッピング
 // _ プレフィックスは結合処理のための中間フィールド
@@ -328,7 +198,7 @@ function _upsertStudentsBranch(ss, students) {
 // Node.js（Jest）でテストできるよう関数を global に公開する
 if (typeof module !== 'undefined') Object.assign(global, {
   STUDENT_COLUMN_MAP, STUDENTS_MASTER_HEADERS,
-  importStudentData, linkLineIds,
+  importStudentData,
   _mapRows, _upsertStudentsMaster, _upsertStudentsBranch,
-  _ensureStudentsMasterSheet, _ensureStudentIndexSheet,
+  _ensureStudentsMasterSheet,
 });
