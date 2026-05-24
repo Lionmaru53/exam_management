@@ -53,22 +53,25 @@
 
   window.onload = async function() {
     try {
+      // withLoginOnExternalBrowser: true により、LIFF URL 経由の外部ブラウザアクセス時は
+      // liff.init() 内で自動的に LINE ログインへリダイレクトされる。
+      // GitHub Pages を直打ちした場合は LIFF コンテキストがないため自動ログインは走らない。
       await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: true });
 
-      if (!liff.isInClient()) {
-        // LINE アプリ外（PC など）→ 開発用フォーム
+      if (!liff.isLoggedIn()) {
+        if (liff.isInClient()) {
+          // LINE アプリ内だが未ログイン（念のため）
+          liff.login();
+          return;
+        }
+        // 外部ブラウザ + 未ログイン = LIFF URL 経由でなく GitHub Pages 直打ち → 開発用フォーム
         showDevForm();
         return;
       }
 
-      if (!liff.isLoggedIn()) {
-        liff.login();
-        return;
-      }
-
+      // ログイン済み（LINE アプリ内 / LIFF URL 経由の外部ブラウザ、どちらも共通）
       document.getElementById('msg').textContent = 'データを読み込み中...';
       var profile = await liff.getProfile();
-      // userId を取得したら GAS にリダイレクト（データ表示は GAS が担当）
       window.location.href = GAS_URL + '?userId=' + encodeURIComponent(profile.userId);
 
     } catch (err) {
