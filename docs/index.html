@@ -53,7 +53,7 @@
 
   window.onload = async function() {
     try {
-      await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: false });
+      await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: true });
 
       if (!liff.isInClient()) {
         // LINE アプリ外（PC など）→ 開発用フォーム
