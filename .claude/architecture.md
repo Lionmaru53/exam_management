@@ -23,10 +23,18 @@ LINE アプリ
 
 | 環境 | LIFF アプリ | GitHub Pages | GAS / スプレッドシート | docs/config.js |
 |------|------------|--------------|----------------------|----------------|
-| **テスト** | 自前の LIFF アプリ（開発者自身が作成・管理） | 開発用 GitHub Pages | 開発用 GAS（`.clasp.dev.json` で push）＋ 開発用親 SS / 子 SS | `LIFF_ID` と `GAS_URL` を開発用値でローカルに配置（git 管理外） |
-| **本番** | 会社管理の LIFF アプリ | 会社管理の GitHub Pages（Cloudflare で `wasedazemi-highschool.com` に紐づけ） | 本番 GAS（`.clasp.json` で push）＋ 本番親 SS / 子 SS | 会社側で `LIFF_ID` と `GAS_URL` を本番用にコード埋め込み済み |
+| **テスト** | 自前の LIFF アプリ（開発者自身が作成・管理） | 開発用 GitHub Pages | 開発用 GAS（`.clasp.dev.json` で push）＋ 開発用親 SS / 子 SS | GitHub Secrets から自動生成（下記参照） |
+| **本番** | 会社管理の LIFF アプリ | 会社管理の GitHub Pages（Cloudflare で `wasedazemi-highschool.com` に紐づけ） | 本番 GAS（`.clasp.json` で push）＋ 本番親 SS / 子 SS | GitHub Secrets から自動生成（下記参照） |
 
-- `docs/config.js` は `.gitignore` 対象（git 管理外）。各環境で個別に配置する
+### docs/config.js の管理方法
+
+- **git 管理外**（`.gitignore` 対象）。リポジトリには含まない
+- `LIFF_ID` / `GAS_URL` の実値は **GitHub Secrets** で管理
+- デプロイ時に GitHub Actions のスクリプトが Secrets を読み取り `docs/config.js` を自動生成
+- ローカル開発時は `docs/config.example.js` を参考に手動で `docs/config.js` を作成する
+
+### その他
+
 - テスト時は LINE アプリ外からアクセスして「開発用テストモード」フォームで userId を直接入力できる
 - 本番は Cloudflare を経由するため GAS URL が外部に露出しない設計
 
