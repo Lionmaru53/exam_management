@@ -1,6 +1,6 @@
 /**
  * term_tests_master に試験区分を追加または更新（upsert）
- * payload: { term_test_id?, test_name, is_two_terms }
+ * payload: { term_test_id?, test_name }
  */
 function upsertTermTest(payload) {
   const lock = LockService.getScriptLock();
@@ -15,15 +15,11 @@ function upsertTermTest(payload) {
     const headers = data[0];
     const idCol   = headers.indexOf('term_test_id') + 1;
 
-    const isTwoTerms = payload.is_two_terms === true || String(payload.is_two_terms) === '1' ? '1' : '0';
-
     if (payload.term_test_id) {
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][idCol - 1]) === String(payload.term_test_id)) {
           const nameCol = headers.indexOf('test_name') + 1;
-          const flagCol = headers.indexOf('is_two_terms') + 1;
           if (nameCol > 0) sheet.getRange(i + 1, nameCol).setValue(payload.test_name);
-          if (flagCol > 0) sheet.getRange(i + 1, flagCol).setValue(isTwoTerms);
           writeAuditLog(ctx, 'update_term_test', payload, 'success');
           return { success: true };
         }
@@ -31,7 +27,7 @@ function upsertTermTest(payload) {
     }
 
     const newId = 'T' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    sheet.appendRow([newId, payload.test_name, isTwoTerms]);
+    sheet.appendRow([newId, payload.test_name]);
     writeAuditLog(ctx, 'add_term_test', payload, 'success');
     return { success: true, term_test_id: newId };
   } catch (e) {
@@ -164,6 +160,156 @@ function upsertSubjectAlias(schoolName, subjectId, displayName, prevUpdatedAt) {
     return { success: true };
   } catch (e) {
     console.error('upsertSubjectAlias error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---- 学校別試験区分設定 ----
+
+function _ensureSchoolTermTestSettingsSheet(ss) {
+  let sheet = ss.getSheetByName('school_term_test_settings');
+  if (!sheet) {
+    sheet = ss.insertSheet('school_term_test_settings');
+    sheet.getRange(1, 1, 1, 5).setValues([['school_name', 'term_test_id', 'is_active', 'display_name', 'updated_at']]);
+  }
+  return sheet;
+}
+
+function _getAllTermTestSettings(sheet) {
+  return getRowsData(sheet).map(function (r) {
+    return {
+      school_name:  String(r.school_name  || '').trim(),
+      term_test_id: String(r.term_test_id || '').trim(),
+      is_active:    String(r.is_active    || '').trim(),
+      display_name: String(r.display_name || '').trim(),
+      updated_at:   r.updated_at ? String(r.updated_at) : '',
+    };
+  });
+}
+
+/**
+ * school_term_test_settings を upsert する。
+ * payload: { school_name, term_test_id, is_active, display_name, prev_updated_at? }
+ * 楽観的ロック: prev_updated_at が不一致なら conflict を返す。
+ */
+function upsertSchoolTermTestSetting(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = _ensureSchoolTermTestSettingsSheet(ss);
+    const data  = sheet.getDataRange().getValues();
+    const hdrs  = data[0].map(function (h) { return String(h).trim(); });
+    const snCol = hdrs.indexOf('school_name');
+    const ttCol = hdrs.indexOf('term_test_id');
+    const iaCol = hdrs.indexOf('is_active');
+    const dnCol = hdrs.indexOf('display_name');
+    const utCol = hdrs.indexOf('updated_at');
+
+    const sn = String(payload.school_name  || '').trim();
+    const tt = String(payload.term_test_id || '').trim();
+    const ia = (payload.is_active === true || String(payload.is_active) === '1') ? '1' : '0';
+    const dn = String(payload.display_name || '').trim();
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][snCol]).trim() === sn &&
+          String(data[i][ttCol]).trim() === tt) {
+        if (payload.prev_updated_at) {
+          var cur = data[i][utCol];
+          if (String(cur) !== String(payload.prev_updated_at)) {
+            return { success: false, conflict: true, current: _getAllTermTestSettings(sheet) };
+          }
+        }
+        if (iaCol >= 0) sheet.getRange(i + 1, iaCol + 1).setValue(ia);
+        if (dnCol >= 0) sheet.getRange(i + 1, dnCol + 1).setValue(dn);
+        if (utCol >= 0) sheet.getRange(i + 1, utCol + 1).setValue(new Date());
+        writeAuditLog(ctx, 'upsert_school_term_test_setting', { schoolName: sn, termTestId: tt, isActive: ia, displayName: dn }, 'success');
+        return { success: true };
+      }
+    }
+
+    var newRow = hdrs.map(function (_, idx) {
+      if (idx === snCol) return sn;
+      if (idx === ttCol) return tt;
+      if (idx === iaCol) return ia;
+      if (idx === dnCol) return dn;
+      if (idx === utCol) return new Date();
+      return '';
+    });
+    sheet.appendRow(newRow);
+    writeAuditLog(ctx, 'upsert_school_term_test_setting', { schoolName: sn, termTestId: tt, isActive: ia, displayName: dn }, 'success');
+    return { success: true };
+  } catch (e) {
+    console.error('upsertSchoolTermTestSetting error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * school_term_test_settings を 1 学校分まとめて upsert する。
+ * payloads: [{ term_test_id, is_active, display_name }]
+ */
+function batchUpsertSchoolTermTestSettings(schoolName, payloads) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = _ensureSchoolTermTestSettingsSheet(ss);
+    const sn    = String(schoolName || '').trim();
+
+    const data  = sheet.getDataRange().getValues();
+    const hdrs  = data[0].map(function (h) { return String(h).trim(); });
+    const snCol = hdrs.indexOf('school_name');
+    const ttCol = hdrs.indexOf('term_test_id');
+    const iaCol = hdrs.indexOf('is_active');
+    const dnCol = hdrs.indexOf('display_name');
+    const utCol = hdrs.indexOf('updated_at');
+    const now   = new Date();
+
+    payloads.forEach(function (p) {
+      const tt = String(p.term_test_id || '').trim();
+      const ia = (p.is_active === true || String(p.is_active) === '1') ? '1' : '0';
+      const dn = String(p.display_name || '').trim();
+
+      var found = false;
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][snCol]).trim() === sn &&
+            String(data[i][ttCol]).trim() === tt) {
+          if (iaCol >= 0) sheet.getRange(i + 1, iaCol + 1).setValue(ia);
+          if (dnCol >= 0) sheet.getRange(i + 1, dnCol + 1).setValue(dn);
+          if (utCol >= 0) sheet.getRange(i + 1, utCol + 1).setValue(now);
+          data[i][iaCol] = ia;
+          data[i][dnCol] = dn;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        var newRow = hdrs.map(function (_, idx) {
+          if (idx === snCol) return sn;
+          if (idx === ttCol) return tt;
+          if (idx === iaCol) return ia;
+          if (idx === dnCol) return dn;
+          if (idx === utCol) return now;
+          return '';
+        });
+        sheet.appendRow(newRow);
+        data.push(newRow);
+      }
+    });
+
+    writeAuditLog(ctx, 'batch_upsert_school_term_test_settings', { schoolName: sn, count: payloads.length }, 'success');
+    return { success: true };
+  } catch (e) {
+    console.error('batchUpsertSchoolTermTestSettings error:', e);
     return { success: false, error: e.message };
   } finally {
     lock.releaseLock();

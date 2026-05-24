@@ -67,7 +67,7 @@ function importStudentData(cramId, sheetRows) {
 
     // インポートで出現した school_name を school_course_master に自動登録（upsert）
     const newSchools = [...new Set(students.map(s => s.school_name).filter(Boolean))];
-    newSchools.forEach(name => upsertSchoolCourse(childSS, name, '', 0));
+    newSchools.forEach(name => upsertSchoolCourse(childSS, name, ''));
 
     writeAuditLog(ctx, 'import_students', { cram_id: cramId, count: students.length }, 'success');
     return { success: true, added: result.added, updated: result.updated, skipped };

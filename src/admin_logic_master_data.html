@@ -3,6 +3,7 @@ let _mdStore   = [];
 let _mdTab     = 'termTests';
 let _mdEditId  = null;
 let _mdAddMode = false;
+var _sttSchoolName = '';
 
 function _mdPush(obj) {
   _mdStore.push(obj);
@@ -15,14 +16,16 @@ function renderMasterDataManager(data) {
 
   const tabs = [
     { key: 'termTests', label: '試験区分' },
-    { key: 'genres',    label: '教科ジャンル' }
+    { key: 'genres',    label: '教科ジャンル' },
+    { key: 'stt',       label: '学校別試験区分設定' }
   ];
 
   let html = `<h3>共通マスターデータ管理</h3>
 <p class="tab-desc">
   全校舎共通のマスターデータを管理します。<br>
-  <span class="step">▶ <strong>試験区分</strong> ： 1学期中間・前期末などの試験名称と2学期制フラグを定義します。教科パターンの絞り込みに使用されます。</span><br>
-  <span class="step">▶ <strong>教科ジャンル</strong> ： 教科のグループ分け名称を定義します。</span>
+  <span class="step">▶ <strong>試験区分</strong> ： 1学期中間・前期末などの試験名称を定義します。</span><br>
+  <span class="step">▶ <strong>教科ジャンル</strong> ： 教科のグループ分け名称を定義します。</span><br>
+  <span class="step">▶ <strong>学校別試験区分設定</strong> ： 学校ごとに実施する試験区分と表示名を設定します。</span>
 </p>`;
   html += `<div style="display:flex; gap:8px; margin-bottom:16px;">`;
   tabs.forEach(t => {
@@ -33,6 +36,8 @@ function renderMasterDataManager(data) {
 
   if (_mdTab === 'termTests') {
     html += _renderTermTests(data);
+  } else if (_mdTab === 'stt') {
+    html += _renderSchoolTermTestSettings(data);
   } else {
     html += _renderGenres(data);
   }
@@ -59,9 +64,6 @@ function _renderTermTests(data) {
       <h4 class="admin-genre-title">試験区分を追加</h4>
       <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <input type="text" id="md_tt_name" placeholder="試験名（例: 1学期中間）" class="admin-input" style="width:200px;" />
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="md_tt_two_terms" /> 2学期制
-        </label>
         <button class="btn-save-admin" onclick="_mdAddTermTest()">追加</button>
         <button class="btn-cancel-admin" onclick="_mdCancelAdd()">キャンセル</button>
       </div>
@@ -71,30 +73,24 @@ function _renderTermTests(data) {
   }
 
   html += `<table class="admin-table">
-    <thead><tr><th>ID</th><th>試験名</th><th>学期制</th><th style="width:120px;">操作</th></tr></thead>
+    <thead><tr><th>ID</th><th>試験名</th><th style="width:120px;">操作</th></tr></thead>
     <tbody>`;
 
   termTests.forEach(tt => {
-    const isTwoTerms = String(tt.is_two_terms).trim() === '1';
-    const termLabel  = isTwoTerms ? '2学期制' : '3学期制';
-
     if (_mdEditId === tt.term_test_id) {
       const idx = _mdPush({ term_test_id: tt.term_test_id });
       html += `<tr style="background:#fffde7;">
         <td style="font-size:0.8em; color:#888;">${tt.term_test_id}</td>
         <td><input type="text" id="md_tt_edit_name_${idx}" value="${tt.test_name}" class="admin-input" style="width:160px;" /></td>
-        <td><label><input type="checkbox" id="md_tt_edit_two_${idx}" ${isTwoTerms ? 'checked' : ''} /> 2学期制</label></td>
         <td>
           <button class="btn-save-admin" onclick="_mdSaveTermTest(${idx})">保存</button>
           <button class="btn-cancel-admin" onclick="_mdCancelEdit()">取消</button>
         </td>
       </tr>`;
     } else {
-      const idx = _mdPush({ term_test_id: tt.term_test_id });
       html += `<tr>
         <td style="font-size:0.8em; color:#888;">${tt.term_test_id}</td>
         <td>${tt.test_name}</td>
-        <td>${termLabel}</td>
         <td><button onclick="_mdStartEdit('${tt.term_test_id}')">編集</button></td>
       </tr>`;
     }
@@ -110,8 +106,7 @@ function _mdStartEdit(id){ _mdEditId = id; _mdAddMode = false; renderMasterDataM
 function _mdCancelEdit() { _mdEditId = null; renderMasterDataManager(window.masterData); }
 
 function _mdAddTermTest() {
-  const name       = document.getElementById('md_tt_name')?.value.trim();
-  const isTwoTerms = document.getElementById('md_tt_two_terms')?.checked ? '1' : '0';
+  const name = document.getElementById('md_tt_name')?.value.trim();
   if (!name) { showMessage('試験名を入力してください。', 'error'); return; }
 
   setLoading(true, '試験区分を追加中...');
@@ -127,13 +122,12 @@ function _mdAddTermTest() {
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .upsertTermTest({ test_name: name, is_two_terms: isTwoTerms });
+    .upsertTermTest({ test_name: name });
 }
 
 function _mdSaveTermTest(idx) {
   const { term_test_id } = _mdStore[idx];
-  const name       = document.getElementById(`md_tt_edit_name_${idx}`)?.value.trim();
-  const isTwoTerms = document.getElementById(`md_tt_edit_two_${idx}`)?.checked ? '1' : '0';
+  const name = document.getElementById(`md_tt_edit_name_${idx}`)?.value.trim();
   if (!name) { showMessage('試験名を入力してください。', 'error'); return; }
 
   setLoading(true, '試験区分を更新中...');
@@ -149,7 +143,7 @@ function _mdSaveTermTest(idx) {
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .upsertTermTest({ term_test_id, test_name: name, is_two_terms: isTwoTerms });
+    .upsertTermTest({ term_test_id, test_name: name });
 }
 
 // ---- 教科ジャンル ----
@@ -238,6 +232,116 @@ function _mdSaveGenre(idx) {
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .upsertGenre({ genre_id, genre_name: name });
+}
+
+// ---- 学校別試験区分設定 ----
+
+function _renderSchoolTermTestSettings(data) {
+  const termTests   = Array.isArray(data.termTests) ? data.termTests : [];
+  const allSettings = Array.isArray(data.schoolTermTestSettings) ? data.schoolTermTestSettings : [];
+
+  let html = `
+    <div style="margin-bottom:16px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <label>学校名:</label>
+      <input type="text" id="stt_school_name" value="${_sttSchoolName}"
+             placeholder="例: 早稲田高校" class="admin-input" style="width:220px;" />
+      <button onclick="_sttLoad()">読み込む</button>
+    </div>`;
+
+  if (!_sttSchoolName) {
+    html += '<p style="color:#888; font-size:0.9em;">学校名を入力して「読み込む」を押してください。</p>';
+    return html;
+  }
+
+  if (termTests.length === 0) {
+    html += '<p style="color:#aaa;">試験区分が登録されていません。</p>';
+    return html;
+  }
+
+  const schoolSettings = allSettings.filter(function (s) {
+    return String(s.school_name || '').trim() === _sttSchoolName;
+  });
+  const settingMap = {};
+  schoolSettings.forEach(function (s) {
+    settingMap[String(s.term_test_id).trim()] = {
+      is_active:    String(s.is_active || '').trim() === '1',
+      display_name: String(s.display_name || '').trim()
+    };
+  });
+
+  html += `
+    <p style="font-size:0.85em; color:#555; margin-bottom:8px;">
+      <strong>${_sttSchoolName}</strong> の試験区分設定（チェック＝実施、表示名空欄＝デフォルト名を使用）
+    </p>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>試験名</th>
+          <th style="width:70px; text-align:center;">実施する</th>
+          <th style="width:180px;">表示名（上書き）</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  termTests.forEach(function (tt) {
+    const tid     = String(tt.term_test_id).trim();
+    const setting = settingMap[tid] || { is_active: false, display_name: '' };
+    const checked = setting.is_active ? 'checked' : '';
+    html += `<tr>
+      <td style="font-size:0.8em; color:#888;">${tid}</td>
+      <td>${tt.test_name}</td>
+      <td style="text-align:center;">
+        <input type="checkbox" id="stt_active_${tid}" ${checked} />
+      </td>
+      <td>
+        <input type="text" id="stt_dn_${tid}" value="${setting.display_name}"
+               placeholder="（デフォルト）" class="admin-input" style="width:160px;" />
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>
+    <div style="margin-top:12px;">
+      <button class="btn-save-admin" onclick="_sttSaveAll()">一括保存する</button>
+    </div>`;
+
+  return html;
+}
+
+function _sttLoad() {
+  const name = (document.getElementById('stt_school_name') || {}).value || '';
+  _sttSchoolName = name.trim();
+  renderMasterDataManager(window.masterData);
+}
+
+function _sttSaveAll() {
+  if (!_sttSchoolName) { showMessage('学校名を入力してください。', 'error'); return; }
+  const termTests = Array.isArray(window.masterData && window.masterData.termTests)
+    ? window.masterData.termTests : [];
+
+  const payloads = termTests.map(function (tt) {
+    const tid      = String(tt.term_test_id).trim();
+    const isActive = !!(document.getElementById('stt_active_' + tid) || {}).checked;
+    const dn       = ((document.getElementById('stt_dn_' + tid) || {}).value || '').trim();
+    return { term_test_id: tid, is_active: isActive ? '1' : '0', display_name: dn };
+  });
+
+  setLoading(true, '試験区分設定を保存中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('試験区分設定を保存しました。', 'success');
+        refreshMasterData(() => renderMasterDataManager(window.masterData));
+      } else {
+        showMessage((res && res.error) || '保存に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
+    })
+    .batchUpsertSchoolTermTestSettings(_sttSchoolName, payloads);
 }
 
 window.renderMasterDataManager = renderMasterDataManager;

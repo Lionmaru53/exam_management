@@ -80,29 +80,28 @@ function getInitialData(lineUserId) {
       sub_course: studentRaw.sub_course || ''
     };
 
-    // 4. 学期制（子 SS の school_course_master）
-    let is_two_terms = false;
-    const settingSheet = ss.getSheetByName('school_course_master');
-    if (settingSheet) {
-      const settingRows = settingSheet.getDataRange().getValues();
-      const hdrs        = settingRows[0].map(h => String(h).trim());
-      const snCol       = hdrs.indexOf('school_name');
-      const ttCol       = hdrs.indexOf('is_two_terms');
-      if (snCol >= 0) {
-        for (let i = 1; i < settingRows.length; i++) {
-          if (String(settingRows[i][snCol]).trim() === String(student.school_name).trim()) {
-            is_two_terms = ttCol >= 0 && String(settingRows[i][ttCol]).trim() === '1';
-            break;
-          }
-        }
+    // 4-5. term_tests_master（親 SS）+ 学校別試験区分設定
+    const termTests = getRowsData(parentSS.getSheetByName('term_tests_master'));
+    const sttSheet  = parentSS.getSheetByName('school_term_test_settings');
+    let relevantTermTests = termTests;
+    if (sttSheet) {
+      const sttRows = getRowsData(sttSheet).filter(r =>
+        String(r.school_name || '').trim() === String(student.school_name).trim()
+      );
+      if (sttRows.length > 0) {
+        const activeMap = {};
+        sttRows.forEach(r => {
+          if (String(r.is_active || '').trim() === '1')
+            activeMap[String(r.term_test_id).trim()] = String(r.display_name || '').trim();
+        });
+        relevantTermTests = termTests
+          .filter(t => activeMap.hasOwnProperty(String(t.term_test_id).trim()))
+          .map(t => ({
+            ...t,
+            test_name: activeMap[String(t.term_test_id).trim()] || t.test_name
+          }));
       }
     }
-
-    // 5. term_tests_master（親 SS）
-    const termTests = getRowsData(parentSS.getSheetByName('term_tests_master'));
-    const relevantTermTests = termTests.filter(t =>
-      (String(t.is_two_terms).trim() === '1') === is_two_terms
-    );
 
     // 6. 生徒のパターンに対応する試験一覧（子 SS）
     const examPatterns  = getRowsData(ss.getSheetByName('exam_patterns'));

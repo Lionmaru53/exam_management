@@ -143,37 +143,28 @@ function renderExamManager(data) {
   const examsThisYear = exams.filter(e => String(e.year || '') === year);
 
   // 学校グループを構築
-  // schoolSettings が is_two_terms の正とし、exam_patterns で補完
   const schoolGroupMap = {};
   schoolSettings.forEach(s => {
     const key = `${s.school_name}||${s.school_course}`;
     if (!schoolGroupMap[key]) {
       schoolGroupMap[key] = {
-        school_name:  s.school_name,
+        school_name:   s.school_name,
         school_course: s.school_course,
-        is_two_terms: String(s.is_two_terms) === '1',
-        patterns: []
+        patterns:      []
       };
     }
   });
   patterns.forEach(p => {
     const key = `${p.school_name}||${p.school_course}`;
     if (!schoolGroupMap[key]) {
-      const tt = termTests.find(t => t.term_test_id === p.term_test_id);
       schoolGroupMap[key] = {
-        school_name:  p.school_name,
+        school_name:   p.school_name,
         school_course: p.school_course,
-        is_two_terms: tt ? String(tt.is_two_terms).trim() === '1' : false,
-        patterns: []
+        patterns:      []
       };
     }
     schoolGroupMap[key].patterns.push(p);
   });
-
-  const termTestsByType = {
-    '0': termTests.filter(t => String(t.is_two_terms).trim() !== '1'),
-    '1': termTests.filter(t => String(t.is_two_terms).trim() === '1')
-  };
 
   const schoolGroups = Object.values(schoolGroupMap).sort((a, b) =>
     (a.school_name + a.school_course).localeCompare(b.school_name + b.school_course, 'ja')
@@ -197,15 +188,9 @@ function renderExamManager(data) {
       <span class="step">▶ 教科パターンが未設定の場合は先に <strong>学校別教科名・教科パターン管理</strong> で設定してください。</span>
     </p>`;
 
-  ['0', '1'].forEach(typeKey => {
-    const label           = typeKey === '1' ? '2学期制' : '3学期制';
-    const relevantTests   = termTestsByType[typeKey];
-    const relevantSchools = schoolGroups.filter(sg => (typeKey === '1') === sg.is_two_terms);
-    if (relevantSchools.length === 0) return;
-
-    html += `<h4 class="admin-genre-title" style="margin-top:24px;">${label}</h4>`;
-
-    relevantSchools.forEach(({ school_name, school_course, patterns: schoolPatterns }) => {
+  schoolGroups.forEach(({ school_name, school_course, patterns: schoolPatterns }) => {
+    {
+      const relevantTests = termTests;
       html += `<div class="admin-genre-container">`;
       html += `<h4 class="admin-genre-title">${school_name} / ${school_course}</h4>`;
 
@@ -419,7 +404,7 @@ function renderExamManager(data) {
       });
 
       html += `</div>`;
-    });
+    }
   });
 
   content.innerHTML = html;

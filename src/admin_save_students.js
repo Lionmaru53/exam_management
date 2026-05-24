@@ -67,7 +67,7 @@ function addCourseToMaster(cramId, schoolName, newValue) {
     if (!val) return { success: false, error: '値を入力してください' };
 
     const ss = _getTargetSS(cramId);
-    upsertSchoolCourse(ss, schoolName, val, 0);
+    upsertSchoolCourse(ss, schoolName, val);
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

@@ -184,7 +184,7 @@ function setupBranchSS(cramId) {
  */
 function _createChildSheets(ss) {
   const defs = [
-    { name: 'school_course_master', headers: ['school_name', 'school_course', 'is_two_terms'] },
+    { name: 'school_course_master', headers: ['school_name', 'school_course'] },
     { name: 'exam_patterns',     headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id'] },
     { name: 'exam_schedule',     headers: ['exam_id', 'pattern_id', 'year', 'start_date', 'end_date'] },
     { name: 'pattern_subjects',  headers: ['pattern_id', 'subject_id'] },

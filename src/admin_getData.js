@@ -41,6 +41,10 @@ function getAdminInitialData(targetCramId) {
     const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
     results.schoolSubjectAliases = aliasSheet ? stringifyDates(getRowsData(aliasSheet)) : [];
 
+    // 学校別試験区分設定
+    const sttSheet = parentSS.getSheetByName('school_term_test_settings');
+    results.schoolTermTestSettings = sttSheet ? stringifyDates(getRowsData(sttSheet)) : [];
+
     // 校舎一覧を返す（master は全件、branch_admin は担当校舎のみ）
     if (adminContext.role === 'master' || adminContext.role === 'branch_admin') {
       const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
@@ -128,8 +132,8 @@ function getStudentList(targetCramId) {
 
 /**
  * school_course_master シートを読む。
- * 列: school_name / school_course / is_two_terms
- * 戻り値: [{ school_name, school_course, is_two_terms }]
+ * 列: school_name / school_course
+ * 戻り値: [{ school_name, school_course }]
  */
 function getSchoolCoursesFromSettingsSheet(sheet) {
   if (!sheet) return [];
@@ -139,15 +143,13 @@ function getSchoolCoursesFromSettingsSheet(sheet) {
   const headers   = values[0].map(h => String(h).trim());
   const schoolCol = headers.indexOf('school_name');
   const courseCol = headers.indexOf('school_course');
-  const termsCol  = headers.indexOf('is_two_terms');
   if (schoolCol < 0) return [];
 
   return values.slice(1).reduce((acc, row) => {
     const schoolName = String(row[schoolCol] || '').trim();
     if (!schoolName) return acc;
-    const isTwoTerms = termsCol >= 0 ? (String(row[termsCol] || '0').trim() === '1' ? 1 : 0) : 0;
-    const course     = courseCol >= 0 ? String(row[courseCol] || '').trim() : '';
-    acc.push({ school_name: schoolName, school_course: course, is_two_terms: isTwoTerms });
+    const course = courseCol >= 0 ? String(row[courseCol] || '').trim() : '';
+    acc.push({ school_name: schoolName, school_course: course });
     return acc;
   }, []);
 }
@@ -157,7 +159,7 @@ function _ensureSchoolCourseMasterSheet(ss) {
   let sheet = ss.getSheetByName('school_course_master');
   if (!sheet) {
     sheet = ss.insertSheet('school_course_master');
-    sheet.getRange(1, 1, 1, 3).setValues([['school_name', 'school_course', 'is_two_terms']]);
+    sheet.getRange(1, 1, 1, 2).setValues([['school_name', 'school_course']]);
   }
   return sheet;
 }
@@ -165,12 +167,9 @@ function _ensureSchoolCourseMasterSheet(ss) {
 /**
  * school_course_master に (school_name, school_course) の行を upsert する。
  * 同一の組み合わせが既にあればスキップ。
- * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
- * @param {string} schoolName
- * @param {string} courseName
- * @param {number} isTwoTerms 0 or 1
+ * 新規追加の場合、school_term_test_settings に基づき exam_patterns を自動生成する。
  */
-function upsertSchoolCourse(ss, schoolName, courseName, isTwoTerms) {
+function upsertSchoolCourse(ss, schoolName, courseName) {
   const sn = String(schoolName || '').trim();
   const cn = String(courseName || '').trim();
   if (!sn) return;
@@ -180,7 +179,6 @@ function upsertSchoolCourse(ss, schoolName, courseName, isTwoTerms) {
   const headers = data[0].map(h => String(h).trim());
   const sc      = headers.indexOf('school_name');
   const cc      = headers.indexOf('school_course');
-  const tc      = headers.indexOf('is_two_terms');
   if (sc < 0 || cc < 0) return;
 
   for (let i = 1; i < data.length; i++) {
@@ -190,14 +188,53 @@ function upsertSchoolCourse(ss, schoolName, courseName, isTwoTerms) {
   const newRow = headers.map((_, i) => {
     if (i === sc) return sn;
     if (i === cc) return cn;
-    if (i === tc) return isTwoTerms || 0;
     return '';
   });
   sheet.appendRow(newRow);
+
+  // 新規追加時: school_term_test_settings に基づき exam_patterns を自動生成
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const sttSheet = parentSS.getSheetByName('school_term_test_settings');
+  if (sttSheet) {
+    const activeTermTests = getRowsData(sttSheet)
+      .filter(r => String(r.school_name || '').trim() === sn && String(r.is_active || '').trim() === '1')
+      .map(r => String(r.term_test_id).trim())
+      .filter(Boolean);
+    if (activeTermTests.length > 0) {
+      _autoCreateExamPatterns(ss, sn, cn, '', activeTermTests);
+    }
+  }
+}
+
+/**
+ * exam_patterns に school/course/grade × termTest の行を自動生成する（既存行はスキップ）。
+ */
+function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, termTestIds) {
+  const patSheet = childSS.getSheetByName('exam_patterns');
+  if (!patSheet) return;
+  const existing = getRowsData(patSheet);
+  const grades   = ['高1', '高2', '高3'];
+  const base     = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+  let idx = 0;
+  const newRows  = [];
+  termTestIds.forEach(ttId => {
+    grades.forEach(grade => {
+      const dup = existing.find(p =>
+        String(p.school_name   || '').trim() === schoolName   &&
+        String(p.school_course || '').trim() === schoolCourse &&
+        String(p.grade         || '').trim() === grade        &&
+        String(p.sub_course    || '').trim() === subCourse    &&
+        String(p.term_test_id  || '').trim() === ttId
+      );
+      if (!dup) newRows.push(['P' + base + String(++idx).padStart(2, '0'), schoolName, schoolCourse, grade, subCourse, ttId]);
+    });
+  });
+  if (newRows.length > 0)
+    patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
 }
 
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList,
   getSchoolCoursesFromSettingsSheet,
-  _ensureSchoolCourseMasterSheet, upsertSchoolCourse,
+  _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns,
 });
