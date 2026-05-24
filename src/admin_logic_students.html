@@ -5,6 +5,8 @@ let _stSortField      = 'pronunciation';  // 'pronunciation' | 'school_course'
 let _stSortAsc        = true;
 let _stEditSchool     = null;    // 編集モード中の学校名（null = 非編集）
 let _stEditField      = 'school_course'; // 編集中フィールド: 'school_course' | 'sub_course'
+let _stDndStore       = [];      // DnD インデックス → 学校名
+let _stDragSrcIdx     = -1;      // ドラッグ中のインデックス
 
 // 学年の表示順
 const _ST_GRADE_ORDER = ['中1','中2','中3','高1','高2','高3'];
@@ -116,17 +118,39 @@ function _stRerender() {
     schoolMap[school][grade].push(s);
   });
 
+  const cramIdForOrder = window.selectedCramId || '';
+  const sortedSchools  = _stGetSortedSchools(schoolMap, cramIdForOrder);
+  _stDndStore = [];
+
   const thName   = '<th class="st-th-sort" onclick="_stSetSort(\'pronunciation\')">氏名' + _stSortIcon('pronunciation') + '</th>';
   const thCourse = '<th class="st-th-sort" onclick="_stSetSort(\'school_course\')">コース' + _stSortIcon('school_course') + '</th>';
 
-  Object.keys(schoolMap).sort().forEach(function (schoolName) {
+  // ジャンプナビゲーション
+  if (sortedSchools.length >= 2) {
+    html += '<div class="st-jump-nav">';
+    sortedSchools.forEach(function (sn, i) {
+      html += '<a class="st-jump-chip" href="javascript:void(0)"'
+            + ' onclick="document.getElementById(\'st-sg-' + i + '\').scrollIntoView({behavior:\'smooth\',block:\'start\'})">'
+            + _esc(sn) + '</a>';
+    });
+    html += '</div>';
+  }
+
+  sortedSchools.forEach(function (schoolName) {
+    const dndIdx      = _stDndStore.push(schoolName) - 1;
     const gradeMap    = schoolMap[schoolName];
     const schoolTotal = Object.values(gradeMap).reduce(function (s, a) { return s + a.length; }, 0);
     const isEditing   = _stEditSchool === schoolName;
     const escapedSN   = _esc(schoolName).replace(/'/g, "\\'");
 
-    html += '<div class="st-school-group">'
-          + '<div class="st-school-header">'
+    html += '<div class="st-school-group" id="st-sg-' + dndIdx + '" data-dnd-idx="' + dndIdx + '"'
+          + ' ondragover="_stDragOver(event,' + dndIdx + ')"'
+          + ' ondrop="_stDragDrop(event,' + dndIdx + ')">'
+          + '<div class="st-school-header"'
+          + ' draggable="true"'
+          + ' ondragstart="_stDragStart(' + dndIdx + ')"'
+          + ' ondragend="_stDragEnd()">'
+          + '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span>'
           + '<span class="st-school-name">' + _esc(schoolName) + '</span>'
           + '<span class="st-school-count">' + schoolTotal + ' 名</span>'
           + (isEditing
@@ -209,6 +233,62 @@ function _stRerender() {
   });
 
   content.innerHTML = html;
+}
+
+// ---- 学校並び順（localStorage 連携） ----
+
+function _stGetSortedSchools(schoolMap, cramId) {
+  const byCount = Object.keys(schoolMap).slice().sort(function (a, b) {
+    return _stSchoolCount(schoolMap[b]) - _stSchoolCount(schoolMap[a]);
+  });
+  var saved = null;
+  try {
+    var raw = localStorage.getItem('st_school_order_' + cramId);
+    if (raw) saved = JSON.parse(raw);
+  } catch {}
+  if (!saved || !Array.isArray(saved)) return byCount;
+  var existing = saved.filter(function (s) { return schoolMap[s]; });
+  var newOnes  = byCount.filter(function (s) { return existing.indexOf(s) === -1; });
+  return existing.concat(newOnes);
+}
+
+function _stSchoolCount(gradeMap) {
+  return Object.values(gradeMap).reduce(function (s, a) { return s + a.length; }, 0);
+}
+
+function _stSaveSchoolOrder(cramId, schools) {
+  try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch {}
+}
+
+// ---- ドラッグ&ドロップ ----
+
+function _stDragStart(idx) {
+  _stDragSrcIdx = idx;
+}
+
+function _stDragOver(event, idx) {
+  event.preventDefault();
+  document.querySelectorAll('.st-school-group').forEach(function (el) {
+    el.classList.toggle('st-drag-over', parseInt(el.dataset.dndIdx, 10) === idx);
+  });
+}
+
+function _stDragEnd() {
+  document.querySelectorAll('.st-school-group').forEach(function (el) {
+    el.classList.remove('st-drag-over');
+  });
+  _stDragSrcIdx = -1;
+}
+
+function _stDragDrop(event, targetIdx) {
+  event.preventDefault();
+  if (_stDragSrcIdx < 0 || _stDragSrcIdx === targetIdx) { _stDragEnd(); return; }
+  var schools = _stDndStore.slice();
+  var moved   = schools.splice(_stDragSrcIdx, 1)[0];
+  schools.splice(targetIdx, 0, moved);
+  _stSaveSchoolOrder(window.selectedCramId || '', schools);
+  _stDragSrcIdx = -1;
+  _stRerender();
 }
 
 // ---- ソート / フィルター ----
@@ -427,4 +507,46 @@ window.renderStudentManager = renderStudentManager;
 
   .st-row-inactive td { opacity: 0.55; }
   .st-empty { color: #888; padding: 24px 0; }
+
+  /* ジャンプナビ */
+  .st-jump-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+    padding: 10px 12px;
+    background: #f5f7fa;
+    border: 1px solid #dde3ec;
+    border-radius: 6px;
+  }
+  .st-jump-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    background: #fff;
+    border: 1px solid #b0bfda;
+    border-radius: 12px;
+    font-size: 0.83em;
+    color: #3a5a8c;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .st-jump-chip:hover { background: #e8eef6; border-color: #4a7fc1; }
+
+  /* ドラッグハンドル */
+  .st-drag-handle {
+    cursor: grab;
+    color: #bbb;
+    font-size: 1.1em;
+    padding: 0 4px 0 0;
+    user-select: none;
+    line-height: 1;
+  }
+  .st-drag-handle:active { cursor: grabbing; }
+
+  /* ドロップターゲットのハイライト */
+  .st-school-group.st-drag-over {
+    outline: 2px dashed #4a7fc1;
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
 </style>
