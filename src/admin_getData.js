@@ -59,9 +59,9 @@ function getAdminInitialData(targetCramId) {
       const childSS = getChildSS(cramId);
 
       const childSheets = {
-        schedules:      'exam_schedule',
-        patterns:       'exam_patterns',
-        patternSubjects: 'pattern_subjects'
+        schedules:       'exam_schedule',
+        patterns:        'exam_patterns',
+        patternSubjects: 'pattern_subjects',
       };
       for (const [key, name] of Object.entries(childSheets)) {
         const sheet = childSS.getSheetByName(name);
@@ -69,15 +69,20 @@ function getAdminInitialData(targetCramId) {
         results[key] = stringifyDates(getRowsData(sheet));
       }
 
+      // exam_subject_exclusions はオプション（移行前の子 SS には存在しない）
+      const exclSheet = childSS.getSheetByName('exam_subject_exclusions');
+      results.examSubjectExclusions = exclSheet ? stringifyDates(getRowsData(exclSheet)) : [];
+
       // school_course_master
       const settingSheet = _ensureSchoolCourseMasterSheet(childSS);
       results.schoolSettings = getSchoolCoursesFromSettingsSheet(settingSheet);
     } else {
       // 校舎未選択時は空配列
-      results.schedules       = [];
-      results.patterns        = [];
-      results.patternSubjects = [];
-      results.schoolSettings  = [];
+      results.schedules              = [];
+      results.patterns               = [];
+      results.patternSubjects        = [];
+      results.examSubjectExclusions  = [];
+      results.schoolSettings         = [];
     }
 
     results.exams = results.schedules;
@@ -166,7 +171,7 @@ function _ensureSchoolCourseMasterSheet(ss) {
 /**
  * school_course_master に (school_name, school_course) の行を upsert する。
  * 同一の組み合わせが既にあればスキップ。
- * 新規追加の場合、school_term_test_settings に基づき exam_patterns を自動生成する。
+ * 新規追加の場合、exam_patterns を5組み合わせ（高1/''/高2-3/文系・理系）で自動生成する。
  */
 function upsertSchoolCourse(ss, schoolName, courseName) {
   const sn = String(schoolName || '').trim();
@@ -191,65 +196,14 @@ function upsertSchoolCourse(ss, schoolName, courseName) {
   });
   sheet.appendRow(newRow);
 
-  // 新規追加時: exam_patterns を自動生成（高1/''/高2-3/文系・理系 の5組み合わせ）
-  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  let activeTermTests = [];
-  const sttSheet = parentSS.getSheetByName('school_term_test_settings');
-  if (sttSheet) {
-    activeTermTests = getRowsData(sttSheet)
-      .filter(r => String(r.school_name || '').trim() === sn && String(r.is_active || '').trim() === '1')
-      .map(r => String(r.term_test_id).trim())
-      .filter(Boolean);
-  }
-  // STT 未設定の場合は term_tests_master の全件を使用
-  if (activeTermTests.length === 0) {
-    const ttSheet = parentSS.getSheetByName('term_tests_master');
-    if (ttSheet) {
-      activeTermTests = getRowsData(ttSheet)
-        .map(r => String(r.term_test_id || '').trim())
-        .filter(Boolean);
-    }
-  }
-  if (activeTermTests.length > 0) {
-    _autoCreateAllPatterns(ss, sn, cn, activeTermTests);
-  }
+  // 新規追加時: exam_patterns を自動生成（5組み合わせ）
+  _autoCreateAllPatterns(ss, sn, cn);
 }
 
 /**
- * exam_patterns に school/course/grade × termTest の行を自動生成する（既存行はスキップ）。
- * grades を省略した場合は ['高1', '高2', '高3'] を使用。
+ * 高1/''/高2-3/文系・理系 の5組み合わせで exam_patterns を一括生成する（既存行はスキップ）。
  */
-function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, termTestIds, grades) {
-  const patSheet = childSS.getSheetByName('exam_patterns');
-  if (!patSheet) return;
-  const existing  = getRowsData(patSheet);
-  const gradeList = grades || ['高1', '高2', '高3'];
-  const base      = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-  let idx = 0;
-  const newRows  = [];
-  termTestIds.forEach(ttId => {
-    gradeList.forEach(grade => {
-      const dup = existing.find(p =>
-        String(p.school_name   || '').trim() === schoolName   &&
-        String(p.school_course || '').trim() === schoolCourse &&
-        String(p.grade         || '').trim() === grade        &&
-        String(p.sub_course    || '').trim() === subCourse    &&
-        String(p.term_test_id  || '').trim() === ttId
-      );
-      if (!dup) newRows.push(['P' + base + String(++idx).padStart(2, '0'), schoolName, schoolCourse, grade, subCourse, ttId]);
-    });
-  });
-  if (newRows.length > 0) {
-    patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
-    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
-  }
-}
-
-/**
- * 高1/''/高2-3/文系・理系 の5組み合わせ × termTestIds で exam_patterns を一括生成する。
- * 同一実行内で複数回呼んでも ID が衝突しないよう全行を1パスで生成する。
- */
-function _autoCreateAllPatterns(childSS, schoolName, schoolCourse, termTestIds) {
+function _autoCreateAllPatterns(childSS, schoolName, schoolCourse) {
   const patSheet = childSS.getSheetByName('exam_patterns');
   if (!patSheet) return;
   const existing = getRowsData(patSheet);
@@ -264,25 +218,49 @@ function _autoCreateAllPatterns(childSS, schoolName, schoolCourse, termTestIds) 
   let idx = 0;
   const newRows = [];
   combos.forEach(({ grade, sub }) => {
-    termTestIds.forEach(ttId => {
-      const dup = existing.find(p =>
-        String(p.school_name   || '').trim() === schoolName   &&
-        String(p.school_course || '').trim() === schoolCourse &&
-        String(p.grade         || '').trim() === grade        &&
-        String(p.sub_course    || '').trim() === sub          &&
-        String(p.term_test_id  || '').trim() === ttId
-      );
-      if (!dup) newRows.push(['P' + base + String(++idx).padStart(3, '0'), schoolName, schoolCourse, grade, sub, ttId]);
-    });
+    const dup = existing.find(p =>
+      String(p.school_name   || '').trim() === schoolName   &&
+      String(p.school_course || '').trim() === schoolCourse &&
+      String(p.grade         || '').trim() === grade        &&
+      String(p.sub_course    || '').trim() === sub
+    );
+    if (!dup) newRows.push(['P' + base + String(++idx).padStart(3, '0'), schoolName, schoolCourse, grade, sub]);
   });
   if (newRows.length > 0) {
-    patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
+    patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
     _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
   }
 }
 
 /**
- * 新規生成した exam_patterns に subjects_master のデフォルト教科（各ジャンル最大2教科）を設定する。
+ * exam_patterns に school/course/sub_course × grade の行を自動生成する（既存行はスキップ）。
+ * grades を省略した場合は ['高1', '高2', '高3'] を使用。
+ */
+function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, grades) {
+  const patSheet = childSS.getSheetByName('exam_patterns');
+  if (!patSheet) return;
+  const existing  = getRowsData(patSheet);
+  const gradeList = grades || ['高1', '高2', '高3'];
+  const base      = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+  let idx = 0;
+  const newRows   = [];
+  gradeList.forEach(grade => {
+    const dup = existing.find(p =>
+      String(p.school_name   || '').trim() === schoolName   &&
+      String(p.school_course || '').trim() === schoolCourse &&
+      String(p.grade         || '').trim() === grade        &&
+      String(p.sub_course    || '').trim() === subCourse
+    );
+    if (!dup) newRows.push(['P' + base + String(++idx).padStart(2, '0'), schoolName, schoolCourse, grade, subCourse]);
+  });
+  if (newRows.length > 0) {
+    patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
+    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
+  }
+}
+
+/**
+ * 新規生成した exam_patterns に subjects_master.default = true の教科を設定する。
  * patternInfos: [{ pattern_id, grade }]
  */
 function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
@@ -294,19 +272,17 @@ function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
   const subSheet = parentSS.getSheetByName('subjects_master');
   if (!subSheet) return;
 
-  // grade → [subject_id, ...] （各ジャンル先頭2件）
+  // grade → [subject_id, ...] （subjects_master.default が true の教科のみ）
   const gradeSubjectMap = {};
   getRowsData(subSheet).forEach(s => {
-    const gid = String(s.genre_id   || '').trim();
     const sid = String(s.subject_id || '').trim();
     const sgr = String(s.grade      || '').trim();
-    if (!gid || !sid) return;
-    if (!gradeSubjectMap[sgr]) gradeSubjectMap[sgr] = { count: new Map(), ids: [] };
-    const cnt = gradeSubjectMap[sgr].count.get(gid) || 0;
-    if (cnt < 2) {
-      gradeSubjectMap[sgr].count.set(gid, cnt + 1);
-      gradeSubjectMap[sgr].ids.push(sid);
-    }
+    if (!sid) return;
+    const def = s['default'];
+    const isDefault = def === true || String(def).trim().toLowerCase() === 'true' || String(def).trim() === '1';
+    if (!isDefault) return;
+    if (!gradeSubjectMap[sgr]) gradeSubjectMap[sgr] = [];
+    gradeSubjectMap[sgr].push(sid);
   });
 
   // 既存 pattern_subjects で重複チェック
@@ -315,9 +291,8 @@ function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
 
   const newPsRows = [];
   patternInfos.forEach(({ pattern_id, grade }) => {
-    const info = gradeSubjectMap[grade];
-    if (!info) return;
-    info.ids.forEach(sid => {
+    const ids = gradeSubjectMap[grade] || [];
+    ids.forEach(sid => {
       const key = pattern_id + '||' + sid;
       if (!existingSet.has(key)) {
         newPsRows.push([pattern_id, sid]);

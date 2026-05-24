@@ -184,18 +184,187 @@ function setupBranchSS(cramId) {
  */
 function _createChildSheets(ss) {
   const defs = [
-    { name: 'school_course_master', headers: ['school_name', 'school_course'] },
-    { name: 'exam_patterns',     headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id'] },
-    { name: 'exam_schedule',     headers: ['exam_id', 'pattern_id', 'year', 'start_date', 'end_date'] },
-    { name: 'pattern_subjects',  headers: ['pattern_id', 'subject_id'] },
-    { name: 'scores_data',       headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at'] },
-    { name: 'students_master',   headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
-    { name: 'students_branch',   headers: ['student_id', 'grade', 'is_active'] }
+    { name: 'school_course_master',    headers: ['school_name', 'school_course'] },
+    { name: 'exam_patterns',           headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course'] },
+    { name: 'exam_schedule',           headers: ['exam_id', 'pattern_id', 'term_test_id', 'year', 'start_date', 'end_date'] },
+    { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
+    { name: 'exam_subject_exclusions', headers: ['exam_id', 'subject_id', 'updated_at'] },
+    { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken'] },
+    { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'line_user_id', 'is_active'] },
   ];
   defs.forEach(({ name, headers }) => {
     const sheet = ss.insertSheet(name);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   });
+}
+
+/**
+ * 既存子 SS の exam_patterns スキーマを新設計（term_test_id 除去）に移行する。
+ * 実行前に必ずバックアップを確認すること。
+ * @param {string} cramId
+ */
+function migratePatternSchema(cramId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
+
+    const childSS = getChildSS(cramId);
+
+    // Step 1: バックアップシートを作成
+    ['exam_patterns', 'exam_schedule', 'pattern_subjects'].forEach(name => {
+      const src = childSS.getSheetByName(name);
+      if (!src) return;
+      const bkName = name + '_bk';
+      const existing = childSS.getSheetByName(bkName);
+      if (existing) childSS.deleteSheet(existing);
+      src.copyTo(childSS).setName(bkName);
+    });
+
+    const patSheet    = childSS.getSheetByName('exam_patterns');
+    const schedSheet  = childSS.getSheetByName('exam_schedule');
+    const psSheet     = childSS.getSheetByName('pattern_subjects');
+    const scoresSheet = childSS.getSheetByName('scores_data');
+
+    if (!patSheet) return { success: false, error: 'exam_patterns シートが見つかりません' };
+
+    // Step 2: exam_patterns をグループ化し代表 pattern_id を選出
+    const patterns     = getRowsData(patSheet);
+    const groupMap     = {};
+    const obsoleteRows = [];
+
+    patterns.forEach(p => {
+      const sn  = String(p.school_name   || '').trim();
+      const sc  = String(p.school_course || '').trim();
+      const gr  = String(p.grade         || '').trim();
+      const sub = String(p.sub_course    || '').trim();
+      const pid = String(p.pattern_id    || '').trim();
+      const tid = String(p.term_test_id  || '').trim();
+
+      if (!sc) {
+        obsoleteRows.push([pid, sn, sc, gr, sub, tid]);
+        return;
+      }
+      const key = `${sn}||${sc}||${gr}||${sub}`;
+      if (!groupMap[key]) {
+        groupMap[key] = { repId: pid, patternIds: [pid], school: sn, course: sc, grade: gr, sub };
+      } else {
+        groupMap[key].patternIds.push(pid);
+      }
+    });
+
+    // oldPatternId → { repId, termTestId } のマップを構築
+    const idToGroup = {};
+    Object.values(groupMap).forEach(g => {
+      g.patternIds.forEach(pid => {
+        const orig = patterns.find(p => String(p.pattern_id || '').trim() === pid);
+        idToGroup[pid] = { repId: g.repId, termTestId: orig ? String(orig.term_test_id || '').trim() : '' };
+      });
+    });
+
+    // Step 3: exam_schedule に term_test_id を補完してリマップ（5列 → 6列）
+    if (schedSheet) {
+      const schedData    = schedSheet.getDataRange().getValues();
+      const schedHeaders = schedData[0];
+      if (!schedHeaders.includes('term_test_id')) {
+        const pidIdx  = schedHeaders.indexOf('pattern_id');
+        const yearIdx = schedHeaders.indexOf('year');
+        const sdIdx   = schedHeaders.indexOf('start_date');
+        const edIdx   = schedHeaders.indexOf('end_date');
+        const newRows = [['exam_id', 'pattern_id', 'term_test_id', 'year', 'start_date', 'end_date']];
+        for (let i = 1; i < schedData.length; i++) {
+          const row = schedData[i];
+          if (!row[0]) continue;
+          const oldPid   = String(row[pidIdx]  || '').trim();
+          const mapping  = idToGroup[oldPid];
+          newRows.push([
+            row[0],
+            mapping ? mapping.repId      : oldPid,
+            mapping ? mapping.termTestId : '',
+            yearIdx >= 0 ? row[yearIdx] : '',
+            sdIdx   >= 0 ? row[sdIdx]   : '',
+            edIdx   >= 0 ? row[edIdx]   : ''
+          ]);
+        }
+        schedSheet.clearContents();
+        if (newRows.length > 0)
+          schedSheet.getRange(1, 1, newRows.length, 6).setValues(newRows);
+      }
+    }
+
+    // Step 4: pattern_subjects を代表 pattern_id にマージ（重複除去）
+    if (psSheet) {
+      const psData    = psSheet.getDataRange().getValues();
+      const psHeaders = psData[0];
+      const psPidIdx  = psHeaders.indexOf('pattern_id');
+      const psSubIdx  = psHeaders.indexOf('subject_id');
+      const seen      = new Set();
+      const newPsRows = [['pattern_id', 'subject_id']];
+      for (let i = 1; i < psData.length; i++) {
+        const row    = psData[i];
+        const oldPid = String(row[psPidIdx] || '').trim();
+        const sid    = String(row[psSubIdx]  || '').trim();
+        if (!oldPid || !sid) continue;
+        const mapping = idToGroup[oldPid];
+        const newPid  = mapping ? mapping.repId : oldPid;
+        const key     = `${newPid}||${sid}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          newPsRows.push([newPid, sid]);
+        }
+      }
+      psSheet.clearContents();
+      if (newPsRows.length > 0)
+        psSheet.getRange(1, 1, newPsRows.length, 2).setValues(newPsRows);
+    }
+
+    // Step 5: exam_patterns シートを5列で書き直し
+    const newPatRows = [['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course']];
+    Object.values(groupMap).forEach(g => {
+      newPatRows.push([g.repId, g.school, g.course, g.grade, g.sub]);
+    });
+    patSheet.clearContents();
+    if (newPatRows.length > 0)
+      patSheet.getRange(1, 1, newPatRows.length, 5).setValues(newPatRows);
+
+    // 空コースパターンを別シートに退避
+    if (obsoleteRows.length > 0) {
+      let obsSheet = childSS.getSheetByName('exam_patterns_obsolete');
+      if (!obsSheet) {
+        obsSheet = childSS.insertSheet('exam_patterns_obsolete');
+        obsSheet.getRange(1, 1, 1, 6).setValues([['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id']]);
+      }
+      obsSheet.getRange(obsSheet.getLastRow() + 1, 1, obsoleteRows.length, 6).setValues(obsoleteRows);
+    }
+
+    // Step 6: exam_subject_exclusions シートを新規作成
+    if (!childSS.getSheetByName('exam_subject_exclusions')) {
+      const exSheet = childSS.insertSheet('exam_subject_exclusions');
+      exSheet.getRange(1, 1, 1, 3).setValues([['exam_id', 'subject_id', 'updated_at']]);
+    }
+
+    // Step 7: scores_data に not_taken 列を追加（既存行は空文字のまま）
+    if (scoresSheet && scoresSheet.getLastColumn() > 0) {
+      const scHeaders = scoresSheet.getRange(1, 1, 1, scoresSheet.getLastColumn()).getValues()[0];
+      if (!scHeaders.includes('not_taken')) {
+        scoresSheet.getRange(1, scoresSheet.getLastColumn() + 1).setValue('not_taken');
+      }
+    }
+
+    writeAuditLog(ctx, 'migrate_pattern_schema', { cram_id: cramId }, 'success');
+    const groups = Object.values(groupMap);
+    return {
+      success: true,
+      groupCount: groups.length,
+      obsoleteCount: obsoleteRows.length,
+      message: `マイグレーション完了: ${groups.length} グループ, 廃止パターン ${obsoleteRows.length} 件`
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -280,5 +449,5 @@ function _ensureBranchesSheet(ss) {
 if (typeof module !== 'undefined') Object.assign(global, {
   BRANCHES_SHEET,
   getChildSS, getBranches, addBranch, updateBranch, setupBranchSS, shareBranchSS,
-  _ensureBranchesSheet, _getTargetSS,
+  _ensureBranchesSheet, _getTargetSS, _createChildSheets, migratePatternSchema,
 });

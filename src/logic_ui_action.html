@@ -1,29 +1,38 @@
 <script>
 /**
  * 保存ボタンがクリックされたときの処理
- * @param {string} studentId  - 生徒ID
- * @param {string} examId     - 試験ID（未設定の場合は空文字）
- * @param {string} patternId  - パターンID（examId がない場合に使用）
- * @param {string} displayKey - input 要素の ID プレフィックスキー
+ * @param {string} studentId   - 生徒ID
+ * @param {string} examId      - 試験ID（未設定の場合は空文字）
+ * @param {string} patternId   - パターンID
+ * @param {string} termTestId  - 試験区分ID
+ * @param {string} displayKey  - input 要素の ID プレフィックスキー
  */
-function handleSave(studentId, examId, patternId, displayKey, btn) {
+function handleSave(studentId, examId, patternId, termTestId, displayKey, btn) {
   const button = btn || document.getElementById('submitBtn');
   const panel  = button ? button.closest('.tab-panel') : document;
   const scores = [];
-  const scorePrefix = `s_${displayKey}_`;
+  const scorePrefix = 's_' + displayKey + '_';
 
-  // 得点・順位を収集しながらバリデーション
   let validationError = null;
 
-  panel.querySelectorAll(`input[id^="${scorePrefix}"]`).forEach(el => {
+  panel.querySelectorAll('input[id^="' + scorePrefix + '"]').forEach(function(el) {
     if (validationError) return;
 
-    const subId        = el.id.slice(scorePrefix.length);
-    const scoreVal     = el.value.trim();
-    const gradeRankVal = (panel.querySelector(`#gr_${displayKey}_${subId}`)?.value || '').trim();
-    const classRankVal = (panel.querySelector(`#cr_${displayKey}_${subId}`)?.value || '').trim();
+    const subId    = el.id.slice(scorePrefix.length);
+    const ntEl     = panel.querySelector('#nt_' + displayKey + '_' + subId);
+    const notTaken = ntEl ? ntEl.checked : false;
 
-    // 点数：0〜200 の整数（空欄は未入力として許可）
+    if (notTaken) {
+      scores.push({ subject_id: subId, score: '', grade_rank: '', class_rank: '', not_taken: true });
+      return;
+    }
+
+    const scoreVal     = el.value.trim();
+    const grEl         = panel.querySelector('#gr_' + displayKey + '_' + subId);
+    const crEl         = panel.querySelector('#cr_' + displayKey + '_' + subId);
+    const gradeRankVal = (grEl ? grEl.value : '').trim();
+    const classRankVal = (crEl ? crEl.value : '').trim();
+
     if (scoreVal !== '') {
       const n = Number(scoreVal);
       if (!Number.isInteger(n) || n < 0 || n > 200) {
@@ -32,7 +41,6 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
       }
     }
 
-    // 学年順位・クラス順位：1 以上の整数（空欄は未入力として許可）
     if (gradeRankVal !== '') {
       const n = Number(gradeRankVal);
       if (!Number.isInteger(n) || n < 1) {
@@ -52,7 +60,8 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
       subject_id: subId,
       score:      scoreVal,
       grade_rank: gradeRankVal,
-      class_rank: classRankVal
+      class_rank: classRankVal,
+      not_taken:  false
     });
   });
 
@@ -81,10 +90,178 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
       showMessage("通信エラーが発生しました: " + err.message, "error");
     })
     .saveAllScores({
-      student_id: studentId,
-      exam_id:    examId    || null,
-      pattern_id: patternId || null,
-      scores:     scores
+      student_id:   studentId,
+      exam_id:      examId     || null,
+      pattern_id:   patternId  || null,
+      term_test_id: termTestId || null,
+      scores:       scores
+    });
+}
+
+/**
+ * 不具合報告フォームで「確認する」を押したときの処理
+ * データ収集・バリデーションを行い、確認画面を表示する
+ */
+function showBugConfirm(btn) {
+  const s = window._currentStudent || {};
+  const typeEl   = document.querySelector('input[name="bug_type"]:checked');
+  const detailEl = document.getElementById('bug-detail');
+
+  const reportType = typeEl   ? typeEl.value   : 'その他';
+  const rawDetail  = detailEl ? detailEl.value.trim() : '';
+
+  let prefix = '';
+  if (reportType === '表示名が違う') {
+    const wrong   = (document.getElementById('bug-name-wrong')?.value   || '').trim();
+    const correct = (document.getElementById('bug-name-correct')?.value || '').trim();
+    if (wrong || correct)
+      prefix = '「' + (wrong || '?') + '」→「' + (correct || '?') + '」が正しい';
+
+  } else if (reportType === '科目が足りない') {
+    const genre   = (document.getElementById('bug-subject-genre')?.value || '').trim();
+    const subName = (document.getElementById('bug-subject-name')?.value  || '').trim();
+    const parts   = [genre, subName].filter(Boolean);
+    if (parts.length) prefix = parts.join(' ') + ' が足りない';
+
+  } else if (reportType === '保存した点数が消えた') {
+    const exam = (document.getElementById('bug-score-exam')?.value    || '').trim();
+    const sub  = (document.getElementById('bug-score-subject')?.value || '').trim();
+    if (exam || sub) prefix = (exam || '?') + ' / ' + (sub || '?');
+
+  } else if (reportType === 'テスト名・試験区分がおかしい') {
+    const tw = (document.getElementById('bug-testname-wrong')?.value   || '').trim();
+    const tc = (document.getElementById('bug-testname-correct')?.value || '').trim();
+    if (tw || tc)
+      prefix = '「' + (tw || '?') + '」→「' + (tc || '?') + '」が正しい';
+  }
+
+  if (reportType === 'その他' && !rawDetail) {
+    showMessage('「その他」の場合は詳細を入力してください。', 'error');
+    return;
+  }
+
+  let detail = rawDetail;
+  if (prefix) detail = prefix + (detail ? '\n' + detail : '');
+
+  window._bugConfirmData = {
+    reportType: reportType,
+    prefix:     prefix,
+    rawDetail:  rawDetail,
+    payload: {
+      student_id:   s.student_id   || '',
+      student_name: s.name         || '',
+      school_name:  s.school_name  || '',
+      grade:        s.grade        || '',
+      report_type:  reportType,
+      detail:       detail,
+    }
+  };
+
+  var footer = document.getElementById('footer');
+  if (footer) footer.innerHTML = _renderBugReportSection();
+}
+
+/**
+ * 確認画面で「送信する」を押したときの処理
+ */
+function submitBugConfirm(btn) {
+  if (!window._bugConfirmData) return;
+  if (btn) btn.disabled = true;
+  setLoading(true, '送信中...');
+
+  google.script.run
+    .withSuccessHandler(function(responseString) {
+      setLoading(false);
+      if (btn) btn.disabled = false;
+      const res = JSON.parse(responseString);
+      if (res.success) {
+        window._bugConfirmData = null;
+        window._bugReportOpen  = false;
+        var footer = document.getElementById('footer');
+        if (footer) footer.innerHTML = '<div class="bug-report-section"><p class="bug-report-sent">ご報告ありがとうございました。内容を確認いたします。</p></div>';
+      } else {
+        showMessage('送信エラー: ' + (res.error || ''), 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      if (btn) btn.disabled = false;
+      showMessage('通信エラー: ' + ((err && err.message) || ''), 'error');
+    })
+    .submitBugReport(window._bugConfirmData.payload);
+}
+
+/**
+ * 不具合報告フォームの送信処理
+ */
+function handleBugReport(btn) {
+  const s = window._currentStudent || {};
+  const typeEl   = document.querySelector('input[name="bug_type"]:checked');
+  const detailEl = document.getElementById('bug-detail');
+
+  const reportType = typeEl   ? typeEl.value   : 'その他';
+  let   detail     = detailEl ? detailEl.value.trim() : '';
+
+  // 種別ごとの補助入力を detail 先頭に付記
+  let prefix = '';
+  if (reportType === '表示名が違う') {
+    const wrong   = (document.getElementById('bug-name-wrong')?.value   || '').trim();
+    const correct = (document.getElementById('bug-name-correct')?.value || '').trim();
+    if (wrong || correct)
+      prefix = '「' + (wrong || '?') + '」→「' + (correct || '?') + '」が正しい';
+
+  } else if (reportType === '科目が足りない') {
+    const genre   = (document.getElementById('bug-subject-genre')?.value || '').trim();
+    const subName = (document.getElementById('bug-subject-name')?.value  || '').trim();
+    const parts   = [genre, subName].filter(Boolean);
+    if (parts.length) prefix = parts.join(' ') + ' が足りない';
+
+  } else if (reportType === '保存した点数が消えた') {
+    const exam = (document.getElementById('bug-score-exam')?.value    || '').trim();
+    const sub  = (document.getElementById('bug-score-subject')?.value || '').trim();
+    if (exam || sub) prefix = (exam || '?') + ' / ' + (sub || '?');
+
+  } else if (reportType === 'テスト名・試験区分がおかしい') {
+    const tw = (document.getElementById('bug-testname-wrong')?.value   || '').trim();
+    const tc = (document.getElementById('bug-testname-correct')?.value || '').trim();
+    if (tw || tc)
+      prefix = '「' + (tw || '?') + '」→「' + (tc || '?') + '」が正しい';
+  }
+  if (prefix) detail = prefix + (detail ? '\n' + detail : '');
+
+  if (reportType === 'その他' && !detail) {
+    showMessage('「その他」の場合は詳細を入力してください。', 'error');
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  setLoading(true, '送信中...');
+
+  google.script.run
+    .withSuccessHandler(function(responseString) {
+      setLoading(false);
+      if (btn) btn.disabled = false;
+      const res = JSON.parse(responseString);
+      if (res.success) {
+        window._bugReportOpen = false;
+        var footer = document.getElementById('footer');
+        if (footer) footer.innerHTML = '<div class="bug-report-section"><p class="bug-report-sent">ご報告ありがとうございました。内容を確認いたします。</p></div>';
+      } else {
+        showMessage('送信エラー: ' + (res.error || ''), 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      if (btn) btn.disabled = false;
+      showMessage('通信エラー: ' + ((err && err.message) || ''), 'error');
+    })
+    .submitBugReport({
+      student_id:   s.student_id   || '',
+      student_name: s.name         || '',
+      school_name:  s.school_name  || '',
+      grade:        s.grade        || '',
+      report_type:  reportType,
+      detail:       detail,
     });
 }
 

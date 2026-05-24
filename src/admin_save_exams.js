@@ -4,18 +4,19 @@ function generateUniqueId(prefix) {
 
 /**
  * exam_schedule への日程保存（upsert）
- * payload: { exam_id, pattern_id, year, start_date, end_date }
+ * payload: { exam_id, pattern_id, term_test_id, year, start_date, end_date }
  */
 function updateExamData(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ss = _getTargetSS(cramId);
+    const ss    = _getTargetSS(cramId);
     const sheet = ss.getSheetByName('exam_schedule');
-    const data = sheet.getDataRange().getValues();
+    const data  = sheet.getDataRange().getValues();
 
     let rowIndex = -1;
-    let examId = payload.exam_id;
+    let examId   = payload.exam_id;
+    const ttId   = String(payload.term_test_id || '').trim();
 
     if (examId && examId !== '') {
       for (let i = 1; i < data.length; i++) {
@@ -26,27 +27,28 @@ function updateExamData(cramId, payload) {
       }
     }
 
-    if (rowIndex < 0 && payload.pattern_id && payload.year) {
+    // exam_id 未確定の場合: (pattern_id, term_test_id, year) で検索
+    if (rowIndex < 0 && payload.pattern_id && ttId && payload.year) {
       for (let i = 1; i < data.length; i++) {
         if (String(data[i][1]) === String(payload.pattern_id) &&
-            String(data[i][2]) === String(payload.year)) {
+            String(data[i][2]) === ttId &&
+            String(data[i][3]) === String(payload.year)) {
           rowIndex = i + 1;
-          examId = String(data[i][0]);
+          examId   = String(data[i][0]);
           break;
         }
       }
     }
 
-    if (!examId) {
-      examId = generateUniqueId('EX');
-    }
+    if (!examId) examId = generateUniqueId('EX');
 
     const rowValues = [
       examId,
-      payload.pattern_id || '',
-      payload.year || '',
-      payload.start_date || '',
-      payload.end_date || ''
+      payload.pattern_id  || '',
+      ttId,
+      payload.year        || '',
+      payload.start_date  || '',
+      payload.end_date    || ''
     ];
 
     if (rowIndex > 0) {
@@ -65,36 +67,34 @@ function updateExamData(cramId, payload) {
 
 /**
  * exam_patterns への新規パターン追加
- * payload: { school_name, school_course, grade, sub_course, term_test_id }
+ * payload: { school_name, school_course, grade, sub_course }
  */
 function addNewPattern(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ss = _getTargetSS(cramId);
+    const sc = String(payload.school_course || '').trim();
+    if (!sc) return { success: false, error: 'コース名は必須です（空文字は不可）' };
+
+    const ss    = _getTargetSS(cramId);
     const sheet = ss.getSheetByName('exam_patterns');
-    const rows = getRowsData(sheet);
+    const rows  = getRowsData(sheet);
 
     const exists = rows.some(row =>
-      String(row.school_name).trim() === String(payload.school_name).trim() &&
-      String(row.school_course).trim() === String(payload.school_course).trim() &&
-      String(row.term_test_id).trim() === String(payload.term_test_id).trim() &&
-      String(row.grade).trim() === String(payload.grade).trim() &&
-      String(row.sub_course || '').trim() === String(payload.sub_course || '').trim()
+      String(row.school_name   || '').trim() === String(payload.school_name).trim() &&
+      String(row.school_course || '').trim() === sc &&
+      String(row.grade         || '').trim() === String(payload.grade).trim() &&
+      String(row.sub_course    || '').trim() === String(payload.sub_course || '').trim()
     );
-
-    if (exists) {
-      return { success: false, error: '既に登録済みのパターンです' };
-    }
+    if (exists) return { success: false, error: '既に登録済みのパターンです' };
 
     const newPatternId = generateUniqueId('P');
     sheet.appendRow([
       newPatternId,
       payload.school_name,
-      payload.school_course,
+      sc,
       payload.grade,
-      payload.sub_course || '',
-      payload.term_test_id
+      payload.sub_course || ''
     ]);
 
     return { success: true, pattern_id: newPatternId };
@@ -119,9 +119,7 @@ function updatePatternSubjects(patternId, selectedIds, newSubjectName, genreName
 
     if (newSubjectName && newSubjectName.trim() !== '') {
       const addResult = addNewSubject(patternId, newSubjectName.trim(), genreName || '');
-      if (!addResult.success) {
-        return addResult;
-      }
+      if (!addResult.success) return addResult;
       currentSelectedIds.push(addResult.subject_id);
     }
 
@@ -131,7 +129,6 @@ function updatePatternSubjects(patternId, selectedIds, newSubjectName, genreName
         psSheet.deleteRow(i + 1);
       }
     }
-
     currentSelectedIds.forEach(subjectId => {
       psSheet.appendRow([patternId, subjectId]);
     });
@@ -153,9 +150,7 @@ function addNewSubject(patternId, newSubjectName, genreName, grade) {
     lock.waitLock(30000);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const subjectsSheet = ss.getSheetByName('subjects_master');
-    if (!subjectsSheet) {
-      return { success: false, error: 'subjects_master シートが見つかりません' };
-    }
+    if (!subjectsSheet) return { success: false, error: 'subjects_master シートが見つかりません' };
 
     const genresSheet = ss.getSheetByName('genres_master');
     let genreId = '';
@@ -166,7 +161,7 @@ function addNewSubject(patternId, newSubjectName, genreName, grade) {
     }
 
     const newSubjectId = generateUniqueId('S');
-    subjectsSheet.appendRow([newSubjectId, newSubjectName, genreId, grade || '']);
+    subjectsSheet.appendRow([newSubjectId, newSubjectName, genreId, grade || '', '']);
 
     return { success: true, subject_id: newSubjectId };
   } catch (e) {
@@ -179,124 +174,29 @@ function addNewSubject(patternId, newSubjectName, genreName, grade) {
 globalThis.addNewSubject = addNewSubject;
 
 /**
- * 試験パターンのデフォルト初期化
- * - 未登録の試験区分に exam_patterns を追加し、各ジャンルの先頭教科を pattern_subjects に設定
- * - school_term_test_settings の未登録エントリを is_active=1 で追加
- * payload: { school_name, school_course, sub_course, grade }
+ * デフォルト初期化: 5組み合わせ（高1/''/高2-3/文系・理系）のパターンを確保し
+ * デフォルト教科を設定する。
+ * payload: { school_name, school_course }
  */
 function initializeDefaultPatterns(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
-    const ctx        = getAdminContext();
+    const ctx = getAdminContext();
     const ctxCramIds = ctx.cram_ids || [];
     if (ctx.role !== 'master' && !ctxCramIds.includes(String(cramId || '').trim())) {
       return { success: false, error: '権限がありません' };
     }
 
-    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-    const childSS  = getChildSS(cramId);
+    const ss = getChildSS(cramId);
+    const sn = String(payload.school_name   || '').trim();
+    const sc = String(payload.school_course || '').trim();
+    if (!sn || !sc) return { success: false, error: '学校名とコース名を指定してください' };
 
-    const sn  = String(payload.school_name   || '').trim();
-    const sc  = String(payload.school_course || '').trim();
-    const sub = String(payload.sub_course    || '').trim();
-    const gr  = String(payload.grade         || '').trim();
-
-    // term_tests_master
-    const ttSheet = parentSS.getSheetByName('term_tests_master');
-    if (!ttSheet) return { success: false, error: 'term_tests_master が見つかりません' };
-    const allTermTestIds = getRowsData(ttSheet)
-      .map(r => String(r.term_test_id || '').trim()).filter(Boolean);
-
-    // subjects_master: grade 一致 × 各ジャンルの先頭教科 ID
-    const subSheet       = parentSS.getSheetByName('subjects_master');
-    const defaultSubjectIds = [];
-    if (subSheet) {
-      const genreCount = new Map();
-      getRowsData(subSheet).forEach(s => {
-        const gid = String(s.genre_id   || '').trim();
-        const sid = String(s.subject_id || '').trim();
-        const sgr = String(s.grade      || '').trim();
-        if (sgr === gr && gid && sid) {
-          const cnt = genreCount.get(gid) || 0;
-          if (cnt < 2) {
-            genreCount.set(gid, cnt + 1);
-            defaultSubjectIds.push(sid);
-          }
-        }
-      });
-    }
-
-    // 既存 exam_patterns から未登録の term_test_id を特定
-    const patSheet = childSS.getSheetByName('exam_patterns');
-    if (!patSheet) return { success: false, error: 'exam_patterns シートが見つかりません' };
-    const existingPats  = getRowsData(patSheet);
-    const missingTtIds  = allTermTestIds.filter(ttId => !existingPats.some(p =>
-      String(p.school_name   || '').trim() === sn  &&
-      String(p.school_course || '').trim() === sc  &&
-      String(p.sub_course    || '').trim() === sub &&
-      String(p.grade         || '').trim() === gr  &&
-      String(p.term_test_id  || '').trim() === ttId
-    ));
-
-    // exam_patterns 追加
-    const newPatternIds = [];
-    if (missingTtIds.length > 0) {
-      const base   = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-      const newRows = missingTtIds.map((ttId, i) => {
-        const pid = 'P' + base + String(i + 1).padStart(2, '0');
-        newPatternIds.push(pid);
-        return [pid, sn, sc, gr, sub, ttId];
-      });
-      patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 6).setValues(newRows);
-    }
-
-    // pattern_subjects: デフォルト教科を追加
-    if (newPatternIds.length > 0 && defaultSubjectIds.length > 0) {
-      const psSheet = childSS.getSheetByName('pattern_subjects');
-      if (psSheet) {
-        const psRows = [];
-        newPatternIds.forEach(pid => defaultSubjectIds.forEach(sid => psRows.push([pid, sid])));
-        psSheet.getRange(psSheet.getLastRow() + 1, 1, psRows.length, 2).setValues(psRows);
-      }
-    }
-
-    // school_term_test_settings: 未設定のエントリを is_active=1 で追加
-    const sttSheet = _ensureSchoolTermTestSettingsSheet(parentSS);
-    const sttData  = sttSheet.getDataRange().getValues();
-    const sttHdrs  = sttData[0].map(h => String(h).trim());
-    const sttSnCol = sttHdrs.indexOf('school_name');
-    const sttTtCol = sttHdrs.indexOf('term_test_id');
-    const sttIaCol = sttHdrs.indexOf('is_active');
-    const sttDnCol = sttHdrs.indexOf('display_name');
-    const sttUtCol = sttHdrs.indexOf('updated_at');
-
-    const existingSttSet = new Set();
-    for (let i = 1; i < sttData.length; i++) {
-      if (String(sttData[i][sttSnCol] || '').trim() === sn) {
-        existingSttSet.add(String(sttData[i][sttTtCol] || '').trim());
-      }
-    }
-    const newSttRows = allTermTestIds
-      .filter(ttId => !existingSttSet.has(ttId))
-      .map(ttId => {
-        const row = sttHdrs.map(() => '');
-        if (sttSnCol >= 0) row[sttSnCol] = sn;
-        if (sttTtCol >= 0) row[sttTtCol] = ttId;
-        if (sttIaCol >= 0) row[sttIaCol] = '1';
-        if (sttDnCol >= 0) row[sttDnCol] = '';
-        if (sttUtCol >= 0) row[sttUtCol] = new Date();
-        return row;
-      });
-    if (newSttRows.length > 0) {
-      sttSheet.getRange(sttSheet.getLastRow() + 1, 1, newSttRows.length, sttHdrs.length).setValues(newSttRows);
-    }
-
+    _autoCreateAllPatterns(ss, sn, sc);
     writeAuditLog(ctx, 'initialize_default_patterns',
-      { cramId, school_name: sn, school_course: sc, sub_course: sub, grade: gr, addedPatterns: newPatternIds.length },
-      'success');
-    return { success: true, addedPatterns: newPatternIds.length, addedStt: newSttRows.length };
-
+      { cramId, school_name: sn, school_course: sc }, 'success');
+    return { success: true };
   } catch (e) {
     console.error('initializeDefaultPatterns error:', e);
     return { success: false, error: e.message };
@@ -306,169 +206,41 @@ function initializeDefaultPatterns(cramId, payload) {
 }
 
 /**
- * グループ一括教科設定: 同じ学校・コース・学年・サブ区分の全試験区分に同じ教科を設定
- * payload: { school_name, school_course, grade, sub_course, term_test_ids, selected_subject_ids }
+ * グループ教科設定: (school_name, school_course, grade, sub_course) の1パターンに教科を設定
+ * payload: { school_name, school_course, grade, sub_course, selected_subject_ids }
  */
 function batchSetGroupSubjects(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss          = _getTargetSS(cramId);
-    const patSheet    = ss.getSheetByName('exam_patterns');
-    const psSheet     = ss.getSheetByName('pattern_subjects');
-    const patternRows = getRowsData(patSheet);
-    const patternIds  = [];
+    const ss       = _getTargetSS(cramId);
+    const patSheet = ss.getSheetByName('exam_patterns');
+    const psSheet  = ss.getSheetByName('pattern_subjects');
 
-    const sn  = String(payload.school_name  || '').trim();
+    const sn  = String(payload.school_name   || '').trim();
     const sc  = String(payload.school_course || '').trim();
-    const gr  = String(payload.grade        || '').trim();
-    const sub = String(payload.sub_course   || '').trim();
+    const gr  = String(payload.grade         || '').trim();
+    const sub = String(payload.sub_course    || '').trim();
 
-    // 同一秒内の複数作成でも重複しないよう連番サフィックスを付与
-    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    let idCounter = 0;
+    const patternRows = getRowsData(patSheet);
+    const pattern = patternRows.find(p =>
+      String(p.school_name   || '').trim() === sn &&
+      String(p.school_course || '').trim() === sc &&
+      String(p.grade         || '').trim() === gr &&
+      String(p.sub_course    || '').trim() === sub
+    );
+    if (!pattern) return { success: false, error: 'パターンが見つかりません' };
 
-    for (const termTestId of payload.term_test_ids) {
-      const existing = patternRows.find(p =>
-        String(p.school_name  || '').trim() === sn &&
-        String(p.school_course || '').trim() === sc &&
-        String(p.grade        || '').trim() === gr &&
-        String(p.sub_course   || '').trim() === sub &&
-        String(p.term_test_id || '').trim() === String(termTestId).trim()
-      );
-      if (existing) {
-        patternIds.push(String(existing.pattern_id));
-      } else {
-        const newId = 'P' + base + (++idCounter);
-        patSheet.appendRow([newId, sn, sc, gr, sub, termTestId]);
-        patternIds.push(newId);
-      }
-    }
-
-    const psData       = psSheet.getDataRange().getValues();
-    const patternIdSet = new Set(patternIds);
+    const patternId = String(pattern.pattern_id);
+    const psData    = psSheet.getDataRange().getValues();
     for (let i = psData.length - 1; i >= 1; i--) {
-      if (patternIdSet.has(String(psData[i][0]))) {
-        psSheet.deleteRow(i + 1);
-      }
+      if (String(psData[i][0]) === patternId) psSheet.deleteRow(i + 1);
     }
-    const uniquePatternIds = [...new Set(patternIds)];
-    for (const patternId of uniquePatternIds) {
-      for (const subjectId of payload.selected_subject_ids) {
-        psSheet.appendRow([patternId, subjectId]);
-      }
+    for (const subjectId of (payload.selected_subject_ids || [])) {
+      psSheet.appendRow([patternId, subjectId]);
     }
 
     return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * 試験区分ごと一括教科設定
- * items: [{ school_name, school_course, grade, sub_course, term_test_id, selected_subject_ids }]
- */
-function batchSetPerTermSubjects(cramId, items) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-    const ss          = _getTargetSS(cramId);
-    const patSheet    = ss.getSheetByName('exam_patterns');
-    const psSheet     = ss.getSheetByName('pattern_subjects');
-    const patternRows = getRowsData(patSheet);
-    const updates     = [];
-
-    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    let idCounter = 0;
-
-    for (const item of items) {
-      const sn   = String(item.school_name  || '').trim();
-      const sc   = String(item.school_course || '').trim();
-      const gr   = String(item.grade        || '').trim();
-      const sub  = String(item.sub_course   || '').trim();
-      const ttId = String(item.term_test_id || '').trim();
-
-      const existing = patternRows.find(p =>
-        String(p.school_name  || '').trim() === sn &&
-        String(p.school_course || '').trim() === sc &&
-        String(p.grade        || '').trim() === gr &&
-        String(p.sub_course   || '').trim() === sub &&
-        String(p.term_test_id || '').trim() === ttId
-      );
-
-      let patternId;
-      if (existing) {
-        patternId = String(existing.pattern_id);
-      } else {
-        patternId = 'P' + base + (++idCounter);
-        patSheet.appendRow([patternId, sn, sc, gr, sub, ttId]);
-        patternRows.push({ pattern_id: patternId, school_name: sn, school_course: sc, grade: gr, sub_course: sub, term_test_id: ttId });
-      }
-      updates.push({ patternId, selectedSubjectIds: item.selected_subject_ids || [] });
-    }
-
-    const psData      = psSheet.getDataRange().getValues();
-    const affectedIds = new Set(updates.map(u => u.patternId));
-    for (let i = psData.length - 1; i >= 1; i--) {
-      if (affectedIds.has(String(psData[i][0]))) {
-        psSheet.deleteRow(i + 1);
-      }
-    }
-    for (const { patternId, selectedSubjectIds } of updates) {
-      for (const subjectId of selectedSubjectIds) {
-        psSheet.appendRow([patternId, subjectId]);
-      }
-    }
-
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * サブ区分グループ追加: 全試験区分に対してパターンを作成（教科は空）
- * payload: { school_name, school_course, grade, sub_course }
- */
-function addSubCourseGroup(cramId, payload) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-    const ss           = _getTargetSS(cramId);
-    const patSheet     = ss.getSheetByName('exam_patterns');
-    const ttSheet      = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('term_tests_master');
-    const patternRows  = getRowsData(patSheet);
-    const termTestRows = getRowsData(ttSheet);
-
-    const sn  = String(payload.school_name  || '').trim();
-    const sc  = String(payload.school_course || '').trim();
-    const gr  = String(payload.grade        || '').trim();
-    const sub = String(payload.sub_course   || '').trim();
-
-    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    let idCounter = 0;
-    let created = 0;
-    for (const tt of termTestRows) {
-      const ttId = String(tt.term_test_id || '').trim();
-      const exists = patternRows.some(p =>
-        String(p.school_name  || '').trim() === sn &&
-        String(p.school_course || '').trim() === sc &&
-        String(p.grade        || '').trim() === gr &&
-        String(p.sub_course   || '').trim() === sub &&
-        String(p.term_test_id || '').trim() === ttId
-      );
-      if (!exists) {
-        patSheet.appendRow(['P' + base + (++idCounter), sn, sc, gr, sub, ttId]);
-        created++;
-      }
-    }
-
-    return { success: true, created };
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
@@ -478,7 +250,7 @@ function addSubCourseGroup(cramId, payload) {
 
 /**
  * exam_schedule への複数行一括保存（upsert）
- * items: Array<{ exam_id, pattern_id, year, start_date, end_date }>
+ * items: Array<{ exam_id, pattern_id, term_test_id, year, start_date, end_date }>
  */
 function updateExamDataBatch(cramId, items) {
   const lock = LockService.getScriptLock();
@@ -488,14 +260,15 @@ function updateExamDataBatch(cramId, items) {
     const sheet = ss.getSheetByName('exam_schedule');
     const data  = sheet.getDataRange().getValues();
 
-    const byExamId      = {};
-    const byPatternYear = {};
+    const byExamId       = {};
+    const byCompositeKey = {};
     for (let i = 1; i < data.length; i++) {
-      const eid = String(data[i][0]);
-      const pid = String(data[i][1]);
-      const yr  = String(data[i][2]);
-      if (eid) byExamId[eid] = i + 1;
-      if (pid && yr) byPatternYear[`${pid}||${yr}`] = { rowIndex: i + 1, examId: eid };
+      const eid  = String(data[i][0]);
+      const pid  = String(data[i][1]);
+      const ttId = String(data[i][2]);
+      const yr   = String(data[i][3]);
+      if (eid)             byExamId[eid] = i + 1;
+      if (pid && ttId && yr) byCompositeKey[`${pid}||${ttId}||${yr}`] = { rowIndex: i + 1, examId: eid };
     }
 
     const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
@@ -504,14 +277,15 @@ function updateExamDataBatch(cramId, items) {
     items.forEach(payload => {
       let rowIndex = -1;
       let examId   = payload.exam_id;
+      const ttId   = String(payload.term_test_id || '').trim();
 
       if (examId && byExamId[examId]) {
         rowIndex = byExamId[examId];
-      } else if (payload.pattern_id && payload.year) {
-        const pk = `${payload.pattern_id}||${payload.year}`;
-        if (byPatternYear[pk]) {
-          rowIndex = byPatternYear[pk].rowIndex;
-          examId   = byPatternYear[pk].examId;
+      } else if (payload.pattern_id && ttId && payload.year) {
+        const ck = `${payload.pattern_id}||${ttId}||${payload.year}`;
+        if (byCompositeKey[ck]) {
+          rowIndex = byCompositeKey[ck].rowIndex;
+          examId   = byCompositeKey[ck].examId;
         }
       }
 
@@ -519,10 +293,11 @@ function updateExamDataBatch(cramId, items) {
 
       const rowValues = [
         examId,
-        payload.pattern_id  || '',
-        payload.year        || '',
-        payload.start_date  || '',
-        payload.end_date    || ''
+        payload.pattern_id || '',
+        ttId,
+        payload.year       || '',
+        payload.start_date || '',
+        payload.end_date   || ''
       ];
 
       if (rowIndex > 0) {
@@ -532,8 +307,8 @@ function updateExamDataBatch(cramId, items) {
         const newRow = data.length;
         data.push(rowValues);
         byExamId[examId] = newRow + 1;
-        if (payload.pattern_id && payload.year) {
-          byPatternYear[`${payload.pattern_id}||${payload.year}`] = { rowIndex: newRow + 1, examId };
+        if (payload.pattern_id && ttId && payload.year) {
+          byCompositeKey[`${payload.pattern_id}||${ttId}||${payload.year}`] = { rowIndex: newRow + 1, examId };
         }
       }
     });
@@ -547,72 +322,61 @@ function updateExamDataBatch(cramId, items) {
 }
 
 /**
- * 教科パターン未登録の試験区分に対して全学年のパターンを自動作成し、試験日程を保存
- * payload: { school_name, school_course, sub_course, term_test_id, year, start_date, end_date }
+ * 試験日程の upsert（既存パターンを参照して exam_schedule に保存）
+ * payload: { school_name, school_course, sub_course, grade, term_test_id, year, start_date, end_date }
+ * grade を省略した場合は全学年（高1/高2/高3）の対応パターンを処理する。
  */
 function upsertExamWithAutoPattern(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
-    const ss          = _getTargetSS(cramId);
-    const patSheet    = ss.getSheetByName('exam_patterns');
-    const schedSheet  = ss.getSheetByName('exam_schedule');
-    const patternRows = getRowsData(patSheet);
+    const ss         = _getTargetSS(cramId);
+    const patSheet   = ss.getSheetByName('exam_patterns');
+    const schedSheet = ss.getSheetByName('exam_schedule');
 
     const sn   = String(payload.school_name  || '').trim();
     const sc   = String(payload.school_course || '').trim();
     const sub  = String(payload.sub_course   || '').trim();
     const ttId = String(payload.term_test_id || '').trim();
-    const grades = ['高1', '高2', '高3'];
+    const gr   = String(payload.grade        || '').trim();
+    const grades = gr ? [gr] : ['高1', '高2', '高3'];
 
-    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    const patternIds = [];
-
-    for (let i = 0; i < grades.length; i++) {
-      const grade    = grades[i];
-      const existing = patternRows.find(p =>
-        String(p.school_name  || '').trim() === sn &&
-        String(p.school_course || '').trim() === sc &&
-        String(p.grade        || '').trim() === grade &&
-        String(p.sub_course   || '').trim() === sub &&
-        String(p.term_test_id || '').trim() === ttId
-      );
-
-      let patternId;
-      if (existing) {
-        patternId = String(existing.pattern_id);
-      } else {
-        patternId = 'P' + base + (i + 1);
-        patSheet.appendRow([patternId, sn, sc, grade, sub, ttId]);
-        patternRows.push({ pattern_id: patternId, school_name: sn, school_course: sc, grade, sub_course: sub, term_test_id: ttId });
-      }
-      patternIds.push(patternId);
-    }
-
-    const schedData = schedSheet.getDataRange().getValues();
-    const byPatYear = {};
+    const patternRows = getRowsData(patSheet);
+    const schedData   = schedSheet.getDataRange().getValues();
+    const byComposite = {};
     for (let i = 1; i < schedData.length; i++) {
-      const pid = String(schedData[i][1]);
-      const yr  = String(schedData[i][2]);
-      if (pid && yr) byPatYear[`${pid}||${yr}`] = { rowIndex: i + 1, examId: String(schedData[i][0]) };
+      const pid  = String(schedData[i][1]);
+      const stId = String(schedData[i][2]);
+      const yr   = String(schedData[i][3]);
+      if (pid && stId && yr) byComposite[`${pid}||${stId}||${yr}`] = { rowIndex: i + 1, examId: String(schedData[i][0]) };
     }
 
-    for (const patternId of [...new Set(patternIds)]) {
-      const pk = `${patternId}||${payload.year}`;
+    for (const grade of grades) {
+      const pattern = patternRows.find(p =>
+        String(p.school_name   || '').trim() === sn  &&
+        String(p.school_course || '').trim() === sc  &&
+        String(p.grade         || '').trim() === grade &&
+        String(p.sub_course    || '').trim() === sub
+      );
+      if (!pattern) continue;
+
+      const patternId = String(pattern.pattern_id);
+      const ck = `${patternId}||${ttId}||${payload.year}`;
       let rowIndex = -1;
       let examId   = '';
 
-      if (byPatYear[pk]) {
-        rowIndex = byPatYear[pk].rowIndex;
-        examId   = byPatYear[pk].examId;
+      if (byComposite[ck]) {
+        rowIndex = byComposite[ck].rowIndex;
+        examId   = byComposite[ck].examId;
       }
       if (!examId) examId = generateUniqueId('EX');
 
-      const row = [examId, patternId, payload.year, payload.start_date, payload.end_date];
+      const row = [examId, patternId, ttId, payload.year, payload.start_date || '', payload.end_date || ''];
       if (rowIndex > 0) {
         schedSheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
       } else {
         schedSheet.appendRow(row);
+        byComposite[ck] = { rowIndex: schedSheet.getLastRow(), examId };
       }
     }
 
@@ -621,5 +385,66 @@ function upsertExamWithAutoPattern(cramId, payload) {
     return { success: false, error: e.toString() };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * 試験の未実施教科を設定・解除する。
+ * payload: { exam_id, subject_id, excluded }
+ *   excluded = true  → exam_subject_exclusions に追加
+ *   excluded = false → 削除
+ */
+function setExamSubjectExclusion(cramId, payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ss      = _getTargetSS(cramId);
+    const sheet   = ss.getSheetByName('exam_subject_exclusions');
+    if (!sheet) return { success: false, error: 'exam_subject_exclusions シートが見つかりません' };
+
+    const examId    = String(payload.exam_id    || '').trim();
+    const subjectId = String(payload.subject_id || '').trim();
+    if (!examId || !subjectId) return { success: false, error: 'exam_id と subject_id を指定してください' };
+
+    const data = sheet.getDataRange().getValues();
+    let rowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === examId && String(data[i][1]).trim() === subjectId) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+
+    if (payload.excluded) {
+      if (rowIndex < 0) sheet.appendRow([examId, subjectId, new Date()]);
+    } else {
+      if (rowIndex > 0) sheet.deleteRow(rowIndex);
+    }
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 試験の未実施教科一覧を取得する。
+ * @param {string} cramId
+ * @param {string} examId
+ */
+function getExamSubjectExclusions(cramId, examId) {
+  try {
+    const ss    = _getTargetSS(cramId);
+    const sheet = ss.getSheetByName('exam_subject_exclusions');
+    if (!sheet) return { success: true, subjectIds: [] };
+
+    const rows = getRowsData(sheet).filter(r =>
+      String(r.exam_id || '').trim() === String(examId || '').trim()
+    );
+    return { success: true, subjectIds: rows.map(r => String(r.subject_id).trim()) };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
 }

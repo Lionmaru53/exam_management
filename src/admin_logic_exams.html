@@ -1,12 +1,9 @@
 <script>
-// editingPatternId は admin_logic_patterns.html と共有するグローバル変数
-let editingPatternId = null;
-
-// 試験日程タブ専用の状態変数
-let _examEditingKey = null;       // 'merged:grpKey' or 'grade:patternId'
-let _splitByGrade = {};           // grpKey → boolean
+let _examEditingKey = null;
+let _exclEditKey    = null;    // 'examId:patternId' — 未実施教科パネル表示中
+let _splitByGrade   = {};
 let selectedExamYear = String(new Date().getFullYear());
-let _store = [];                  // onclick から受け渡すデータを格納（レンダリング毎にリセット）
+let _store = [];
 
 function _push(obj) {
   _store.push(obj);
@@ -21,7 +18,7 @@ function makeGrpKey(schoolName, schoolCourse, subCourse, termTestId) {
   return [schoolName, schoolCourse, subCourse || '', termTestId].join('||');
 }
 
-// --- 編集状態のトグル ---
+// ---- 状態トグル ----
 function toggleGradeSplit(idx) {
   const { grpKey } = _store[idx];
   _splitByGrade[grpKey] = !_splitByGrade[grpKey];
@@ -35,7 +32,7 @@ function startEditMerged(idx) {
 }
 
 function startEditGrade(idx) {
-  _examEditingKey = 'grade:' + _store[idx].patternId;
+  _examEditingKey = 'grade:' + _store[idx].patternId + ':' + _store[idx].termTestId;
   renderExamManager(masterData);
 }
 
@@ -44,24 +41,30 @@ function cancelEdit() {
   renderExamManager(masterData);
 }
 
-// --- 保存処理 ---
+function toggleExclPanel(idx) {
+  const { examId, patternId } = _store[idx];
+  const key = examId + ':' + patternId;
+  _exclEditKey = (_exclEditKey === key) ? null : key;
+  renderExamManager(masterData);
+}
+
+// ---- 保存処理 ----
 function saveMergedExam(idx) {
-  const { grpKey, patternIds, examIdMap } = _store[idx];
-  const startDate = document.getElementById('start_' + idx)?.value;
-  const endDate   = document.getElementById('end_' + idx)?.value;
+  const { grpKey, patternIds, examIdMap, termTestId } = _store[idx];
+  const startDate = (document.getElementById('start_' + idx) || {}).value;
+  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
+  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
 
-  if (!startDate || !endDate) {
-    showMessage('開始日と終了日を入力してください。', 'error');
-    return;
-  }
-
-  const items = patternIds.map(pid => ({
-    exam_id:    examIdMap[pid] || '',
-    pattern_id: pid,
-    year:       selectedExamYear,
-    start_date: startDate,
-    end_date:   endDate
-  }));
+  const items = patternIds.map(function(pid) {
+    return {
+      exam_id:      examIdMap[pid] || '',
+      pattern_id:   pid,
+      term_test_id: termTestId,
+      year:         selectedExamYear,
+      start_date:   startDate,
+      end_date:     endDate
+    };
+  });
 
   setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
   google.script.run
@@ -69,28 +72,21 @@ function saveMergedExam(idx) {
       if (response && response.success) {
         _examEditingKey = null;
         showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(() => loadSection('exams'));
+        refreshMasterData(function() { loadSection('exams'); });
       } else {
         showMessage((response && response.error) || '保存に失敗しました。', 'error');
         setLoading(false);
       }
     })
-    .withFailureHandler(function() {
-      showMessage('通信エラーが発生しました。', 'error');
-      setLoading(false);
-    })
+    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
     .updateExamDataBatch(window.selectedCramId, items);
 }
 
 function saveGradeExam(idx) {
-  const { patternId, examId } = _store[idx];
-  const startDate = document.getElementById('start_' + idx)?.value;
-  const endDate   = document.getElementById('end_' + idx)?.value;
-
-  if (!startDate || !endDate) {
-    showMessage('開始日と終了日を入力してください。', 'error');
-    return;
-  }
+  const { patternId, examId, termTestId } = _store[idx];
+  const startDate = (document.getElementById('start_' + idx) || {}).value;
+  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
+  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
 
   setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
   google.script.run
@@ -98,23 +94,68 @@ function saveGradeExam(idx) {
       if (response && response.success) {
         _examEditingKey = null;
         showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(() => loadSection('exams'));
+        refreshMasterData(function() { loadSection('exams'); });
       } else {
         showMessage((response && response.error) || '保存に失敗しました。', 'error');
         setLoading(false);
       }
     })
-    .withFailureHandler(function() {
-      showMessage('通信エラーが発生しました。', 'error');
-      setLoading(false);
-    })
+    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
     .updateExamData(window.selectedCramId, {
-      exam_id:    examId || '',
-      pattern_id: patternId,
-      year:       selectedExamYear,
-      start_date: startDate,
-      end_date:   endDate
+      exam_id:      examId || '',
+      pattern_id:   patternId,
+      term_test_id: termTestId,
+      year:         selectedExamYear,
+      start_date:   startDate,
+      end_date:     endDate
     });
+}
+
+function saveMergedExamAutoPattern(idx) {
+  const { school_name, school_course, sub_course, term_test_id } = _store[idx];
+  const startDate = (document.getElementById('start_' + idx) || {}).value;
+  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
+  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
+
+  setLoading(true, ['パターンを確認中...', '試験日程を書き込み中...', 'もうしばらくお待ちください...']);
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        _examEditingKey = null;
+        showMessage('試験日程を保存しました。', 'success');
+        refreshMasterData(function() { loadSection('exams'); });
+      } else {
+        showMessage((response && response.error) || '保存に失敗しました。', 'error');
+        setLoading(false);
+      }
+    })
+    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
+    .upsertExamWithAutoPattern(window.selectedCramId, {
+      school_name, school_course, sub_course, term_test_id,
+      year: selectedExamYear, start_date: startDate, end_date: endDate
+    });
+}
+
+function setSubjectExclusion(cramId, examId, subjectId, excluded) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        const exclList = window.masterData.examSubjectExclusions || [];
+        if (excluded) {
+          const exists = exclList.some(function(e) { return e.exam_id === examId && e.subject_id === subjectId; });
+          if (!exists) exclList.push({ exam_id: examId, subject_id: subjectId, updated_at: '' });
+        } else {
+          const i = exclList.findIndex(function(e) { return e.exam_id === examId && e.subject_id === subjectId; });
+          if (i >= 0) exclList.splice(i, 1);
+        }
+        window.masterData.examSubjectExclusions = exclList;
+        renderExamManager(window.masterData);
+      } else {
+        showMessage('未実施設定に失敗しました: ' + ((res && res.error) || ''), 'error');
+      }
+    })
+    .withFailureHandler(function() { showMessage('通信エラー', 'error'); })
+    .setExamSubjectExclusion(cramId, { exam_id: examId, subject_id: subjectId, excluded: !!excluded });
 }
 
 function changeExamYear() {
@@ -123,332 +164,249 @@ function changeExamYear() {
   renderExamManager(masterData);
 }
 
-// --- メイン描画 ---
+// ---- メイン描画 ----
 function renderExamManager(data) {
   _store = [];
 
-  const content      = document.getElementById('admin-content');
-  const patterns     = Array.isArray(data.patterns)      ? data.patterns      : [];
-  const termTests    = Array.isArray(data.termTests)     ? data.termTests     : [];
-  const exams        = Array.isArray(data.exams)         ? data.exams         : [];
-  const schoolSettings = Array.isArray(data.schoolSettings) ? data.schoolSettings : [];
+  const content          = document.getElementById('admin-content');
+  const patterns         = Array.isArray(data.patterns)              ? data.patterns              : [];
+  const termTests        = Array.isArray(data.termTests)             ? data.termTests             : [];
+  const exams            = Array.isArray(data.exams)                 ? data.exams                 : [];
+  const schoolSettings   = Array.isArray(data.schoolSettings)        ? data.schoolSettings        : [];
+  const patternSubjects  = Array.isArray(data.patternSubjects)       ? data.patternSubjects       : [];
+  const exclList         = Array.isArray(data.examSubjectExclusions) ? data.examSubjectExclusions : [];
+  const subjects         = Array.isArray(data.subjects)              ? data.subjects              : [];
 
-  // 年度セレクタ
-  const currentYear  = String(new Date().getFullYear());
-  const yearsInData  = [...new Set(exams.map(e => String(e.year || '')).filter(Boolean))].sort().reverse();
+  const currentYear = String(new Date().getFullYear());
+  const yearsInData = Array.from(new Set(exams.map(function(e) { return String(e.year || ''); }).filter(Boolean))).sort().reverse();
   if (!yearsInData.includes(currentYear)) yearsInData.unshift(currentYear);
   const yearSelectEl = document.getElementById('exam-year-select');
   if (yearSelectEl) selectedExamYear = yearSelectEl.value;
-  const year         = selectedExamYear;
-  const examsThisYear = exams.filter(e => String(e.year || '') === year);
+  const year          = selectedExamYear;
+  const examsThisYear = exams.filter(function(e) { return String(e.year || '') === year; });
 
-  // 学校グループを構築
+  // 学校グループを構築（空コースのパターンはスキップ）
   const schoolGroupMap = {};
-  schoolSettings.forEach(s => {
-    const key = `${s.school_name}||${s.school_course}`;
-    if (!schoolGroupMap[key]) {
-      schoolGroupMap[key] = {
-        school_name:   s.school_name,
-        school_course: s.school_course,
-        patterns:      []
-      };
-    }
+  schoolSettings.forEach(function(s) {
+    const sc = String(s.school_course || '').trim();
+    if (!sc) return;
+    const key = s.school_name + '||' + sc;
+    if (!schoolGroupMap[key]) schoolGroupMap[key] = { school_name: s.school_name, school_course: sc, patterns: [] };
   });
-  patterns.forEach(p => {
-    const key = `${p.school_name}||${p.school_course}`;
-    if (!schoolGroupMap[key]) {
-      schoolGroupMap[key] = {
-        school_name:   p.school_name,
-        school_course: p.school_course,
-        patterns:      []
-      };
-    }
+  patterns.forEach(function(p) {
+    const sc = String(p.school_course || '').trim();
+    if (!sc) return;
+    const key = String(p.school_name) + '||' + sc;
+    if (!schoolGroupMap[key]) schoolGroupMap[key] = { school_name: p.school_name, school_course: sc, patterns: [] };
     schoolGroupMap[key].patterns.push(p);
   });
 
-  const schoolGroups = Object.values(schoolGroupMap).sort((a, b) =>
-    (a.school_name + a.school_course).localeCompare(b.school_name + b.school_course, 'ja')
-  );
+  const schoolGroups = Object.values(schoolGroupMap).sort(function(a, b) {
+    return (a.school_name + a.school_course).localeCompare(b.school_name + b.school_course, 'ja');
+  });
 
-  const yearOptions = yearsInData.map(y =>
-    `<option value="${y}" ${y === year ? 'selected' : ''}>${y}年度</option>`
-  ).join('');
+  const yearOptions = yearsInData.map(function(y) {
+    return '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '年度</option>';
+  }).join('');
 
-  let html = `
-    <div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">
-      <h3 style="margin:0;">試験日程管理</h3>
-      <label style="font-weight:bold;">年度:
-        <select id="exam-year-select" onchange="changeExamYear()" style="margin-left:6px; padding:4px 8px;">
-          ${yearOptions}
-        </select>
-      </label>
-    </div>
-    <p class="tab-desc">
-      年度・試験期間を学校・コース・学年ごとに登録します。日程を保存すると生徒が LIFF から得点入力できるようになります。<br>
-      <span class="step">▶ 教科パターンが未設定の場合は先に <strong>学校別教科名・教科パターン管理</strong> で設定してください。</span>
-    </p>`;
+  let html = '<div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">' +
+    '<h3 style="margin:0;">試験日程管理</h3>' +
+    '<label style="font-weight:bold;">年度:' +
+    '<select id="exam-year-select" onchange="changeExamYear()" style="margin-left:6px; padding:4px 8px;">' +
+    yearOptions + '</select></label></div>' +
+    '<p class="tab-desc">年度・試験期間を学校・コース・学年ごとに登録します。日程を保存すると生徒が LIFF から得点入力できるようになります。<br>' +
+    '<span class="step">▶ 教科パターンが未設定の場合は先に <strong>学校別教科名・教科パターン管理</strong> で設定してください。</span></p>';
 
-  schoolGroups.forEach(({ school_name, school_course, patterns: schoolPatterns }) => {
-    {
-      const relevantTests = termTests;
-      html += `<div class="admin-genre-container">`;
-      html += `<h4 class="admin-genre-title">${school_name} / ${school_course}</h4>`;
+  schoolGroups.forEach(function(sg) {
+    const school_name   = sg.school_name;
+    const school_course = sg.school_course;
+    const schoolPatterns = sg.patterns;
 
-      if (schoolPatterns.length === 0) {
-        // パターン未登録でも日程入力を許可（保存時に全学年分のパターンを自動作成）
-        const tableRows = [];
-        relevantTests.forEach(termTest => {
-          const termTestId = termTest.term_test_id;
-          const grpKey     = makeGrpKey(school_name, school_course, '', termTestId);
-          const idKey      = sanitizeId(grpKey);
-          const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
+    html += '<div class="admin-genre-container">';
+    html += '<h4 class="admin-genre-title">' + school_name + ' / ' + school_course + '</h4>';
 
-          if (isMergedEdit) {
-            const saveIdx = _push({ grpKey, school_name, school_course, sub_course: '', term_test_id: termTestId });
-            tableRows.push(`<tr>
-              <td>${termTest.test_name}</td>
-              <td style="display:flex; gap:6px; align-items:center;">
-                <input id="start_${saveIdx}" type="date" style="flex:1; padding:4px;" />
-                <span>～</span>
-                <input id="end_${saveIdx}" type="date" style="flex:1; padding:4px;" />
-              </td>
-              <td>
-                <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
-                <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
-              </td>
-            </tr>`);
-          } else {
-            const editIdx = _push({ grpKey });
-            tableRows.push(`<tr>
-              <td>${termTest.test_name}</td>
-              <td><span style="color:#888;">未設定</span></td>
-              <td><button onclick="startEditMerged(${editIdx})">編集</button></td>
-            </tr>`);
-          }
-        });
-
-        if (tableRows.length > 0) {
-          html += `<p style="font-size:0.8rem; color:#888; margin:6px 15px;">教科パターン未登録（日程保存時に自動作成されます）</p>`;
-          html += `<table class="admin-table">
-            <thead><tr>
-              <th style="width:22%">試験区分</th>
-              <th style="width:50%">実施期間</th>
-              <th style="width:28%">操作</th>
-            </tr></thead>
-            <tbody>${tableRows.join('')}</tbody>
-          </table>`;
+    if (schoolPatterns.length === 0) {
+      // パターン未登録: 日程保存時に自動作成
+      const tableRows = [];
+      termTests.forEach(function(termTest) {
+        const termTestId = String(termTest.term_test_id);
+        const grpKey     = makeGrpKey(school_name, school_course, '', termTestId);
+        const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
+        if (isMergedEdit) {
+          const saveIdx = _push({ school_name, school_course, sub_course: '', term_test_id: termTestId });
+          tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
+            '<td style="display:flex; gap:6px; align-items:center;">' +
+            '<input id="start_' + saveIdx + '" type="date" style="flex:1; padding:4px;" />' +
+            '<span>～</span><input id="end_' + saveIdx + '" type="date" style="flex:1; padding:4px;" /></td>' +
+            '<td><button class="save-btn" onclick="saveMergedExamAutoPattern(' + saveIdx + ')">保存</button>' +
+            '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
+        } else {
+          const editIdx = _push({ grpKey });
+          tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
+            '<td><span style="color:#888;">未設定</span></td>' +
+            '<td><button onclick="startEditMerged(' + editIdx + ')">編集</button></td></tr>');
         }
-        html += `</div>`;
-        return;
+      });
+      if (tableRows.length > 0) {
+        html += '<p style="font-size:0.8rem; color:#888; margin:6px 15px;">教科パターン未登録（日程保存時に自動作成されます）</p>' +
+          '<table class="admin-table"><thead><tr>' +
+          '<th style="width:22%">試験区分</th><th style="width:50%">実施期間</th><th style="width:28%">操作</th>' +
+          '</tr></thead><tbody>' + tableRows.join('') + '</tbody></table>';
+      }
+      html += '</div>';
+      return;
+    }
+
+    // sub_course でグループ化
+    const subCourses = Array.from(new Set(schoolPatterns.map(function(p) { return p.sub_course || ''; }))).sort();
+
+    subCourses.forEach(function(subCourse) {
+      const subPatterns = schoolPatterns.filter(function(p) { return (p.sub_course || '') === subCourse; });
+      if (subCourse) {
+        html += '<div style="margin:8px 0 4px; font-weight:600; color:#555; font-size:0.95em;">' + subCourse + '</div>';
       }
 
-      // sub_course でグループ化
-      const subCourses = [...new Set(schoolPatterns.map(p => p.sub_course || ''))].sort();
+      const tableRows = [];
 
-      subCourses.forEach(subCourse => {
-        const subPatterns = schoolPatterns.filter(p => (p.sub_course || '') === subCourse);
-        if (subCourse) {
-          html += `<div style="margin:8px 0 4px; font-weight:600; color:#555; font-size:0.95em;">${subCourse}</div>`;
-        }
+      termTests.forEach(function(termTest) {
+        const termTestId = String(termTest.term_test_id);
+        const grpKey     = makeGrpKey(school_name, school_course, subCourse, termTestId);
+        const isSplit    = !!_splitByGrade[grpKey];
+        const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
 
-        const tableRows = [];
-
-        relevantTests.forEach(termTest => {
-          const termTestId   = termTest.term_test_id;
-          const termPatterns = subPatterns.filter(p => p.term_test_id === termTestId);
-
-          const grpKey = makeGrpKey(school_name, school_course, subCourse, termTestId);
-
-          // パターン未登録の試験区分でも日程入力を許可（保存時に自動作成）
-          if (termPatterns.length === 0) {
-            const idKey        = sanitizeId(grpKey);
-            const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
-            if (isMergedEdit) {
-              const saveIdx = _push({ grpKey, school_name, school_course, sub_course: subCourse, term_test_id: termTestId });
-              tableRows.push(`<tr>
-                <td>${termTest.test_name}</td>
-                <td style="display:flex; gap:6px; align-items:center;">
-                  <input id="start_${saveIdx}" type="date" style="flex:1; padding:4px;" />
-                  <span>～</span>
-                  <input id="end_${saveIdx}" type="date" style="flex:1; padding:4px;" />
-                </td>
-                <td>
-                  <button class="save-btn" onclick="saveMergedExamAutoPattern(${saveIdx})">保存</button>
-                  <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
-                </td>
-              </tr>`);
-            } else {
-              const editIdx = _push({ grpKey });
-              tableRows.push(`<tr>
-                <td>${termTest.test_name}</td>
-                <td><span style="color:#888;">未設定</span></td>
-                <td><button onclick="startEditMerged(${editIdx})">編集</button></td>
-              </tr>`);
-            }
-            return;
-          }
-          const idKey  = sanitizeId(grpKey);
-          const isSplit        = !!_splitByGrade[grpKey];
-          const isMergedEdit   = _examEditingKey === 'merged:' + grpKey;
-          const patternIds     = termPatterns.map(p => p.pattern_id);
-          const examIdMap      = {};
-          patternIds.forEach(pid => {
-            const e = examsThisYear.find(e => String(e.pattern_id) === String(pid));
-            examIdMap[pid] = e ? e.exam_id : '';
+        // 全パターンIDとその exam_id を取得（このterm_test_idに対して）
+        const patternIds = subPatterns.map(function(p) { return p.pattern_id; });
+        const examIdMap  = {};
+        patternIds.forEach(function(pid) {
+          const e = examsThisYear.find(function(e) {
+            return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
           });
-
-          if (!isSplit) {
-            // --- 全学年まとめ表示 ---
-            const repExam = patternIds
-              .map(pid => examsThisYear.find(e => String(e.pattern_id) === String(pid)))
-              .find(Boolean) || null;
-
-            if (isMergedEdit) {
-              const saveIdx = _push({ grpKey, patternIds, examIdMap });
-              tableRows.push(`<tr>
-                <td>${termTest.test_name}</td>
-                <td style="display:flex; gap:6px; align-items:center;">
-                  <input id="start_${saveIdx}" type="date" value="${repExam ? repExam.start_date : ''}" style="flex:1; padding:4px;" />
-                  <span>～</span>
-                  <input id="end_${saveIdx}" type="date" value="${repExam ? repExam.end_date : ''}" style="flex:1; padding:4px;" />
-                </td>
-                <td>
-                  <button class="save-btn" onclick="saveMergedExam(${saveIdx})">保存</button>
-                  <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
-                </td>
-              </tr>`);
-            } else {
-              const editIdx  = _push({ grpKey });
-              const splitIdx = _push({ grpKey });
-              const dateText = repExam
-                ? `${repExam.start_date} ～ ${repExam.end_date}`
-                : '<span style="color:#888;">未設定</span>';
-              tableRows.push(`<tr>
-                <td>${termTest.test_name}</td>
-                <td>${dateText}</td>
-                <td>
-                  <button onclick="startEditMerged(${editIdx})">編集</button>
-                  <button onclick="toggleGradeSplit(${splitIdx})" style="margin-left:4px;">学年別</button>
-                </td>
-              </tr>`);
-            }
-          } else {
-            // --- 学年別表示 ---
-            const mergeIdx = _push({ grpKey });
-            tableRows.push(`<tr style="background:#f0f4ff;">
-              <td colspan="3" style="padding:6px 10px;">
-                <strong>${termTest.test_name}</strong>
-                <button style="margin-left:12px; font-size:0.85em;" onclick="toggleGradeSplit(${mergeIdx})">まとめる</button>
-              </td>
-            </tr>`);
-
-            const gradeOrder = ['高1', '高2', '高3'];
-
-            gradeOrder.forEach(grade => {
-              const pattern = termPatterns.find(p => p.grade === grade);
-
-              if (!pattern) {
-                // このggradeのパターンが未登録
-                tableRows.push(`<tr>
-                  <td style="padding-left:24px; color:#aaa;">↳ ${grade}</td>
-                  <td><span style="color:#aaa;">パターン未登録</span></td>
-                  <td><button onclick="loadSection('patterns')">教科パターン作成</button></td>
-                </tr>`);
-                return;
-              }
-
-              const pid       = pattern.pattern_id;
-              const pidSafe   = sanitizeId(pid);
-              const gradeExam = examsThisYear.find(e => String(e.pattern_id) === String(pid)) || null;
-              const isGradeEdit = _examEditingKey === 'grade:' + pid;
-
-              if (isGradeEdit) {
-                const saveIdx = _push({ patternId: pid, examId: gradeExam ? gradeExam.exam_id : '' });
-                tableRows.push(`<tr style="background:#fffde7;">
-                  <td style="padding-left:24px; color:#555;">↳ ${grade}</td>
-                  <td style="display:flex; gap:6px; align-items:center;">
-                    <input id="start_${saveIdx}" type="date" value="${gradeExam ? gradeExam.start_date : ''}" style="flex:1; padding:4px;" />
-                    <span>～</span>
-                    <input id="end_${saveIdx}" type="date" value="${gradeExam ? gradeExam.end_date : ''}" style="flex:1; padding:4px;" />
-                  </td>
-                  <td>
-                    <button class="save-btn" onclick="saveGradeExam(${saveIdx})">保存</button>
-                    <button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button>
-                  </td>
-                </tr>`);
-              } else {
-                const editIdx  = _push({ patternId: pid });
-                const dateText = gradeExam
-                  ? `${gradeExam.start_date} ～ ${gradeExam.end_date}`
-                  : '<span style="color:#888;">未設定</span>';
-                tableRows.push(`<tr>
-                  <td style="padding-left:24px; color:#555;">↳ ${grade}</td>
-                  <td>${dateText}</td>
-                  <td><button onclick="startEditGrade(${editIdx})">編集</button></td>
-                </tr>`);
-              }
-            });
-          }
+          examIdMap[pid] = e ? e.exam_id : '';
         });
 
-        if (tableRows.length > 0) {
-          html += `<table class="admin-table">
-            <thead><tr>
-              <th style="width:22%">試験区分</th>
-              <th style="width:50%">実施期間</th>
-              <th style="width:28%">操作</th>
-            </tr></thead>
-            <tbody>${tableRows.join('')}</tbody>
-          </table>`;
+        if (!isSplit) {
+          // 全学年まとめ表示
+          const repExam = patternIds.map(function(pid) {
+            return examsThisYear.find(function(e) {
+              return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
+            });
+          }).find(Boolean) || null;
+
+          if (isMergedEdit) {
+            const saveIdx = _push({ grpKey, patternIds, examIdMap, termTestId });
+            tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
+              '<td style="display:flex; gap:6px; align-items:center;">' +
+              '<input id="start_' + saveIdx + '" type="date" value="' + (repExam ? repExam.start_date : '') + '" style="flex:1; padding:4px;" />' +
+              '<span>～</span>' +
+              '<input id="end_' + saveIdx + '" type="date" value="' + (repExam ? repExam.end_date : '') + '" style="flex:1; padding:4px;" /></td>' +
+              '<td><button class="save-btn" onclick="saveMergedExam(' + saveIdx + ')">保存</button>' +
+              '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
+          } else {
+            const editIdx  = _push({ grpKey });
+            const splitIdx = _push({ grpKey });
+            const dateText = repExam
+              ? repExam.start_date + ' ～ ' + repExam.end_date
+              : '<span style="color:#888;">未設定</span>';
+            tableRows.push('<tr><td>' + termTest.test_name + '</td><td>' + dateText + '</td>' +
+              '<td><button onclick="startEditMerged(' + editIdx + ')">編集</button>' +
+              '<button onclick="toggleGradeSplit(' + splitIdx + ')" style="margin-left:4px;">学年別</button></td></tr>');
+          }
+        } else {
+          // 学年別表示
+          const mergeIdx = _push({ grpKey });
+          tableRows.push('<tr style="background:#f0f4ff;">' +
+            '<td colspan="4" style="padding:6px 10px;"><strong>' + termTest.test_name + '</strong>' +
+            '<button style="margin-left:12px; font-size:0.85em;" onclick="toggleGradeSplit(' + mergeIdx + ')">まとめる</button>' +
+            '</td></tr>');
+
+          ['高1', '高2', '高3'].forEach(function(grade) {
+            const pattern = subPatterns.find(function(p) { return p.grade === grade; });
+            if (!pattern) {
+              tableRows.push('<tr><td style="padding-left:24px; color:#aaa;">↳ ' + grade + '</td>' +
+                '<td colspan="2"><span style="color:#aaa;">パターン未登録</span></td>' +
+                '<td><button onclick="loadSection(\'patterns\')">教科パターン作成</button></td></tr>');
+              return;
+            }
+            const pid         = pattern.pattern_id;
+            const gradeExam   = examsThisYear.find(function(e) {
+              return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
+            }) || null;
+            const examId      = gradeExam ? gradeExam.exam_id : '';
+            const isGradeEdit = _examEditingKey === 'grade:' + pid + ':' + termTestId;
+            const exclKey     = examId + ':' + pid;
+            const isExclOpen  = !!examId && _exclEditKey === exclKey;
+
+            if (isGradeEdit) {
+              const saveIdx = _push({ patternId: pid, examId, termTestId });
+              tableRows.push('<tr style="background:#fffde7;">' +
+                '<td style="padding-left:24px; color:#555;">↳ ' + grade + '</td>' +
+                '<td style="display:flex; gap:6px; align-items:center;">' +
+                '<input id="start_' + saveIdx + '" type="date" value="' + (gradeExam ? gradeExam.start_date : '') + '" style="flex:1; padding:4px;" />' +
+                '<span>～</span>' +
+                '<input id="end_' + saveIdx + '" type="date" value="' + (gradeExam ? gradeExam.end_date : '') + '" style="flex:1; padding:4px;" /></td>' +
+                '<td colspan="2"><button class="save-btn" onclick="saveGradeExam(' + saveIdx + ')">保存</button>' +
+                '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
+            } else {
+              const editIdx = _push({ patternId: pid, termTestId });
+              const dateText = gradeExam
+                ? gradeExam.start_date + ' ～ ' + gradeExam.end_date
+                : '<span style="color:#888;">未設定</span>';
+              const exclBtnIdx = _push({ examId, patternId: pid });
+              tableRows.push('<tr>' +
+                '<td style="padding-left:24px; color:#555;">↳ ' + grade + '</td>' +
+                '<td>' + dateText + '</td>' +
+                '<td><button onclick="startEditGrade(' + editIdx + ')">編集</button></td>' +
+                '<td>' + (examId ? '<button onclick="toggleExclPanel(' + exclBtnIdx + ')" style="font-size:0.8em;">' + (isExclOpen ? '▲ 未実施設定' : '▼ 未実施設定') + '</button>' : '') + '</td></tr>');
+
+              if (isExclOpen) {
+                const patSubjects = patternSubjects
+                  .filter(function(ps) { return String(ps.pattern_id) === String(pid); })
+                  .map(function(ps) { return subjects.find(function(s) { return s.subject_id === ps.subject_id; }); })
+                  .filter(Boolean);
+                const cramId = window.selectedCramId;
+                const exclRow = patSubjects.map(function(s) {
+                  const isExcluded = exclList.some(function(e) {
+                    return e.exam_id === examId && e.subject_id === s.subject_id;
+                  });
+                  const chk = isExcluded ? 'checked' : '';
+                  return '<label style="display:inline-flex; align-items:center; gap:4px; margin:2px 8px;">' +
+                    '<input type="checkbox" ' + chk + ' onchange="setSubjectExclusion(\'' + cramId + '\',\'' + examId + '\',\'' + s.subject_id + '\',this.checked)" />' +
+                    s.subject_name + '</label>';
+                }).join('');
+                tableRows.push('<tr style="background:#fff3e0;"><td colspan="4" style="padding:6px 12px;">' +
+                  '<span style="font-weight:600; margin-right:8px;">未実施教科:</span>' +
+                  (exclRow || '<span style="color:#aaa;">教科が登録されていません</span>') + '</td></tr>');
+              }
+            }
+          });
         }
       });
 
-      html += `</div>`;
-    }
+      if (tableRows.length > 0) {
+        html += '<table class="admin-table"><thead><tr>' +
+          '<th style="width:20%">試験区分</th>' +
+          '<th style="width:40%">実施期間</th>' +
+          '<th style="width:20%">操作</th>' +
+          '<th style="width:20%">未実施設定</th>' +
+          '</tr></thead><tbody>' + tableRows.join('') + '</tbody></table>';
+      }
+    });
+
+    html += '</div>';
   });
 
   content.innerHTML = html;
 }
 
-function saveMergedExamAutoPattern(idx) {
-  const { grpKey, school_name, school_course, sub_course, term_test_id } = _store[idx];
-  const startDate = document.getElementById('start_' + idx)?.value;
-  const endDate   = document.getElementById('end_'   + idx)?.value;
-
-  if (!startDate || !endDate) {
-    showMessage('開始日と終了日を入力してください。', 'error');
-    return;
-  }
-
-  setLoading(true, ['パターンを確認中...', '学年ごとのパターンを作成中...', '試験日程を書き込み中...', 'もうしばらくお待ちください...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        _examEditingKey = null;
-        showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(() => loadSection('exams'));
-      } else {
-        showMessage((response && response.error) || '保存に失敗しました。', 'error');
-        setLoading(false);
-      }
-    })
-    .withFailureHandler(function() {
-      showMessage('通信エラーが発生しました。', 'error');
-      setLoading(false);
-    })
-    .upsertExamWithAutoPattern(window.selectedCramId, {
-      school_name, school_course, sub_course, term_test_id,
-      year: selectedExamYear, start_date: startDate, end_date: endDate
-    });
-}
-
-window.renderExamManager          = renderExamManager;
-window.startEditMerged            = startEditMerged;
-window.startEditGrade             = startEditGrade;
-window.cancelEdit                 = cancelEdit;
-window.saveMergedExam             = saveMergedExam;
-window.saveGradeExam              = saveGradeExam;
-window.toggleGradeSplit           = toggleGradeSplit;
-window.changeExamYear             = changeExamYear;
-window.saveMergedExamAutoPattern  = saveMergedExamAutoPattern;
+window.renderExamManager         = renderExamManager;
+window.startEditMerged           = startEditMerged;
+window.startEditGrade            = startEditGrade;
+window.cancelEdit                = cancelEdit;
+window.saveMergedExam            = saveMergedExam;
+window.saveGradeExam             = saveGradeExam;
+window.toggleGradeSplit          = toggleGradeSplit;
+window.changeExamYear            = changeExamYear;
+window.saveMergedExamAutoPattern = saveMergedExamAutoPattern;
+window.toggleExclPanel           = toggleExclPanel;
+window.setSubjectExclusion       = setSubjectExclusion;
 </script>

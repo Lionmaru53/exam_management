@@ -26,21 +26,22 @@ function saveAllScores(payload) {
     // 子 SS を開く
     const ss = getChildSS(cramId);
 
-    // exam_id が未設定の場合、pattern_id から既存エントリを探すか新規作成する
+    // exam_id が未設定の場合、(pattern_id, term_test_id) 複合キーで既存エントリを探すか新規作成する
     let examId = String(payload.exam_id || '').trim();
     if (!examId && payload.pattern_id) {
       const schedSheet = ss.getSheetByName('exam_schedule');
       if (!schedSheet) throw new Error('exam_schedule シートが見つかりません');
-      const schedData = schedSheet.getDataRange().getValues();
-      for (let i = 1; i < schedData.length; i++) {
-        if (String(schedData[i][1]).trim() === String(payload.pattern_id).trim()) {
-          examId = String(schedData[i][0]).trim();
-          break;
-        }
-      }
-      if (!examId) {
+      const ttId    = String(payload.term_test_id || '').trim();
+      const schedRows = getRowsData(schedSheet);
+      const existing = schedRows.find(r =>
+        String(r.pattern_id   || '').trim() === String(payload.pattern_id).trim() &&
+        String(r.term_test_id || '').trim() === ttId
+      );
+      if (existing) {
+        examId = String(existing.exam_id).trim();
+      } else {
         examId = 'EX' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-        schedSheet.appendRow([examId, payload.pattern_id, new Date().getFullYear(), '', '']);
+        schedSheet.appendRow([examId, payload.pattern_id, ttId, new Date().getFullYear(), '', '']);
       }
     }
     if (!examId) throw new Error('exam_id が取得できませんでした');
@@ -69,7 +70,8 @@ function saveAllScores(payload) {
         newScore.score,
         newScore.grade_rank,
         newScore.class_rank,
-        new Date()
+        new Date(),
+        newScore.not_taken ? '1' : ''
       ];
 
       if (rowIndex > 0) {
@@ -189,20 +191,50 @@ function setStudentSubCourse(lineUserId, subCourse) {
 
     // exam_patterns 自動生成（高2・高3用）
     if (sn) {
-      const sttSheet = parentSS.getSheetByName('school_term_test_settings');
-      const sttRows  = sttSheet ? getRowsData(sttSheet) : [];
-      const activeTermTests = sttRows
-        .filter(r => String(r.school_name || '').trim() === sn && String(r.is_active || '').trim() === '1')
-        .map(r => String(r.term_test_id).trim())
-        .filter(Boolean);
-      if (activeTermTests.length > 0) {
-        _autoCreateExamPatterns(ss, sn, sc, subCourse, activeTermTests, ['高2', '高3']);
-      }
+      _autoCreateExamPatterns(ss, sn, sc, subCourse, ['高2', '高3']);
     }
 
     // 更新後のデータで再描画させるため getInitialData を再実行
     return getInitialData(lineUserId);
   } catch (e) {
     return { error: e.message };
+  }
+}
+
+/**
+ * 生徒からの不具合報告を親 SS の bug_reports シートに記録する。
+ * メール通知は Sheets の組み込み通知ルール（ツール → 通知）で設定する。
+ *
+ * payload: { student_id, student_name, school_name, grade, report_type, detail }
+ */
+function submitBugReport(payload) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // bug_reports シートを確保（なければ作成）
+    let sheet = ss.getSheetByName('bug_reports');
+    if (!sheet) {
+      sheet = ss.insertSheet('bug_reports');
+      sheet.getRange(1, 1, 1, 8).setValues([[
+        'report_id', 'timestamp', 'student_id', 'student_name',
+        'school_name', 'grade', 'report_type', 'detail'
+      ]]);
+    }
+
+    const reportId = 'BR' + Utilities.getUuid().replace(/-/g, '').slice(0, 12).toUpperCase();
+    sheet.appendRow([
+      reportId,
+      new Date(),
+      String(payload.student_id   || '').trim(),
+      String(payload.student_name || '').trim(),
+      String(payload.school_name  || '').trim(),
+      String(payload.grade        || '').trim(),
+      String(payload.report_type  || '').trim(),
+      String(payload.detail       || '').trim(),
+    ]);
+
+    return JSON.stringify({ success: true });
+  } catch (e) {
+    return JSON.stringify({ error: e.toString() });
   }
 }
