@@ -1,4 +1,8 @@
 <script>
+// ユーザー登録フォームの URL（LINE未紐づけ時に表示）
+// TODO: 実際の登録フォーム URL に変更してください
+var REGISTRATION_URL = 'https://liff.line.me/2008067898-LnyPJ1ra';
+
 function hexToRgba(hex, alpha = 0.1) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -57,12 +61,23 @@ function renderApp(data) {
 
   if (data.error) {
     document.getElementById('app').style.display = 'block';
-    document.getElementById('header').innerHTML =
-      `<p style="color:#dc3545;">エラー: ${data.error}</p>`;
+    document.getElementById('header').innerHTML = _renderErrorHtml(data);
     return;
   }
 
   document.getElementById('app').style.display = 'block';
+
+  // コース未設定の場合はコース入力フローを表示
+  if (data.needsCourse) {
+    renderCourseInput(data);
+    return;
+  }
+
+  // 高2・高3 で文理未設定の場合は選択画面を表示
+  if (data.needsSubCourse) {
+    renderSubCourseSelect(data);
+    return;
+  }
 
   // ヘッダー：タイトル＋生徒情報
   const s = data.student;
@@ -85,22 +100,18 @@ function renderApp(data) {
   }
 
   let listHtml = `
-    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「一括保存する」を押してください。タブで試験区分を切り替えられます。</p>
+    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「一括保存する」を押してください。</p>
     <div class="subject-tab-wrap">
-      <div class="tab-nav">
+      <div class="exam-select-wrap">
+        <select class="exam-select" onchange="switchExamTab(this.value)">
   `;
 
-  examTabs.forEach((exam, index) => {
+  examTabs.forEach(exam => {
     const tabId = exam.term_test_id;
-    listHtml += `
-      <button type="button" class="tab-button${index === 0 ? ' active' : ''}"
-        data-tab-id="${tabId}" onclick="switchExamTab('${tabId}')">
-        ${exam.test_name}
-      </button>
-    `;
+    listHtml += `<option value="${tabId}">${exam.test_name}</option>`;
   });
 
-  listHtml += `</div><div class="tab-content">`;
+  listHtml += `</select></div><div class="tab-content">`;
 
   examTabs.forEach((exam, examIndex) => {
     const tabId      = exam.term_test_id;
@@ -186,10 +197,156 @@ function renderApp(data) {
   document.getElementById('footer').innerHTML = '';
 }
 
+function _renderErrorHtml(data) {
+  const msg = data.error || '不明なエラーが発生しました。';
+
+  if (data.errorCode === 'NOT_LINKED') {
+    const linkHtml = REGISTRATION_URL
+      ? `<p class="err-register-link"><a href="${REGISTRATION_URL}" target="_blank" rel="noopener">ユーザー登録はこちら</a></p>`
+      : '';
+    return `
+      <div class="err-box err-not-linked">
+        <p class="err-title">未登録のアカウントです</p>
+        <p class="err-msg">${msg}</p>
+        <p class="err-hint">塾へのご登録がお済みでない方は、下記よりユーザー登録を行ってください。</p>
+        ${linkHtml}
+        <p class="err-contact">ご不明な点は塾スタッフにお声がけください。</p>
+      </div>`;
+  }
+
+  return `
+    <div class="err-box">
+      <p class="err-title">表示できません</p>
+      <p class="err-msg">${msg}</p>
+    </div>`;
+}
+
+// ---- コース未設定フロー ----
+var _courseFlowData       = null;
+var _courseFlowCourse     = '';
+var _courseFlowSubCourse  = '';
+
+function renderCourseInput(data) {
+  _courseFlowData = data;
+  const s = data.student;
+  document.getElementById('header').innerHTML = `
+    <div class="exam-header-container">
+      <h2 class="app-title">定期テスト得点入力フォーム</h2>
+      <p class="student-name">${s.name} さん <span class="student-info">(${s.school_name}　${s.grade})</span></p>
+    </div>
+  `;
+  document.getElementById('subject-list').innerHTML = `
+    <div class="sub-course-select-wrap">
+      <p class="sub-course-select-title">科・コースを教えてください</p>
+      <p class="sub-course-select-desc">例：普通(科)・理数(科)・特進(コース)・総合(コース)・中高一貫 など</p>
+      <div class="course-input-row">
+        <input type="text" id="course-input-field" class="course-input-field" placeholder="例：普通" />
+      </div>
+      <div class="sub-course-select-btns" style="margin-top:16px;">
+        <button class="sub-course-btn sub-course-btn-confirm" onclick="_courseInputNext()">次へ</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('footer').innerHTML = '';
+}
+
+function _courseInputNext() {
+  const val = (document.getElementById('course-input-field').value || '').trim();
+  if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
+  _courseFlowCourse = val;
+  const grade = String((_courseFlowData.student || {}).grade || '').trim();
+  if (grade === '高2' || grade === '高3') {
+    _courseSubCourseStep();
+  } else {
+    _courseFlowSubCourse = '';
+    _courseConfirmStep();
+  }
+}
+
+function _courseSubCourseStep() {
+  document.getElementById('subject-list').innerHTML = `
+    <div class="sub-course-select-wrap">
+      <p class="sub-course-select-title">文系・理系を選択してください</p>
+      <p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたのコースを教えてください。</p>
+      <div class="sub-course-select-btns">
+        <button class="sub-course-btn" onclick="_courseSubCourseSelect('文系')">文系</button>
+        <button class="sub-course-btn" onclick="_courseSubCourseSelect('理系')">理系</button>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="sub-course-btn sub-course-btn-back" onclick="renderCourseInput(_courseFlowData)">戻る</button>
+      </div>
+    </div>
+  `;
+}
+
+function _courseSubCourseSelect(subCourse) {
+  _courseFlowSubCourse = subCourse;
+  _courseConfirmStep();
+}
+
+function _courseConfirmStep() {
+  const hasSubCourse = !!_courseFlowSubCourse;
+  const confirmText  = hasSubCourse
+    ? `<strong>${_courseFlowCourse}</strong> ／ <strong>${_courseFlowSubCourse}</strong> で設定します。よろしいですか？`
+    : `<strong>${_courseFlowCourse}</strong> で設定します。よろしいですか？`;
+  const backFn = hasSubCourse ? '_courseSubCourseStep()' : 'renderCourseInput(_courseFlowData)';
+
+  document.getElementById('subject-list').innerHTML = `
+    <div class="sub-course-select-wrap">
+      <p class="sub-course-select-title">確認</p>
+      <p class="sub-course-select-desc">${confirmText}</p>
+      <div class="sub-course-select-btns">
+        <button class="sub-course-btn sub-course-btn-confirm" onclick="_courseSubmit()">確定</button>
+        <button class="sub-course-btn sub-course-btn-back" onclick="${backFn}">戻る</button>
+      </div>
+    </div>
+  `;
+}
+
+function _courseSubmit() {
+  handleCourseSubmit(_courseFlowData.lineUserId, _courseFlowCourse, _courseFlowSubCourse);
+}
+
+// ---- 文理のみ未設定フロー ----
+var _subCourseData = null;
+
+function renderSubCourseSelect(data) {
+  _subCourseData = data;
+  const s = data.student;
+  document.getElementById('header').innerHTML = `
+    <div class="exam-header-container">
+      <h2 class="app-title">定期テスト得点入力フォーム</h2>
+      <p class="student-name">${s.name} さん <span class="student-info">(${s.school_name}　${s.grade})</span></p>
+    </div>
+  `;
+  document.getElementById('subject-list').innerHTML = `
+    <div class="sub-course-select-wrap">
+      <p class="sub-course-select-title">文系・理系を選択してください</p>
+      <p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたの文理選択を教えてください。</p>
+      <div class="sub-course-select-btns">
+        <button class="sub-course-btn" onclick="_subCourseConfirm('文系')">文系</button>
+        <button class="sub-course-btn" onclick="_subCourseConfirm('理系')">理系</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('footer').innerHTML = '';
+}
+
+function _subCourseConfirm(subCourse) {
+  document.getElementById('subject-list').innerHTML = `
+    <div class="sub-course-select-wrap">
+      <p class="sub-course-select-title">確認</p>
+      <p class="sub-course-select-desc"><strong>${subCourse}</strong> で設定します。よろしいですか？</p>
+      <div class="sub-course-select-btns">
+        <button class="sub-course-btn sub-course-btn-confirm" onclick="handleSubCourseSelect('${_subCourseData.lineUserId}', '${subCourse}')">確定</button>
+        <button class="sub-course-btn sub-course-btn-back" onclick="renderSubCourseSelect(_subCourseData)">戻る</button>
+      </div>
+    </div>
+  `;
+}
+
 function switchExamTab(tabId) {
-  document.querySelectorAll('.tab-button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tabId === tabId);
-  });
+  document.querySelectorAll('.exam-select').forEach(sel => { sel.value = tabId; });
   document.querySelectorAll('.tab-panel').forEach(panel => {
     panel.style.display = panel.dataset.tabId === tabId ? 'block' : 'none';
   });

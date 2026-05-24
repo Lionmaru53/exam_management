@@ -75,10 +75,10 @@
     // ---- ナビゲーション ----
     function _renderNav(role) {
       const tabs = [
-        { section: 'patterns',   label: '学校別教科名・教科パターン管理' },
-        { section: 'exams',      label: '試験日程管理' },
-        { section: 'students',   label: '生徒一覧' },
-        { section: 'import',     label: '生徒インポート' }
+        { section: 'students',   label: '①生徒一覧' },
+        { section: 'import',     label: '①生徒インポート' },
+        { section: 'patterns',   label: '②学校別教科名・教科パターン管理' },
+        { section: 'exams',      label: '③試験日程管理' }
       ];
       if (role === 'master') {
         tabs.push(
@@ -157,7 +157,7 @@
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
       const valid = ['patterns', 'exams', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
-      window.currentSection = valid.includes(section) ? section : 'patterns';
+      window.currentSection = valid.includes(section) ? section : 'students';
 
       const overlay = document.getElementById('loading-overlay');
       const content = document.getElementById('admin-content');
@@ -208,7 +208,7 @@
     };
 
     // ページロード時に自動でデータ取得
-    window.refreshMasterData(function() { window.loadSection('patterns'); });
+    window.refreshMasterData(function() { window.loadSection('students'); });
   </script>
 </body>
 

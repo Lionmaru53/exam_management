@@ -26,6 +26,7 @@
 |--------|--------|------|
 | `admin_users` / `audit_log` / `branches` / `student_index` | 親 SS | 実装済み |
 | `term_tests_master` / `genres_master` / `subjects_master` / `school_subject_aliases` | 親 SS（全校舎共通） | 実装済み |
+| `school_term_test_settings` | 親 SS（学校別試験区分設定） | 実装済み |
 | `exam_patterns` / `exam_schedule` / `pattern_subjects` | 子 SS | 実装済み |
 | `students_master` / `scores_data` / `school_course_master` | 子 SS | 実装済み |
 
@@ -55,6 +56,8 @@
 - Drive API は `appsscript.json` のスコープ宣言だけでは動作しない（OAuth 再認可が必要）
 - `clasp push` は GAS エディタのコードを更新するが、バージョン固定デプロイには反映されない
 
+---
+
 ## 開発基盤
 
 ### 学校設定の正規化（完了）
@@ -62,12 +65,35 @@
 - [x] 生徒インポート時に `school_name` を `school_course_master` へ自動登録（upsert）
 - [x] migrate 系関数を削除
 
-### 生徒一覧の強化（完了）
-- [x] 学校→学年の2段階階層表示
+### 生徒一覧の強化（完了 2026-05-24）
+- [x] 学校→学年の2段階階層表示（インデントなし）
 - [x] 氏名（読み）・コースでのソート
 - [x] コース列・文理列（sub_course）の追加
 - [x] 複数生徒のコース・文理を一括変更（チェックボックス＋プルダウン）
 - [x] サブ区分の名称を「文理」に統一、選択肢を文系/理系に固定
+- [x] 「コースを編集」「文理を編集」ボタンを分離（別々の編集フローに）
+- [x] コース編集時のヘッダーチェックボックスで学年全選択
+- [x] コース・文理の必須設定を促す説明文の追加
+- [x] タブ順序変更：生徒一覧 → 生徒インポート → 教科パターン → 試験日程
+- [x] 初期表示を「生徒一覧」に変更
+
+### school_term_test_settings 導入（完了 2026-05-24）
+- [x] 親SS に `school_term_test_settings` シート追加（`school_name × term_test_id → is_active, display_name`）
+- [x] `getData.js`: `is_two_terms` フラグを廃止し `school_term_test_settings` ベースのフィルタに移行
+- [x] `admin_getData.js`: `getAdminInitialData()` に `schoolTermTestSettings` 追加
+- [x] `admin_save_master.js`: `_ensureSchoolTermTestSettingsSheet()` / `upsertSchoolTermTestSetting()` 追加
+- [x] 管理画面「学校別試験区分設定」セクション追加
+- [x] `is_two_terms` の廃止（term_tests_master・school_course_master・管理画面UIから除去）
+
+### 教科パターン管理の改善（完了 2026-05-24）
+- [x] 階層構造を 学校 / コース / 文理 / 学年 の4段階に変更
+- [x] 標準グループ（高1/文理なし・高2/文系・高2/理系・高3/文系・高3/理系）を常に表示（schoolSettings ベース）
+- [x] 「教科を編集」パネルに checkbox・正式名・表示名 input を並べる UI
+- [x] 試験日程を任意化（日程未設定でも生徒が得点入力可能、保存時に自動作成）
+- [x] コース追加時のパターン自動生成: `_autoCreateAllPatterns()`（5組み合わせ×全試験区分、1パスで ID 衝突なし）
+- [x] 文理設定時のパターン自動生成: `_autoCreateExamPatterns()`（高2・高3×指定文理のみ）
+- [x] パターン生成時にデフォルト教科を自動設定: `_setDefaultSubjectsForPatterns()`（各ジャンル最大2教科）
+- [x] デフォルト教科の設定: 各ジャンル2教科に変更
 
 ### 2-H: 教科表示名エイリアス（完了）
 - [x] 親SS に `school_subject_aliases` シート追加（`school_name × subject_id → display_name`）
@@ -76,15 +102,40 @@
 - [x] 教科パターン管理タブの編集パネルに表示名入力欄を追加（onblur で自動保存）
 - [x] 楽観的ロック: `updated_at` による競合検出 → 自動更新
 
-### 教科パターン管理の改善（完了）
-- [x] 階層構造を 学校 / コース / 文理 / 学年 の4段階に変更
-- [x] 「教科を編集」パネルに checkbox・正式名・表示名 input を並べる UI
-- [x] 試験日程を任意化（日程未設定でも生徒が得点入力可能、保存時に自動作成）
+---
 
-### 得点入力 UI 改善（完了 2026-05-22）
+## Phase 3 — 生徒向け機能拡張（完了 2026-05-24）
+
+### 得点入力 UI（完了）
 - [x] 点数・順位の入力を `<select>` から `<input type="text">` に変更
 - [x] 半角数字のみ入力制限（`oninput` フィルタ＋`inputmode="numeric"`）
 - [x] 保存時バリデーション: 点数 0〜200 の整数、順位 1 以上の整数、空欄は許可
+- [x] 試験区分の切り替えをタブからプルダウン（`<select>`）に変更
+
+### エラー表示の改善（完了）
+- [x] エラーコード別の端的なメッセージ表示（`NOT_LINKED` / `NO_BRANCH` / `STUDENT_NOT_FOUND` / `SYSTEM_ERROR`）
+- [x] LINE 未紐づけ時（`NOT_LINKED`）にユーザー登録 URL をリンクで表示
+
+### 初期設定フロー（完了）
+- [x] コース未設定生徒が LIFF にアクセスすると「コース入力 → 文理選択（高2/高3のみ）→ 確認」の多段フロー
+- [x] 文理未設定生徒（高2/高3）が LIFF にアクセスすると「文系/理系選択 → 確認」フロー
+- [x] フロー完了後: `setStudentCourseAndSubCourse()` / `setStudentSubCourse()` でシートを更新し再描画
+- [x] コース設定時: `upsertSchoolCourse()` でパターン自動生成（`_autoCreateAllPatterns`）＋デフォルト教科設定
+
+### 開発者モード（完了）
+- [x] `/dev` URL（`Session.getActiveUser().getEmail()` でメール取得可）でアクセスした場合、userId 手動入力フォームを表示
+- [x] `google.script.run.getStudentAppHtml(uid)` → `document.write()` で LIFF 画面を表示（`window.location.href` 不使用）
+
+---
+
+## Phase 4 — 以降の予定
+
+- [ ] 得点シート・過去成績の表示機能（[backlog.md](backlog.md) 参照）
+- [ ] 証拠写真・評定のアップロード（[backlog.md](backlog.md) 参照）
+- [ ] 生徒入力による表記ゆれ対応・パターン統合機能（[backlog.md](backlog.md) 参照）
+- [ ] 教科ごとの満点設定・バリデーション強化（[backlog.md](backlog.md) 参照）
+
+---
 
 ## 開発基盤
 
@@ -95,12 +146,3 @@
 - [x] **src/ ファイル整理**（2026-05-22）
   - `admin_saveData.js`（760行）を3分割: `admin_save_exams.js` / `admin_save_master.js` / `admin_save_students.js`
   - `common_stylesheet.html` を共通スタイルのみに絞り込み、生徒アプリ専用の `app_stylesheet.html` を新設
-
-## Phase 3 — 生徒向け機能拡張（一部完了）
-
-- [x] 得点・順位の入力フォーム（テキスト入力・バリデーション）
-- [ ] 得点シート・過去成績の表示機能
-- [ ] 証拠写真・評定のアップロード（[backlog.md](backlog.md) 参照）
-
-## バックログ（優先度未定）
-→ `.claude/backlog.md` 参照

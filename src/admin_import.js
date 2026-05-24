@@ -22,8 +22,7 @@ const STUDENT_COLUMN_MAP = {
 // 子 SS の students_master ヘッダー定義
 const STUDENTS_MASTER_HEADERS = [
   'student_id', 'name', 'pronunciation', 'cram_id',
-  'school_name', 'school_course', 'sub_course', 'grade',
-  'line_user_id', 'is_active'
+  'school_name', 'school_course', 'sub_course', 'grade', 'is_active'
 ];
 
 /**
@@ -108,7 +107,6 @@ function _mapRows(rawHeaders, rows, cramId) {
       school_course: '',
       sub_course:    '',
       grade:         raw['grade'] || '',
-      line_user_id:  '',
       is_active:     true
     });
   });
@@ -129,7 +127,6 @@ function _upsertStudentsMaster(ss, students) {
   var data    = sheet.getDataRange().getValues();
   var headers = data[0];
   var idCol   = headers.indexOf('student_id');
-  var lineCol = headers.indexOf('line_user_id');
 
   var existingMap = {};
   for (var i = 1; i < data.length; i++) {
@@ -147,11 +144,6 @@ function _upsertStudentsMaster(ss, students) {
     });
 
     if (existingMap[sid]) {
-      // 既登録の line_user_id は保持する
-      if (lineCol >= 0) {
-        var existingLineId = String(data[existingMap[sid] - 1][lineCol] || '').trim();
-        if (existingLineId) row[lineCol] = existingLineId;
-      }
       sheet.getRange(existingMap[sid], 1, 1, row.length).setValues([row]);
       updated++;
     } else {

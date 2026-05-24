@@ -87,4 +87,43 @@ function handleSave(studentId, examId, patternId, displayKey, btn) {
       scores:     scores
     });
 }
+
+/**
+ * コース・文理の初回設定フローで確定が押されたときの処理
+ */
+function handleCourseSubmit(lineUserId, schoolCourse, subCourse) {
+  setLoading(true, '設定を保存中...');
+  google.script.run
+    .withSuccessHandler(function(data) {
+      setLoading(false);
+      if (data && data.error) { showMessage('エラー: ' + data.error, 'error'); return; }
+      renderApp(data);
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
+    })
+    .setStudentCourseAndSubCourse(lineUserId, schoolCourse, subCourse);
+}
+
+/**
+ * 文理選択画面でボタンが押されたときの処理
+ */
+function handleSubCourseSelect(lineUserId, subCourse) {
+  setLoading(true, '設定を保存中...');
+  google.script.run
+    .withSuccessHandler(function(data) {
+      setLoading(false);
+      if (data && data.error) {
+        showMessage('エラー: ' + data.error, 'error');
+        return;
+      }
+      renderApp(data);
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
+    })
+    .setStudentSubCourse(lineUserId, subCourse);
+}
 </script>

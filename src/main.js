@@ -43,10 +43,84 @@ function doGet(e) {
   }
 
   // デフォルト（直接アクセス）
+  // /dev URL 経由の場合は Google ログインが必須のためメールが取得できる → 開発者モード
+  const devEmail = Session.getActiveUser().getEmail();
+  if (devEmail) {
+    return HtmlService.createHtmlOutput(_devInputPage(devEmail))
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
+
   return HtmlService.createHtmlOutput(
     '<p style="font-family:sans-serif;padding:24px;text-align:center;">LINE アプリからアクセスしてください。</p>'
   )
   .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function _devInputPage(email) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>開発者モード</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; padding: 48px 24px; max-width: 420px; margin: 0 auto; color: #333; }
+    h2 { color: #2c4a7c; margin: 0 0 4px; }
+    .badge { display: inline-block; background: #f0a500; color: #fff;
+             font-size: 0.72em; padding: 2px 8px; border-radius: 10px;
+             vertical-align: middle; margin-left: 8px; font-weight: bold; }
+    .email { color: #888; font-size: 0.85em; margin: 0 0 24px; }
+    label { display: block; font-size: 0.88em; color: #555; margin-bottom: 6px; }
+    input { width: 100%; padding: 10px 12px; border: 1px solid #ccc;
+            border-radius: 6px; font-size: 0.95em; }
+    button { margin-top: 14px; width: 100%; padding: 12px;
+             background: #4a7fc1; color: #fff; border: none;
+             border-radius: 6px; font-size: 1em; cursor: pointer; }
+    button:hover { background: #2c5fa0; }
+  </style>
+</head>
+<body>
+  <h2>開発者モード <span class="badge">DEV</span></h2>
+  <p class="email">ログイン中: ${email}</p>
+  <form onsubmit="go(event)">
+    <label for="uid">LINE userId を入力</label>
+    <input type="text" id="uid" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+    <button type="submit">アプリを表示</button>
+  </form>
+  <script>
+    function go(e) {
+      e.preventDefault();
+      var uid = document.getElementById('uid').value.trim();
+      if (!uid) return;
+      var btn = document.querySelector('button[type=submit]');
+      btn.disabled = true;
+      btn.textContent = '読み込み中...';
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = 'アプリを表示';
+          alert('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)));
+        })
+        .getStudentAppHtml(uid);
+    }
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * 開発者モード用: 生徒アプリの HTML 文字列を返す
+ */
+function getStudentAppHtml(userId) {
+  const data = getInitialData(userId);
+  const tmpl = HtmlService.createTemplateFromFile('index_app');
+  tmpl.appData = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+  return tmpl.evaluate().getContent();
 }
 
 /**

@@ -41,7 +41,7 @@ function getInitialData(lineUserId) {
     const idxSheet = parentSS.getSheetByName('student_index');
     if (!idxSheet) {
       _writeLiffLog(parentSS, lineUserId, '生徒未登録_1');
-      return { error: '生徒未登録_1' };
+      return { error: 'システムエラーが発生しました。管理者にお問い合わせください。', errorCode: 'SYSTEM_ERROR' };
     }
 
     const idxRows  = getRowsData(idxSheet);
@@ -50,13 +50,13 @@ function getInitialData(lineUserId) {
     );
     if (!idxEntry) {
       _writeLiffLog(parentSS, lineUserId, '生徒未登録_2');
-      return { error: '生徒未登録_2' };
+      return { error: 'このLINEアカウントは登録されていません。', errorCode: 'NOT_LINKED' };
     }
 
     const cramId = String(idxEntry.cram_id || '').trim();
     if (!cramId) {
       _writeLiffLog(parentSS, lineUserId, '生徒未登録_3');
-      return { error: '生徒未登録_3' };
+      return { error: '校舎情報が設定されていません。管理者にお問い合わせください。', errorCode: 'NO_BRANCH' };
     }
 
     // 2. 子 SS を開く
@@ -71,7 +71,7 @@ function getInitialData(lineUserId) {
     );
     if (!studentRaw) {
       _writeLiffLog(parentSS, lineUserId, '生徒未登録_4', '', cramId);
-      return { error: '生徒未登録_4' };
+      return { error: '生徒情報が見つかりません。管理者にお問い合わせください。', errorCode: 'STUDENT_NOT_FOUND' };
     }
 
     const student = {
@@ -197,8 +197,18 @@ function getInitialData(lineUserId) {
 
     _writeLiffLog(parentSS, lineUserId, 'success', student.student_id, cramId, student.name);
 
+    // 未設定項目のチェック（コース未設定が優先）
+    const grade       = String(student.grade        || '').trim();
+    const subCourse   = String(student.sub_course   || '').trim();
+    const course      = String(student.school_course|| '').trim();
+    const needsCourse = !course;
+    const needsSub    = !needsCourse && (grade === '高2' || grade === '高3') && !subCourse;
+
     return stringifyDates({
       student,
+      lineUserId,
+      needsCourse,
+      needsSubCourse: needsSub,
       currentExam,
       subjects: currentExam ? currentExam.subjects : [],
       scores:   currentExam ? currentExam.scores   : [],

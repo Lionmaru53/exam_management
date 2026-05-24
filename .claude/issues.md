@@ -76,6 +76,46 @@
 
 ---
 
+### [fixed] #011 ファイルアップロード機能追加コミットで LIFF 画面が破壊された
+- **場所**: `src/` 全体（commit `6364ce9`）
+- **症状**: `userCodeAppPanel:220 Uncaught SyntaxError: Invalid or unexpected token` / `renderApp is not defined` が発生し LIFF 画面が表示されない。
+- **原因**: ファイルアップロード機能追加コードに含まれる不正なトークンが GAS パーサーエラーを引き起こした（詳細は未特定）。
+- **対処**: `git revert 6364ce9`（commit `266d178`）でロールバック後、stash の差分を統合（commit `bcdcbff`）で解消。
+
+### [fixed] #012 HtmlTemplate への JSON 埋め込みで `SyntaxError: Invalid regular expression: missing /`
+- **場所**: `src/main.js` → `doGet()` の `tmpl.appData` セット
+- **症状**: LIFF 画面表示時に `SyntaxError: Invalid regular expression: missing /` が発生。
+- **原因**: `JSON.stringify()` の出力に U+2028 / U+2029（Unicode 行区切り文字）が混入し、正規表現リテラルの途中で改行扱いになった。また `</script>` 文字列がHTMLパーサーに誤解釈されるリスクもあった。
+- **対処**: `split('<').join('\\u003c').split('>').join('\\u003e')` に変更。正規表現の代替（副作用なし）。
+- **教訓**: GAS HtmlTemplate に JSON を埋め込む際は `<` と `>` を必ずエスケープする。→ `rules.md` に追記。
+
+### [fixed] #013 開発者モードで `window.location.href` 遷移後に画面が空白
+- **場所**: `src/main.js` → `_devInputPage()` 内の `go()` 関数
+- **症状**: userId を入力して「表示」ボタンを押すと画面が空白になる（LIFF 画面が表示されない）。
+- **原因**: GAS webapp は `googleusercontent.com` サブドメインで配信されるため、`window.location.href` で `script.google.com` 側の URL に遷移しても `doGet` は再実行されない。同一オリジン外への遷移は iframe 内では無効になる。
+- **対処**: `google.script.run.getStudentAppHtml(uid)` でサーバー側に HTML を生成させ、`document.open(); document.write(html); document.close();` でページを書き換える方式に変更。
+- **教訓**: GAS webapp 内では `window.location.href` によるページ遷移は使わない。→ `rules.md` に追記。
+
+### [fixed] #014 `autofocus` 属性で cross-origin subframe エラー
+- **場所**: `src/main.js` → `_devInputPage()` の入力フォーム
+- **症状**: "Blocked autofocusing on a `<input>` element in a cross-origin subframe" がコンソールに出続ける。
+- **原因**: GAS webapp が `googleusercontent.com` の iframe 内で動作するため、`autofocus` 属性がブラウザのセキュリティポリシーでブロックされる。
+- **対処**: `autofocus` 属性を削除。
+- **教訓**: GAS webapp 内のフォームには `autofocus` を使わない。→ `rules.md` に追記。
+
+### [fixed] #015 同一秒内に `_autoCreateExamPatterns` を複数回呼ぶと pattern_id が衝突する
+- **場所**: `src/admin_getData.js` → `upsertSchoolCourse()`
+- **症状**: 文系・理系・高1 の3パターンを生成しようとすると、タイムスタンプベースの ID が同一になり重複 pattern_id が発生する。
+- **原因**: `_autoCreateExamPatterns()` を3回呼ぶと、各呼び出しで `Utilities.formatDate(new Date(), ...)` が同じ秒を返し、`idx` もそれぞれ 1 からリセットされるため ID が重複する。
+- **対処**: `_autoCreateAllPatterns()` を新設し、5組み合わせ（高1/'', 高2/文系, 高2/理系, 高3/文系, 高3/理系）を1パスで生成。idx を通し番号にして衝突を排除。
+- **教訓**: 同一 GAS 実行内で ID をタイムスタンプベースで複数生成する場合は必ず連番サフィックスを通し番号で付与する。
+
+### [fixed] #016 管理画面の教科パターン管理で文系・理系グループが表示されない
+- **場所**: `src/admin_logic_patterns.html` → `renderPatternManager()`
+- **症状**: `school_course_master` にコースを追加しても、教科パターン管理の UI に文系・理系のグループが表示されない。
+- **原因**: `groupKeySet` を既存の `exam_patterns` の sub_course 一覧から構築していたため、パターンが存在しないと表示もされない循環依存になっていた。
+- **対処**: `groupKeySet` の初期構築を `schoolSettings`（school_course_master）ベースに変更し、常に標準5組み合わせを生成してから実際のパターンを追加する方式に変更。
+
 ## open
 
 （現在 open の Issue はありません）
