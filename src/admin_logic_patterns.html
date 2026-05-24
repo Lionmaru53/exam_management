@@ -1,5 +1,10 @@
 <script>
-let _patStore = [];
+let _patStore         = [];
+let _patDndStore      = [];    // DnD インデックス → 学校名
+let _patDragSrcIdx    = -1;    // ドラッグ中のインデックス
+let _patDndSrcEl      = null;
+let _patDndPlaceholder = null;
+let _patDndLastInsert = null;
 let editingGroupKey = null;
 
 let _collapseSchools = new Set();
@@ -198,12 +203,35 @@ function renderPatternManager(data) {
     });
   }
 
-  schoolOrder.forEach(function(schoolName) {
+  const cramIdForOrder   = window.selectedCramId || '';
+  const sortedSchoolOrder = _patGetSortedSchools(schoolOrder, cramIdForOrder);
+  _patDndStore = [];
+
+  // ジャンプナビゲーション
+  if (sortedSchoolOrder.length >= 2) {
+    html += '<div class="st-jump-nav">';
+    sortedSchoolOrder.forEach(function(sn, i) {
+      html += '<a class="st-jump-chip" href="javascript:void(0)"' +
+        ' onclick="document.getElementById(\'pat-sg-' + i + '\').scrollIntoView({behavior:\'smooth\',block:\'start\'})">' +
+        sn + '</a>';
+    });
+    html += '</div>';
+  }
+
+  sortedSchoolOrder.forEach(function(schoolName) {
+    const dndIdx       = _patDndStore.push(schoolName) - 1;
     const isSchoolOpen = !_collapseSchools.has(schoolName);
     const schoolIdx    = _patPush({ schoolName });
 
-    html += '<div class="hier-school">';
-    html += '<div class="hier-school-header" onclick="toggleSchool(' + schoolIdx + ')">' +
+    html += '<div class="hier-school" id="pat-sg-' + dndIdx + '" data-dnd-idx="' + dndIdx + '"' +
+      ' ondragover="_patDragOver(event,' + dndIdx + ')"' +
+      ' ondrop="_patDragDrop(event,' + dndIdx + ')">';
+    html += '<div class="hier-school-header"' +
+      ' draggable="true"' +
+      ' ondragstart="_patDragStart(event,' + dndIdx + ')"' +
+      ' ondragend="_patDragEnd()"' +
+      ' onclick="toggleSchool(' + schoolIdx + ')">' +
+      '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span>' +
       '<span class="hier-arrow">' + (isSchoolOpen ? '▼' : '▶') + '</span>' + schoolName +
       '</div>';
 
@@ -320,19 +348,29 @@ function _renderGroupPanel(group, subjects, genreNames) {
       '<button class="btn-cancel-admin" onclick="cancelGroupEdit()">キャンセル</button>' +
       '</div>';
   } else {
-    // 表示モード: 教科一覧をジャンルごとに表示
-    html += '<table class="admin-table"><thead><tr>';
-    genreNames.forEach(function(name) { html += '<th>' + name + '</th>'; });
-    html += '</tr></thead><tbody><tr>';
-    genreNames.forEach(function(genreName) {
-      const names = subjectIds.map(function(id) {
+    // 表示モード: 選択済み教科が存在するジャンルのみ列表示
+    const activeGenres = genreNames.filter(function(genreName) {
+      return subjectIds.some(function(id) {
         const s = subjects.find(function(s) { return s.subject_id === id; });
-        if (!s || (s.genre_name || 'その他') !== genreName) return null;
-        return _getAliasValue(sn, id) || s.subject_name;
-      }).filter(Boolean);
-      html += '<td>' + (names.join('<br>') || '<span style="color:#aaa;">-</span>') + '</td>';
+        return s && (s.genre_name || 'その他') === genreName;
+      });
     });
-    html += '</tr></tbody></table>';
+    if (activeGenres.length === 0) {
+      html += '<p style="color:#aaa; font-size:0.9em; padding:4px 0;">教科が設定されていません</p>';
+    } else {
+      html += '<table class="admin-table"><thead><tr>';
+      activeGenres.forEach(function(name) { html += '<th>' + name + '</th>'; });
+      html += '</tr></thead><tbody><tr>';
+      activeGenres.forEach(function(genreName) {
+        const names = subjectIds.map(function(id) {
+          const s = subjects.find(function(s) { return s.subject_id === id; });
+          if (!s || (s.genre_name || 'その他') !== genreName) return null;
+          return _getAliasValue(sn, id) || s.subject_name;
+        }).filter(Boolean);
+        html += '<td>' + names.join('<br>') + '</td>';
+      });
+      html += '</tr></tbody></table>';
+    }
 
     const editIdx = _patPush({ school_name: sn, school_course: sc, grade: gr, sub_course: sub, groupKey });
     html += '<div class="pattern-actions">' +
@@ -342,6 +380,114 @@ function _renderGroupPanel(group, subjects, genreNames) {
 
   html += '</div>';  // admin-genre-container
   return html;
+}
+
+// ---- 学校並び順（localStorage 連携・生徒一覧と同一キー） ----
+
+function _patGetSortedSchools(schools, cramId) {
+  var saved = null;
+  try {
+    var raw = localStorage.getItem('st_school_order_' + cramId);
+    if (raw) saved = JSON.parse(raw);
+  } catch {}
+  if (!saved || !Array.isArray(saved)) return schools;
+  var existing = saved.filter(function(s) { return schools.indexOf(s) !== -1; });
+  var newOnes  = schools.filter(function(s) { return existing.indexOf(s) === -1; });
+  return existing.concat(newOnes);
+}
+
+function _patSaveSchoolOrder(cramId, schools) {
+  try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch {}
+}
+
+// ---- ドラッグ&ドロップ（FLIP アニメーション） ----
+
+function _patDragStart(event, idx) {
+  _patDragSrcIdx = idx;
+  _patDndSrcEl   = document.querySelector('.hier-school[data-dnd-idx="' + idx + '"]');
+  if (!_patDndSrcEl) return;
+
+  var cs = window.getComputedStyle(_patDndSrcEl);
+  _patDndPlaceholder = document.createElement('div');
+  _patDndPlaceholder.className          = 'dnd-placeholder';
+  _patDndPlaceholder.style.height       = _patDndSrcEl.offsetHeight + 'px';
+  _patDndPlaceholder.style.marginBottom = cs.marginBottom;
+  _patDndPlaceholder.addEventListener('dragover', function(e) { e.preventDefault(); });
+  _patDndPlaceholder.addEventListener('drop',     function(e) { _patCommitDrop(e); });
+  _patDndSrcEl.parentNode.insertBefore(_patDndPlaceholder, _patDndSrcEl.nextSibling);
+  _patDndLastInsert = null;
+
+  setTimeout(function() { if (_patDndSrcEl) _patDndSrcEl.classList.add('pat-dragging'); }, 0);
+}
+
+function _patDragOver(event, idx) {
+  event.preventDefault();
+  if (!_patDndPlaceholder || !_patDndSrcEl) return;
+
+  var target = document.querySelector('.hier-school[data-dnd-idx="' + idx + '"]');
+  if (!target || target === _patDndSrcEl) return;
+
+  var rect           = target.getBoundingClientRect();
+  var insertBeforeEl = event.clientY < rect.top + rect.height / 2
+    ? target : target.nextSibling;
+
+  if (insertBeforeEl === _patDndLastInsert || insertBeforeEl === _patDndPlaceholder) return;
+  _patDndLastInsert = insertBeforeEl;
+
+  var els  = Array.from(document.querySelectorAll('.hier-school'));
+  var prev = els.map(function(el) { return el.getBoundingClientRect().top; });
+  _patDndSrcEl.parentNode.insertBefore(_patDndPlaceholder, insertBeforeEl);
+  els.forEach(function(el, i) {
+    var delta = prev[i] - el.getBoundingClientRect().top;
+    if (Math.abs(delta) < 1) return;
+    el.style.transition = 'none';
+    el.style.transform  = 'translateY(' + delta + 'px)';
+    requestAnimationFrame(function() {
+      el.style.transition = 'transform 0.18s ease';
+      el.style.transform  = '';
+    });
+  });
+}
+
+function _patDragEnd() {
+  if (_patDndSrcEl) _patDndSrcEl.classList.remove('pat-dragging');
+  document.querySelectorAll('.hier-school').forEach(function(el) {
+    el.style.transition = '';
+    el.style.transform  = '';
+  });
+  if (_patDndPlaceholder && _patDndPlaceholder.parentNode) {
+    _patDndPlaceholder.parentNode.removeChild(_patDndPlaceholder);
+  }
+  _patDndSrcEl = _patDndPlaceholder = _patDndLastInsert = null;
+  _patDragSrcIdx = -1;
+}
+
+function _patCommitDrop(event) {
+  event.preventDefault();
+  if (_patDragSrcIdx < 0 || !_patDndPlaceholder || !_patDndPlaceholder.parentNode) {
+    _patDragEnd(); return;
+  }
+  var parent   = _patDndPlaceholder.parentNode;
+  var children = Array.from(parent.children).filter(function(el) {
+    return el.classList.contains('hier-school') || el === _patDndPlaceholder;
+  });
+  var srcName  = _patDndStore[_patDragSrcIdx];
+  var newOrder = [];
+  children.forEach(function(el) {
+    if (el === _patDndPlaceholder) {
+      newOrder.push(srcName);
+    } else if (el !== _patDndSrcEl) {
+      var i = parseInt(el.dataset.dndIdx, 10);
+      if (!isNaN(i) && _patDndStore[i]) newOrder.push(_patDndStore[i]);
+    }
+  });
+  if (newOrder.length > 0) _patSaveSchoolOrder(window.selectedCramId || '', newOrder);
+  _patDragEnd();
+  renderPatternManager(masterData);
+}
+
+function _patDragDrop(event, targetIdx) {
+  _patCommitDrop(event);
 }
 
 // ---- 階層トグル ----
@@ -507,6 +653,11 @@ function submitAddCourse() {
 }
 
 window.renderPatternManager  = renderPatternManager;
+window._patDragStart         = _patDragStart;
+window._patDragOver          = _patDragOver;
+window._patDragEnd           = _patDragEnd;
+window._patDragDrop          = _patDragDrop;
+window._patCommitDrop        = _patCommitDrop;
 window.toggleSchool          = toggleSchool;
 window.toggleCourse          = toggleCourse;
 window.toggleGrade           = toggleGrade;
