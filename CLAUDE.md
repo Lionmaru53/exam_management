@@ -1,4 +1,6 @@
-# exam_management — Claude 向けプロジェクトコンテキスト
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 塾生の定期試験の得点・順位を管理するシステム。  
 Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LINE / LIFF、管理者は Web 管理画面を使用。
@@ -15,141 +17,133 @@ Google Apps Script (GAS) + Google スプレッドシート構成。生徒は LIN
 
 ---
 
-## アクセス URL（確定）
+## コマンド
 
-| 用途 | URL | 備考 |
-|------|-----|------|
-| 管理者 | `script.google.com/macros/s/[管理者デプロイID]/exec?page=admin` | Google ログイン必須・Cloudflare 経由なし |
-| 生徒（LIFF） | `wasedazemi-highschool.com/exams/test?userId=...` | Cloudflare 経由・Google ログイン不要 |
+| 目的 | コマンド |
+|------|---------|
+| 開発 GAS へ push | `clasp push --project .clasp.dev.json` |
+| 本番 GAS へ push | `clasp push` |
+| テストコード込み push | `.\push-test.ps1` |
+| Jest ユニットテスト（高速） | `npm test` |
+| GAS 統合テスト | `push-test.ps1` → GAS エディタで `runAllTests()` |
 
----
-
-## 現在の開発状況（2026-05-25 更新）
-
-- **Phase 0〜2: 完了・main にマージ済み（2026-05-19）**
-- **単一プロジェクト構成**: `src/` を直接 GAS プロジェクトへ push
-
-**現在の main ブランチ最新 commit**: `adb2cac`
+> **push 後の必須手順**: GAS エディタ → デプロイを管理 → 鉛筆アイコン → 「新しいバージョン」を選択。`/exec` URL はデプロイ済みバージョンを実行するため push だけでは反映されない。開発中の動作確認は `/dev` URL を使う（常に HEAD を実行）。
 
 ---
 
-### 直近の実装内容（2026-05-25）
+## アーキテクチャ概要
 
-**生徒 LIFF：不具合報告セクション（commit `adb2cac`）**
+### システム構成
 
-- 得点入力画面の下部に「不具合を報告する」トグルを追加
-- 5種別（表示名が違う／科目が足りない／保存した点数が消えた／テスト名・試験区分がおかしい／その他）
-- 種別ごとに補助入力フィールドが動的に表示（プルダウン・テキスト入力）
-- 「確認する」→ 確認画面（内容表示）→「送信する」の2ステップ送信フロー
-- 報告内容は親 SS の `bug_reports` シートに記録（Google Sheets の通知ルールでメール通知）
-- MailApp スコープは未使用（Workspace ポリシーによりブロックされるため）
+```
+LINE アプリ → LIFF エンドポイント（GitHub Pages: docs/）
+  └─ LINE userId 取得 → GAS（ANYONE_ANONYMOUS）へ
+        └─ 親 SS の student_index で line_user_id → student_id を解決
+        └─ branches シートで cram_id → 子 SS を特定
+        └─ 子 SS から試験・得点データを取得
 
-**生徒 LIFF：未受験チェックボックス・未実施バッジ（commit `adb2cac`）**
+管理者（Google アカウント）→ GAS（ANYONE = Google ログイン必須）へ
+  └─ Session.getActiveUser() → admin_users シート照合
+```
 
-- 科目テーブルに「未受験」列を追加。チェックすると得点・順位入力が無効化され `not_taken: true` として保存
-- `exam_subject_exclusions` で除外設定された科目には「未実施」バッジを表示（入力不可）
-- `exam_subject_exclusions` シートは任意扱いに変更（旧子 SS には存在しないため後方互換）
+### GAS デプロイ構成（同一プロジェクト・コード共有）
 
-**管理画面：パターン手動追加 UI（commit `adb2cac`）**
+| デプロイ | access | 用途 |
+|---------|--------|------|
+| 生徒用 | ANYONE_ANONYMOUS（Cloudflare 経由） | LINE 認証・Google 不要 |
+| 管理者用 | 全員（ログインが必要） | Google 認証必須 |
 
-- 「全学校・全学年を初期化」ボタンを「コースを追加する」フォームに置換
-- 学校名チェックリスト（全選択補助あり）＋ コース入力 →「追加する」で高1・高2文系/理系・高3文系/理系の5パターンを自動生成
+同一の `src/` から 2 つのデプロイを作成。`appsscript.json` の `access` は `ANYONE_ANONYMOUS`（生徒用デフォルト）。管理者用デプロイは GAS エディタから手動で `ANYONE` で作成する。
 
-**`subjects_master.default` 列（commit `adb2cac`）**
+### clasp 設定
 
-- `default` 列が `true`/`1` の科目のみ新パターンの初期科目として登録（従来の「ジャンル上位2件」ヒューリスティックを廃止）
+| clasp 設定 | push 先 | git 管理 |
+|---|---|---|
+| `.clasp.dev.json` | 開発 GAS | 管理内 |
+| `.clasp.json` | 本番 GAS | **管理外** |
+
+### docs/config.js の管理
+
+`docs/config.js`（`LIFF_ID` / `GAS_URL` を含む）は git 管理外。GitHub Secrets から CI が自動生成。ローカル開発時は `docs/config.example.js` を参考に手動作成。
+
+### スプレッドシート構造
+
+- **親 SS**: `admin_users` / `branches` / `student_index` / `subjects_master` 等のマスターデータ
+- **子 SS（校舎ごと）**: `students_master` / `exam_patterns` / `scores_data` 等の校舎別データ
+- `student_index`: `line_user_id → student_id` のルーティングテーブル（保護者の LINE ID も登録可）
+
+詳細は [spreadsheet-schema.md](spreadsheet-schema.md) を参照。
 
 ---
 
-### 過去の重要な経緯（参考）
+## GAS 固有の重要ルール
 
-**`main.js` の JSON 埋め込み修正（2026-05-24）**
-
-GAS HtmlTemplate に JSON を埋め込む際 U+2028/U+2029 混入で `SyntaxError` が発生した。現在の実装:
+### LockService は try の外で宣言する
 
 ```javascript
-tmpl.appData = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+function updateExamData(payload) {
+  const lock = LockService.getScriptLock(); // try の外に書く
+  try {
+    lock.waitLock(10000);
+    // ...
+  } finally {
+    lock.releaseLock(); // try 内だと finally でスコープ外エラー
+  }
+}
 ```
 
-**`getData.js` の student 検索方式変更（2026-05-24）**
+### onclick 属性への文字列埋め込み禁止
 
-`student_index` で LINE ID → `student_id` を解決し、`students_master` は `student_id` で引く。  
-保護者の LINE ID でも同じ生徒データを参照できる。
+学校名等に特殊文字が入りうるため、`_store[]` に数値インデックスで格納し onclick には数値のみ渡す。
 
-> ⚠️ `student_index` シートに `student_id` 列が必要。VSTACK 数式で自動生成（`spreadsheet-schema.md` 参照）。
-
----
-
-### 次にやること（優先順）
-
-1. **LIFF 動作確認**（最優先）
-   - 不具合報告フォームの送受信が実際に機能するか確認
-   - 未受験チェックが保存・再表示されるか確認
-   - `bug_reports` シートへの書き込みと Google Sheets 通知の動作確認
-
-2. **スプレッドシート設定**
-   - `subjects_master` に `default` 列を追加（既存行は `TRUE`/空 で設定）
-   - `student_index` に `student_id` 列が VSTACK 数式で存在することを確認
-
-3. **教科ごとの満点設定・バリデーション強化**（バックログ）
-   - `pattern_subjects` に `max_score` 列追加
-   - フロント・サーバー両方でバリデーション
-
-4. **コース表記ゆれ対応**（バックログ）
-   - 管理画面でコースをマージできる UI
-
-5. **過去成績の表示機能**（バックログ）
-   - 生徒 LIFF から自分の得点推移・履歴を確認できる画面
-
----
-
-## プロジェクト構成（重要）
-
-```
-src/          ← 全ロジック・HTML → .clasp.dev.json で push（開発）/ .clasp.json で push（本番）
+```javascript
+// NG: html += `<button onclick="edit('${schoolName}')">`;
+const idx = _store.push({ schoolName }) - 1;
+html += `<button onclick="edit(${idx})">`;
 ```
 
-| clasp 設定 | push 先 | rootDir | 用途 |
-|---|---|---|---|
-| `.clasp.dev.json` | 開発 GAS プロジェクト | `src/` | 開発・動作確認 |
-| `.clasp.json`（git 管理外） | 本番 GAS プロジェクト | `src/` | 本番デプロイ |
+### HtmlTemplate への JSON 埋め込みは split/join でエスケープする
+
+```javascript
+// U+2028/U+2029 混入と </script> 終端を防ぐ
+tmpl.appData = JSON.stringify(data)
+  .split('<').join('\\u003c')
+  .split('>').join('\\u003e');
+```
+
+### GAS webapp 内で window.location.href によるページ遷移はしない
+
+`googleusercontent.com` 上の GAS webapp から `script.google.com` へ `window.location.href` で遷移すると画面が空白になる。代わりに `google.script.run` でサーバーに HTML を生成させ `document.write()` で書き換える。
+
+### テンプレートリテラル内に style= 属性を書かない
+
+`<script>` ブロック内のテンプレートリテラルに `style="..."` が含まれると GAS が `Unexpected identifier 'style'` SyntaxError を起こす。HTML 生成は文字列連結（`+`）で書き、インラインスタイルは CSS クラスに置き換える。
+
+### appsscript.json に oauthScopes を明示してはいけない
+
+書いてデプロイするとスコープ要件が焼き付いて SpreadsheetApp 系が権限エラーになる。GAS の自動スコープ検出に任せる。
+
+### スコープ変更後は完全新規デプロイが必要
+
+`appsscript.json` のスコープや `webapp` 設定を変えた後は「新バージョン」ではなく完全に新しいデプロイを作成する。
+
+### executeAs USER_ACCESSING は使わない
+
+`SpreadsheetApp.getActiveSpreadsheet()` が try-catch で捕捉不可能な権限エラーを投げるケースがある。認証は `executeAs: USER_DEPLOYING` + アクセス設定「ログインが必要」+ `Session.getActiveUser()` で行う。
+
+### その他
+
+- シートから読んだ `Date` 型は `stringifyDates()` で文字列変換してからフロントに渡す
+- `<a href="...">` タグの属性はすべて 1 行で記述する（複数行にすると改行がhrefに入る）
+- `autofocus` 属性は cross-origin subframe（GAS webapp）では使わない
+- xlsx 解析は SheetJS（CDN）でブラウザ側で行い、行データを GAS に送る（Drive API 不要）
 
 ---
 
-## 次回セッション開始手順
+## 技術スタック
 
-### 1. コードの push
-
-| 目的 | コマンド |
-|------|---------|
-| **開発中（通常）** | `clasp push --project .clasp.dev.json` |
-| テストコード込み push | `.\push-test.ps1`（要確認: test 用 clasp 設定） |
-| 本番リリース時 | `clasp push` → GAS エディタで「デプロイを管理 → 新しいバージョン」を作成 |
-
-> ⚠️ push 後は GAS エディタで「デプロイ → デプロイを管理 → 新しいバージョン」の作成が必要（exec URL への反映）。
-
-### 2. 動作確認
-管理者デプロイ URL（直接 GAS URL）にアクセスし、Google アカウントでログインできることを確認
-
-### 3. テスト実行
-
-| 目的 | コマンド |
-|------|---------|
-| ローカル Jest テスト（高速・推奨） | `npm test` |
-| GAS テスト（シート操作込み） | `.\push-test.ps1` → GAS エディタで `runAllTests()` |
-
-詳細は [testing.md](.claude/testing.md) を参照。
-
-### 4. 現在の状況
-
-「次にやること」は上の「直近の実装内容」セクションに記載済み。詳細は [roadmap.md](.claude/roadmap.md) 参照。
-
----
-
-## 技術スタック（要約）
-
-- **バックエンド**: GAS（clasp で push）
-- **フロントエンド**: GAS HtmlService（管理画面）/ GitHub Pages（LIFF）
+- **バックエンド**: GAS（clasp で push）、`src/` が全ロジック・HTML
+- **フロントエンド**: GAS HtmlService（管理画面）/ GitHub Pages（LIFF、`docs/`）
 - **DB**: Google スプレッドシート（親 SS + 校舎別子 SS）
-- **認証**: `Session.getActiveUser()` + admin_users シート照合（管理者）/ LINE LIFF（生徒）
-- **xlsx 解析**: SheetJS（CDN）でブラウザ側解析 → GAS に JSON 送信（Drive API 不要）
+- **認証**: `Session.getActiveUser()` + admin_users（管理者）/ LINE LIFF（生徒）
+- **テスト**: Jest（`tests/unit/`、GAS API はモック済み）+ GAS 統合テスト（`tests/test_runner.js`）

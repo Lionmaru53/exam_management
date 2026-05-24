@@ -24,8 +24,9 @@ describe('getAdminContext', () => {
     const ctx = getAdminContext();
     expect(ctx.role).toBe('master');
     expect(ctx.email).toBe('master@example.com');
-    expect(ctx.cram_id).toBe('');
-    expect(ctx.cram_ids).toEqual([]);
+    // master はシートの全 cram_id 動的列を担当とみなす（この beforeEach では C001 が存在する）
+    expect(ctx.cram_id).toBe('C001');
+    expect(ctx.cram_ids).toEqual(['C001']);
   });
 
   test('branch_admin メールで認証 → role と cram_id / cram_ids が返る', () => {

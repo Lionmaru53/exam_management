@@ -3,20 +3,28 @@
 function renderImportManager() {
   var content    = document.getElementById('admin-content');
   var cramId     = window.selectedCramId || '';
+  var isMaster   = window.masterData && window.masterData.adminContext && window.masterData.adminContext.role === 'master';
   var branchName = _impGetBranchName(cramId);
 
-  if (!cramId) {
+  if (!cramId && !isMaster) {
     content.innerHTML = '<h3>生徒データインポート</h3>'
       + '<p class="imp-no-branch">画面上部のセレクターから校舎を選択してください。</p>';
     return;
   }
 
+  var targetLine = cramId
+    ? '<p>対象校舎: <strong>' + branchName + '</strong></p>'
+    : '<p class="imp-multi-hint">校舎を選択せずにインポートすると、xlsx の「<strong>校舎</strong>」列を元に各校舎へ自動振り分けします。</p>';
+  var hintCols = cramId
+    ? '管理番号 / 姓 / 名 / 姓かな / 名かな / 学校 / 学年'
+    : '<span class="imp-required-branch">校舎</span> / 管理番号 / 姓 / 名 / 姓かな / 名かな / 学校 / 学年';
+
   content.innerHTML = '<h3>生徒データインポート</h3>'
-    + '<p>対象校舎: <strong>' + branchName + '</strong></p>'
-    + '<p class="imp-desc">「015_名簿作成」からエクスポートした校舎別の Excel ファイル（.xlsx）をアップロードしてください。<br>'
+    + targetLine
+    + '<p class="imp-desc">「015_名簿作成」からエクスポートした Excel ファイル（.xlsx）をアップロードしてください。<br>'
     + '同じ管理番号の生徒は上書き更新、新規の生徒は追加されます。</p>'
     + '<div class="imp-hint">'
-    + '<strong>必須列（1行目のヘッダー名）:</strong> 管理番号 / 姓 / 名 / 姓かな / 名かな / 学校 / 学年'
+    + '<strong>必須列（1行目のヘッダー名）:</strong> ' + hintCols
     + '</div>'
     + '<div class="imp-upload-row">'
     + '<input type="file" id="import-file" accept=".xlsx" onchange="_onFileChange()" />'
@@ -73,6 +81,13 @@ function _onFileChange() {
         return;
       }
 
+      // multi-branch モードでは「校舎」列も必須
+      var isMasterCheck = window.masterData && window.masterData.adminContext && window.masterData.adminContext.role === 'master';
+      if (!window.selectedCramId && isMasterCheck && headers.indexOf('校舎') === -1) {
+        preview.innerHTML = '<p class="imp-warn">複数校舎インポートには「校舎」列が必要です。</p>';
+        return;
+      }
+
       var idIdx = headers.indexOf('管理番号');
       var valid = dataRows.filter(function (r) { return String(r[idIdx] || '').trim() !== ''; });
 
@@ -97,8 +112,9 @@ function _onFileChange() {
 }
 
 function _doImport() {
-  var cramId = window.selectedCramId || '';
-  if (!cramId)               { showMessage('校舎を選択してください。', 'error'); return; }
+  var cramId   = window.selectedCramId || '';
+  var isMaster = window.masterData && window.masterData.adminContext && window.masterData.adminContext.role === 'master';
+  if (!cramId && !isMaster)  { showMessage('校舎を選択してください。', 'error'); return; }
   if (!window._importRows)   { showMessage('ファイルを選択してください。', 'error'); return; }
 
   document.getElementById('import-result').innerHTML = '';
@@ -108,13 +124,20 @@ function _doImport() {
     .withSuccessHandler(function (res) {
       setLoading(false);
       if (res && res.success) {
+        var skippedLine = (res.skipped > 0) ? '<li>スキップ: <strong>' + res.skipped + '</strong> 件</li>' : '';
         var resultHtml = '<div class="imp-result">'
           + '<p class="imp-result-title">インポート完了</p>'
           + '<ul>'
           + '<li>追加: <strong>' + res.added + '</strong> 件</li>'
           + '<li>更新: <strong>' + res.updated + '</strong> 件</li>'
+          + skippedLine
           + '</ul>'
           + '</div>';
+        if (res.warnings && res.warnings.length > 0) {
+          resultHtml += '<div class="imp-warn-box"><strong>警告（一部の校舎でエラー）:</strong><ul>'
+            + res.warnings.map(function (w) { return '<li>' + w + '</li>'; }).join('')
+            + '</ul></div>';
+        }
         document.getElementById('import-result').innerHTML = resultHtml;
         showMessage('インポートが完了しました。', 'success');
         window._importRows = null;

@@ -16,14 +16,50 @@
 |----|------|------|
 | 1 | `admin_id` | 管理者 ID（`A` + タイムスタンプ） |
 | 2 | `email` | Google アカウントのメールアドレス |
-| 3 | `cram_ids` | 担当校舎 ID（カンマ区切りで複数可。master は空欄可） |
-| 4 | `role` | `master` または `branch_admin` |
-| 5 | `is_active` | 有効フラグ |
-| 6 | `created_at` | 登録日時 |
-| 7 | `last_login` | 最終ログイン日時 |
+| 3 | `role` | `master` または `branch_admin` |
+| 4 | `is_active` | 有効フラグ |
+| 5以降 | `{cram_id}` | 校舎ごとの動的列（列名 = cram_id、値 `TRUE` = その校舎を担当） |
 
 **主キー**: `admin_id`  
-**備考**: `branch_admin` は `cram_ids` に含まれる校舎のみ操作可能。
+**備考**: `admin_id` / `email` / `role` / `is_active` が固定列。5列目以降は校舎を追加するたびに列を増やす。  
+`master` ロールは全 cram_id 列を担当とみなす（TRUE/FALSE 不問）。  
+`branch_admin` は値が `TRUE` の列の校舎のみ操作可能。  
+`setupAdminSS()` が初期ヘッダー `[admin_id, email, role, is_active]` を作成する。
+
+---
+
+### `bug_reports`
+生徒アプリから送信された不具合報告。`submitBugReport()`（`saveData.js`）が追記する。  
+Google Sheets の通知ルール（ツール → 通知）でメール通知を設定する（MailApp は未使用）。
+
+| 列 | 列名 | 説明 |
+|----|------|------|
+| 1 | `report_id` | レポート ID（`BR` + UUID 先頭12文字） |
+| 2 | `timestamp` | 送信日時 |
+| 3 | `student_id` | 生徒 ID |
+| 4 | `student_name` | 生徒名 |
+| 5 | `school_name` | 学校名 |
+| 6 | `grade` | 学年 |
+| 7 | `report_type` | 種別（`表示名が違う` / `科目が足りない` / `保存した点数が消えた` / `テスト名・試験区分がおかしい` / `その他`） |
+| 8 | `detail` | 詳細（種別ごとの補助入力＋自由記述を結合した文字列） |
+
+**備考**: シートが存在しない場合は `submitBugReport()` が自動作成する。
+
+---
+
+### `liff_access_log`
+LIFF（生徒アプリ）へのアクセスログ。`_writeLiffLog()`（`getData.js`）が自動追記する。
+
+| 列 | 列名 | 説明 |
+|----|------|------|
+| 1 | `timestamp` | アクセス日時 |
+| 2 | `line_user_id` | LINE ユーザー ID |
+| 3 | `result` | 結果（例: `success`, `NOT_LINKED`, `NO_BRANCH`） |
+| 4 | `student_id` | 解決した生徒 ID（失敗時は空） |
+| 5 | `cram_id` | 校舎 ID（失敗時は空） |
+| 6 | `student_name` | 生徒名（失敗時は空） |
+
+**備考**: シートが存在しない場合は `_writeLiffLog()` が自動作成する。
 
 ---
 
@@ -57,9 +93,9 @@
 ---
 
 ### `student_index`
-`line_user_id` → `cram_id` のルーティングテーブル。  
+`line_user_id` → `student_id` + `cram_id` のルーティングテーブル。  
 `getData.js` と `saveData.js` が最初に参照し、どの子 SS を開くかを決定する。  
-LINE ID 連携（`linkLineIds()`）実行時に自動更新される。
+データはスプレッドシート関数（VSTACK 等）で `line_student_import` シートから自動生成される。
 
 | 列 | 列名 | 説明 |
 |----|------|------|
@@ -68,7 +104,22 @@ LINE ID 連携（`linkLineIds()`）実行時に自動更新される。
 | 3 | `cram_id` | 校舎 ID（子 SS 特定に使用） |
 
 **主キー**: `student_id`  
-**検索キー**: `line_user_id`（`getData.js` が LINE ID → student_id 解決に使用）
+**検索キー**: `line_user_id`（`getData.js` が LINE ID → student_id 解決に使用）  
+**備考**: このシートは数式で自動集計されるため直接編集しない。紐づけの追加・変更は `line_student_import` シートで行う。
+
+---
+
+### `line_student_import`
+`student_id` / `line_user_id` / `cram_id` の紐づけを管理する入力シート。  
+ここに行を追加すると `student_index` の数式が自動的に取り込む。
+
+| 列 | 列名 | 説明 |
+|----|------|------|
+| 1 | `student_id` | 生徒 ID |
+| 2 | `line_user_id` | LINE ユーザー ID |
+| 3 | `cram_id` | 校舎 ID |
+
+**備考**: 外部担当者が直接入力する運用を想定。`student_index` は VSTACK 等の数式でこのシートを参照している。
 
 ---
 
@@ -106,6 +157,7 @@ LINE ID 連携（`linkLineIds()`）実行時に自動更新される。
 | 2 | `subject_name` | 教科名 |
 | 3 | `genre_id` | ジャンル ID（`genres_master` 参照） |
 | 4 | `grade` | 対象学年（例: `高1`, `高2`, `高3`） |
+| 5 | `default` | `TRUE` の教科のみ新パターン自動生成時の初期教科として `pattern_subjects` に登録される |
 
 **主キー**: `subject_id`
 
@@ -172,11 +224,11 @@ LINE ID 連携（`linkLineIds()`）実行時に自動更新される。
 | 6 | `school_course` | 学校コース（生徒の初回 LIFF アクセス時または管理画面から設定） |
 | 7 | `sub_course` | 文理区分（`文系` / `理系` / 空文字。高2・高3のみ使用） |
 | 8 | `grade` | 学年（`高1` / `高2` / `高3`） |
-| 9 | `line_user_id` | LINE ユーザー ID（LINE ID 連携で設定） |
-| 10 | `is_active` | 在籍フラグ（インポート時は `true`） |
+| 9 | `is_active` | 在籍フラグ（インポート時は `true`） |
 
 **主キー**: `student_id`  
-**備考**: `school_course` と `sub_course` は生徒が LIFF 初回アクセス時の初期設定フローでも設定される。
+**備考**: `school_course` と `sub_course` は生徒が LIFF 初回アクセス時の初期設定フローでも設定される。  
+LINE ID とのひも付けは親 SS の `student_index` で管理するため、このシートには持たない。
 
 ---
 
@@ -307,10 +359,14 @@ scores_data
 
 | シート/列 | 廃止理由 |
 |-----------|---------|
+| `admin_users.cram_ids` | 校舎ごとの動的列方式（5列目以降）に変更 |
+| `admin_users.created_at` | 不要と判断し廃止 |
+| `admin_users.last_login` | 不要と判断し廃止 |
 | `term_tests_master.is_two_terms` | `school_term_test_settings` に移行（2026-05-24） |
 | `school_course_master.is_two_terms` | 同上 |
 | `【設定】学校・科`（子SS） | `school_course_master`（縦テーブル）に移行済み |
 | `students_branch`（子SS） | 用途が `students_master` と重複するため廃止 |
+| `students_master.line_user_id`（子SS） | LINE ID 解決は親 SS の `student_index` に一元化。コードから参照なし |
 
 ---
 

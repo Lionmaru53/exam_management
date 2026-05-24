@@ -47,19 +47,28 @@ function makeFakeSS(sheetMap) {
 
 /**
  * admin_users シート用の fake sheet を生成するショートカット。
+ * 固定列（admin_id / email / role / is_active）＋ cram_id ごとの動的列（TRUE/FALSE）。
  * @param {Array<{ email: string, role: string, cram_id: string, is_active: boolean }>} users
+ *   cram_id はカンマ区切りで複数校舎を指定可（例: 'C001' または 'Z01,Z02,Z03'）。
+ *   master はコントロール目的で空文字を渡す（全動的列を担当とみなす）。
  */
 function makeAdminUsersSheet(users) {
-  const headers  = ['admin_id', 'email', 'cram_id', 'role', 'is_active', 'created_at', 'last_login'];
-  const dataRows = users.map((u, i) => [
-    'A000' + i,
-    u.email,
-    u.cram_id || '',
-    u.role,
-    u.is_active !== undefined ? u.is_active : true,
-    '',
-    '',
-  ]);
+  const allCramIds = [...new Set(users.flatMap(u => {
+    const raw = u.cram_id || '';
+    return raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+  }))];
+
+  const headers  = ['admin_id', 'email', 'role', 'is_active', ...allCramIds];
+  const dataRows = users.map((u, i) => {
+    const userCramIds = (u.cram_id || '').split(',').map(s => s.trim()).filter(Boolean);
+    return [
+      'A000' + i,
+      u.email,
+      u.role,
+      u.is_active !== undefined ? u.is_active : true,
+      ...allCramIds.map(col => userCramIds.includes(col)),
+    ];
+  });
   return makeFakeSheet(headers, dataRows);
 }
 

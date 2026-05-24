@@ -132,35 +132,5 @@ describe('_upsertStudentsMaster', () => {
     expect(result.updated).toBe(1);
   });
 
-  test('既存の line_user_id はインポートで上書きされない', () => {
-    const existingLineId = 'U_existing_line_id';
-    const existing = [{
-      student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
-      school_name: '', school_course: '', sub_course: '', grade: '1',
-      line_user_id: existingLineId, is_active: true,
-    }];
-    const { _sheet, ...fakeSS } = makeStudentsSS(existing);
-
-    const capturedRows = [];
-    _sheet.getRange.mockImplementation((row, col, numRows, numCols) => ({
-      getValue:  jest.fn(() => ''),
-      getValues: jest.fn(() => [STUDENTS_MASTER_HEADERS]),
-      setValue:  jest.fn(),
-      setValues: jest.fn((vals) => { capturedRows.push(vals); }),
-    }));
-
-    const imported = [{
-      student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
-      school_name: 'A高校', school_course: '', sub_course: '', grade: '2',
-      line_user_id: '',
-      is_active: true,
-    }];
-    _upsertStudentsMaster(fakeSS, imported);
-
-    const lineIdIdx = STUDENTS_MASTER_HEADERS.indexOf('line_user_id');
-    const savedRow  = capturedRows[0]?.[0];
-    if (savedRow) {
-      expect(savedRow[lineIdIdx]).toBe(existingLineId);
-    }
-  });
 });
+

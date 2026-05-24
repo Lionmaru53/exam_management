@@ -190,7 +190,7 @@ function _createChildSheets(ss) {
     { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
     { name: 'exam_subject_exclusions', headers: ['exam_id', 'subject_id', 'updated_at'] },
     { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken'] },
-    { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'line_user_id', 'is_active'] },
+    { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
   ];
   defs.forEach(({ name, headers }) => {
     const sheet = ss.insertSheet(name);

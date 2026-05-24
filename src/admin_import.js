@@ -40,7 +40,8 @@ function importStudentData(cramId, sheetRows) {
     if (ctx.role !== 'master' && !ctxCramIds.includes(String(cramId || '').trim())) {
       return { success: false, error: '権限がありません' };
     }
-    if (!cramId)     return { success: false, error: '校舎を選択してください' };
+    const isMultiBranch = !cramId && ctx.role === 'master';
+    if (!isMultiBranch && !cramId) return { success: false, error: '校舎を選択してください' };
     if (!sheetRows || sheetRows.length < 2) {
       return { success: false, error: 'データが空です（ヘッダー行のみ）' };
     }
@@ -49,6 +50,14 @@ function importStudentData(cramId, sheetRows) {
     const dataRows   = sheetRows.slice(1).filter(function (r) {
       return r.some(function (c) { return String(c || '').trim() !== ''; });
     });
+
+    if (isMultiBranch) {
+      const result = _importMultiBranch(rawHeaders, dataRows);
+      if (result.success) {
+        writeAuditLog(ctx, 'import_students_multi', { count: result.total }, 'success');
+      }
+      return result;
+    }
 
     const mapped   = _mapRows(rawHeaders, dataRows, cramId);
     const students = mapped.students;
@@ -63,10 +72,6 @@ function importStudentData(cramId, sheetRows) {
     const childSS = getChildSS(cramId);
     const result  = _upsertStudentsMaster(childSS, students);
     _upsertStudentsBranch(childSS, students);
-
-    // インポートで出現した school_name を school_course_master に自動登録（upsert）
-    const newSchools = [...new Set(students.map(s => s.school_name).filter(Boolean))];
-    newSchools.forEach(name => upsertSchoolCourse(childSS, name, ''));
 
     writeAuditLog(ctx, 'import_students', { cram_id: cramId, count: students.length }, 'success');
     return { success: true, added: result.added, updated: result.updated, skipped };
@@ -158,6 +163,52 @@ function _upsertStudentsMaster(ss, students) {
   return { added: newRows.length, updated: updated };
 }
 
+function _importMultiBranch(rawHeaders, dataRows) {
+  var branchColIdx = rawHeaders.indexOf('校舎');
+  if (branchColIdx === -1) {
+    return { success: false, error: '校舎列が見つかりません。複数校舎インポートには「校舎」列が必要です。' };
+  }
+
+  var groups = {};
+  dataRows.forEach(function (row) {
+    var cid = String(row[branchColIdx] || '').trim();
+    if (!cid) return;
+    if (!groups[cid]) groups[cid] = [];
+    groups[cid].push(row);
+  });
+
+  var totalAdded = 0, totalUpdated = 0, totalSkipped = 0;
+  var warnings = [];
+
+  Object.keys(groups).forEach(function (cid) {
+    try {
+      var mapped = _mapRows(rawHeaders, groups[cid], cid);
+      if (mapped.students.length === 0) {
+        totalSkipped += groups[cid].length;
+        return;
+      }
+      var childSS = getChildSS(cid);
+      var result  = _upsertStudentsMaster(childSS, mapped.students);
+      _upsertStudentsBranch(childSS, mapped.students);
+      totalAdded   += result.added;
+      totalUpdated += result.updated;
+      totalSkipped += mapped.skipped;
+    } catch (e) {
+      warnings.push(cid + ': ' + e.message);
+      totalSkipped += groups[cid].length;
+    }
+  });
+
+  return {
+    success:  true,
+    added:    totalAdded,
+    updated:  totalUpdated,
+    skipped:  totalSkipped,
+    total:    totalAdded + totalUpdated,
+    warnings: warnings,
+  };
+}
+
 function _upsertStudentsBranch(ss, students) {
   var sheet = ss.getSheetByName('students_branch');
   if (!sheet) return;
@@ -191,6 +242,6 @@ function _upsertStudentsBranch(ss, students) {
 if (typeof module !== 'undefined') Object.assign(global, {
   STUDENT_COLUMN_MAP, STUDENTS_MASTER_HEADERS,
   importStudentData,
-  _mapRows, _upsertStudentsMaster, _upsertStudentsBranch,
+  _mapRows, _importMultiBranch, _upsertStudentsMaster, _upsertStudentsBranch,
   _ensureStudentsMasterSheet,
 });
