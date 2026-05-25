@@ -323,8 +323,156 @@ function getDashboardData() {
   }
 }
 
+/**
+ * 管理者向け：指定試験区分の exam_schedule・scores_data・students を一括取得する。
+ *
+ * @param {string} targetCramId
+ * @param {string} termTestId
+ * @returns {{ success: boolean, exams?: object[], scores?: object[], students?: object[], error?: string }}
+ */
+function getAdminScores(targetCramId, termTestId) {
+  try {
+    const ctx  = getAdminContext();
+    const ids  = ctx.cram_ids || [];
+    const cramId = ctx.role === 'branch_admin'
+      ? ((targetCramId && ids.includes(String(targetCramId))) ? targetCramId : (ids[0] || ''))
+      : (targetCramId || '');
+    if (!cramId)     return { success: false, error: '校舎を選択してください' };
+    if (!termTestId) return { success: false, error: '試験区分を選択してください' };
+
+    const childSS = getChildSS(cramId);
+
+    // exam_schedule から term_test_id が一致するエントリを取得
+    const schedSheet = childSS.getSheetByName('exam_schedule');
+    if (!schedSheet) return { success: false, error: 'exam_schedule シートが見つかりません' };
+    const allExams = getRowsData(schedSheet);
+    const exams = allExams.filter(ex =>
+      String(ex.term_test_id || '').trim() === String(termTestId).trim()
+    );
+    const examIdSet = new Set(exams.map(ex => String(ex.exam_id || '').trim()));
+
+    // scores_data から対象 exam_id のスコアを一括取得
+    const scoresSheet = childSS.getSheetByName('scores_data');
+    if (!scoresSheet) return { success: false, error: 'scores_data シートが見つかりません' };
+    const allScores = getRowsData(scoresSheet);
+    const scores = allScores
+      .filter(s => examIdSet.has(String(s.exam_id || '').trim()))
+      .map(s => ({
+        score_id:   String(s.score_id   || '').trim(),
+        exam_id:    String(s.exam_id    || '').trim(),
+        student_id: String(s.student_id || '').trim(),
+        subject_id: String(s.subject_id || '').trim(),
+        score:      (s.score !== '' && s.score !== null && s.score !== undefined) ? String(s.score) : null,
+        grade_rank: (s.grade_rank !== '' && s.grade_rank !== null && s.grade_rank !== undefined) ? String(s.grade_rank) : null,
+        class_rank: (s.class_rank !== '' && s.class_rank !== null && s.class_rank !== undefined) ? String(s.class_rank) : null,
+        not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
+        update_at:  String(s.update_at || ''),
+      }));
+
+    // students_master からアクティブ生徒を取得
+    const studentsSheet = childSS.getSheetByName('students_master');
+    if (!studentsSheet) return { success: false, error: 'students_master シートが見つかりません' };
+    const students = getRowsData(studentsSheet)
+      .filter(s => s.student_id && (s.is_active === true || String(s.is_active) === '1' || String(s.is_active) === 'true'))
+      .map(s => ({
+        student_id:    String(s.student_id    || '').trim(),
+        name:          String(s.name          || '').trim(),
+        pronunciation: String(s.pronunciation || '').trim(),
+        school_name:   String(s.school_name   || '').trim(),
+        school_course: String(s.school_course || '').trim(),
+        sub_course:    String(s.sub_course    || '').trim(),
+        grade:         String(s.grade         || '').trim(),
+      }));
+
+    return {
+      success:    true,
+      exams:      stringifyDates(exams),
+      scores,
+      students,
+      termTestId,
+    };
+  } catch (e) {
+    console.error('getAdminScores error:', e);
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * 管理者向け：score_id を指定してスコアを直接更新する。
+ *
+ * @param {{ cramId: string, scoreId: string, score: string|number, gradeRank: string|number, classRank: string|number, notTaken: boolean }} payload
+ * @returns {{ success: boolean, error?: string }}
+ */
+function updateAdminScore(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+
+    const ctx    = getAdminContext();
+    const cramId = String(payload.cramId || '').trim();
+    const ids    = ctx.cram_ids || [];
+    if (ctx.role !== 'master' && !ids.includes(cramId)) {
+      return { success: false, error: '権限がありません' };
+    }
+    if (!cramId) return { success: false, error: '校舎が指定されていません' };
+
+    const scoreId = String(payload.scoreId || '').trim();
+    if (!scoreId) return { success: false, error: 'scoreId が指定されていません' };
+
+    const childSS = getChildSS(cramId);
+    const sheet   = childSS.getSheetByName('scores_data');
+    if (!sheet) return { success: false, error: 'scores_data シートが見つかりません' };
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+
+    const col = name => headers.indexOf(name);
+    const scoreIdCol   = col('score_id');
+    const scoreCol     = col('score');
+    const gradeRkCol   = col('grade_rank');
+    const classRkCol   = col('class_rank');
+    const notTakenCol  = col('not_taken');
+    const updateAtCol  = col('update_at');
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][scoreIdCol] || '').trim() !== scoreId) continue;
+
+      const row = i + 1;
+      if (scoreCol >= 0 && payload.score !== undefined) {
+        const v = String(payload.score).trim();
+        sheet.getRange(row, scoreCol + 1).setValue(v === '' ? '' : Number(v));
+      }
+      if (gradeRkCol >= 0 && payload.gradeRank !== undefined) {
+        const v = String(payload.gradeRank === null ? '' : payload.gradeRank).trim();
+        sheet.getRange(row, gradeRkCol + 1).setValue(v === '' ? '' : Number(v));
+      }
+      if (classRkCol >= 0 && payload.classRank !== undefined) {
+        const v = String(payload.classRank === null ? '' : payload.classRank).trim();
+        sheet.getRange(row, classRkCol + 1).setValue(v === '' ? '' : Number(v));
+      }
+      if (notTakenCol >= 0 && payload.notTaken !== undefined) {
+        sheet.getRange(row, notTakenCol + 1).setValue(payload.notTaken ? '1' : '');
+      }
+      if (updateAtCol >= 0) {
+        sheet.getRange(row, updateAtCol + 1).setValue(new Date());
+      }
+
+      writeAuditLog(ctx, 'update_admin_score', { cramId, scoreId, score: payload.score }, 'success');
+      return { success: true };
+    }
+
+    return { success: false, error: '指定のスコアが見つかりません (scoreId: ' + scoreId + ')' };
+  } catch (e) {
+    console.error('updateAdminScore error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
+  getAdminScores, updateAdminScore,
   getSchoolCoursesFromSettingsSheet,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
   _setDefaultSubjectsForPatterns,

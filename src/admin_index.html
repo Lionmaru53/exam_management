@@ -27,6 +27,10 @@
     <div class="modal-card"></div>
   </div>
 
+  <div id="score-detail-modal" class="modal-backdrop" onclick="if (event.target === this) _scCloseDetail()">
+    <div class="modal-card"></div>
+  </div>
+
   <?!= include('common_showMessage'); ?>
   <?!= include('admin_logic_dashboard'); ?>
   <?!= include('admin_logic_exams'); ?>
@@ -36,6 +40,7 @@
   <?!= include('admin_logic_branches'); ?>
   <?!= include('admin_logic_master_data'); ?>
   <?!= include('admin_logic_students'); ?>
+  <?!= include('admin_logic_scores'); ?>
 
   <script>
     window.masterData     = {};
@@ -80,7 +85,8 @@
         { section: 'students',   label: '①生徒一覧' },
         { section: 'import',     label: '①生徒インポート' },
         { section: 'patterns',   label: '②学校別教科名・教科パターン管理' },
-        { section: 'exams',      label: '③試験日程管理' }
+        { section: 'exams',      label: '③試験日程管理' },
+        { section: 'scores',     label: '④得点一覧' }
       ];
       if (role === 'master') {
         tabs.push(
@@ -158,7 +164,7 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['dashboard', 'patterns', 'exams', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
+      const valid = ['dashboard', 'patterns', 'exams', 'scores', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
       window.currentSection = valid.includes(section) ? section : 'dashboard';
 
       const overlay = document.getElementById('loading-overlay');
@@ -184,6 +190,7 @@
         dashboard:  function () { window.renderDashboardManager(); },
         patterns:   function () { window.renderPatternManager(window.masterData); },
         exams:      function () { window.renderExamManager(window.masterData); },
+        scores:     function () { window.renderScoreManager(); },
         students:   function () { window.renderStudentManager(); },
         import:     function () { window.renderImportManager(); },
         adminUsers: function () { window.renderAdminUserManager(); },
