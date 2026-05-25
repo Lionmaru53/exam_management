@@ -128,7 +128,8 @@ function _scRerender() {
       .map(function (s) {
         return {
           subject_id:  s.subject_id,
-          displayName: window._resolveDisplayName(sn, s.subject_id)
+          displayName: window._resolveDisplayName(sn, s.subject_id),
+          genre_name:  s.genre_name || 'その他'
         };
       });
   });
@@ -192,7 +193,8 @@ function _scRerender() {
       html += '<thead><tr>';
       html += '<th class="sc-th-name">氏名</th>';
       subjectList.forEach(function (subj) {
-        html += '<th>' + _scEsc(subj.displayName) + '</th>';
+        var bg = _scGetGenreColor(subj.genre_name);
+        html += '<th style="background-color:' + bg + '">' + _scEsc(subj.displayName) + '</th>';
       });
       html += '</tr></thead>';
 
@@ -211,6 +213,7 @@ function _scRerender() {
             scoreObj = scoreMap[key] || null;
           }
 
+          var cellBg = _scGetGenreColor(subj.genre_name);
           if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
             var idx = _scCellStore.length;
             _scCellStore.push({
@@ -227,14 +230,16 @@ function _scRerender() {
             });
 
             if (scoreObj.not_taken) {
-              html += '<td class="sc-cell sc-cell-filled" onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+              html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                    + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
                     + '<span class="sc-badge-absent">欠</span></td>';
             } else {
-              html += '<td class="sc-cell sc-cell-filled" onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+              html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                    + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
                     + _scEsc(scoreObj.score !== null ? scoreObj.score : '—') + '</td>';
             }
           } else {
-            html += '<td class="sc-cell sc-cell-empty">—</td>';
+            html += '<td class="sc-cell sc-cell-empty" style="background-color:' + cellBg + '">—</td>';
           }
         });
 
@@ -390,6 +395,21 @@ window._scSaveDetail = function () {
 };
 
 // =====================================================================
+// 補助：ジャンル色（ユーザー画面の logic_ui_render.html と同じパレット）
+// =====================================================================
+var _scGenrePalette = {
+  '数学': '#dbeafe',
+  '英語': '#fed7aa',
+  '国語': '#bbf7d0',
+  '理科': '#fbcfe8',
+  '社会': '#fde68a',
+  'その他': '#f8fafc'
+};
+function _scGetGenreColor(genreName) {
+  return _scGenrePalette[genreName] || _scGenrePalette['その他'];
+}
+
+// =====================================================================
 // 補助：HTML エスケープ
 // =====================================================================
 function _scEsc(str) {
@@ -489,9 +509,8 @@ function _scEsc(str) {
 .sc-cell-filled {
   cursor: pointer;
   font-weight: 500;
-  background: #fff;
 }
-.sc-cell-filled:hover { background: #e8f4ff; }
+.sc-cell-filled:hover { filter: brightness(0.93); }
 .sc-cell-empty { color: #ccc; }
 
 /* ── 欠試バッジ ─────────────────────────────────────────── */
