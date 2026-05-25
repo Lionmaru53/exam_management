@@ -193,10 +193,9 @@ function getInitialData(lineUserId) {
         return { ...sub, excluded: false };
       }).filter(Boolean);
 
-      // scores_data は exam_id で結合しているが、school_exam_periods には exam_id がない。
-      // 暫定: term_test_id × student_id でスコアを検索（将来的に exam_id を school_exam_periods に追加するか検討）
       const scores = allScores
-        .filter(s => String(s.student_id || '').trim() === String(student.student_id).trim())
+        .filter(s => String(s.student_id  || '').trim() === String(student.student_id).trim()
+                  && String(s.term_test_id || '').trim() === ttId)
         .map(s => ({ ...s, not_taken: String(s.not_taken || '') === '1' }));
 
       return {
