@@ -207,7 +207,7 @@ function renderApp(data) {
       listHtml += `
         <div class="tab-footer">
           <button type="button" class="btn-save"
-            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${displayKey}', this)">
+            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${exam.year || ''}', '${displayKey}', this)">
             保存する
           </button>
         </div>

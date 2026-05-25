@@ -4,7 +4,8 @@
 // =====================================================================
 // 状態変数（プレフィックス _sc_ で他タブと衝突回避）
 var _scSelectedTermTestId   = '';
-var _scScoreData             = null;   // { exams, scores, students }
+var _scSelectedYear          = '';    // 選択中の年度（空=全年度）
+var _scScoreData             = null;   // { scores, students }
 var _scCellStore             = [];     // [{scoreId,studentName,displayName,...}] クリック参照用
 var _scCurrentDetailScoreId = '';     // モーダル用（HTML非埋め込みでXSS回避）
 
@@ -25,8 +26,33 @@ window.renderScoreManager = function () {
     _scSelectedTermTestId = String(termTests[0].term_test_id || '').trim();
   }
 
-  var toolbarHtml = '<div class="sc-toolbar">'
-    + '<label class="sc-label">試験区分：</label>'
+  // 年度リストを examPeriods から構築（新しい年度を先頭に）
+  var examPeriods = (window.masterData && window.masterData.examPeriods) || [];
+  var _yearSet = {};
+  var availableYears = [];
+  examPeriods.forEach(function (p) {
+    var y = String(p.year || '').trim();
+    if (y && !_yearSet[y]) { _yearSet[y] = true; availableYears.push(y); }
+  });
+  availableYears.sort(function (a, b) { return Number(b) - Number(a); });
+
+  // デフォルト年度: 現在の学年暦年度
+  if (!_scSelectedYear) {
+    var _now = new Date();
+    _scSelectedYear = String(_now.getMonth() >= 3 ? _now.getFullYear() : _now.getFullYear() - 1);
+  }
+
+  var toolbarHtml = '<div class="sc-toolbar">';
+  if (availableYears.length > 0) {
+    toolbarHtml += '<label class="sc-label">年度：</label>'
+      + '<select id="sc-year-sel" class="sc-sel" onchange="_scOnYearChange(this.value)">';
+    availableYears.forEach(function (y) {
+      var sel = y === _scSelectedYear ? ' selected' : '';
+      toolbarHtml += '<option value="' + _scEsc(y) + '"' + sel + '>' + _scEsc(y) + '年度</option>';
+    });
+    toolbarHtml += '</select>';
+  }
+  toolbarHtml += '<label class="sc-label">試験区分：</label>'
     + '<select id="sc-termtest-sel" class="sc-sel" onchange="_scOnTermTestChange(this.value)">';
   termTests.forEach(function (tt) {
     var tid     = String(tt.term_test_id || '').trim();
@@ -44,6 +70,11 @@ window.renderScoreManager = function () {
 
 function _scOnTermTestChange(termTestId) {
   _scSelectedTermTestId = termTestId;
+  _scFetchAndRender();
+}
+
+function _scOnYearChange(year) {
+  _scSelectedYear = year;
   _scFetchAndRender();
 }
 
@@ -66,7 +97,7 @@ function _scFetchAndRender() {
     .withFailureHandler(function (err) {
       if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _scEsc(err && err.message ? err.message : String(err)) + '</p>';
     })
-    .getAdminScores(window.selectedCramId, _scSelectedTermTestId);
+    .getAdminScores(window.selectedCramId, _scSelectedTermTestId, _scSelectedYear);
 }
 
 // =====================================================================

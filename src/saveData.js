@@ -26,9 +26,10 @@ function saveAllScores(payload) {
     // 子 SS を開く
     const ss = getChildSS(cramId);
 
-    // term_test_id を payload から直接取得（exam_schedule 不要）
+    // term_test_id / year を payload から直接取得
     const termTestId = String(payload.term_test_id || '').trim();
     if (!termTestId) throw new Error('term_test_id が指定されていません');
+    const yearAtSave = String(payload.year || '').trim();
 
     // 保存時点の学年を students_master から取得（年度別集計で必要）
     let gradeAtSave = '';
@@ -56,6 +57,8 @@ function saveAllScores(payload) {
     const sidCol  = headers.indexOf('student_id');
     const subjCol = headers.indexOf('subject_id');
     const ttCol   = headers.indexOf('term_test_id');
+    const gradeCol = headers.indexOf('grade');
+    const yearCol  = headers.indexOf('year');
     if (sidCol < 0 || subjCol < 0) throw new Error('scores_data の列定義が不正です');
 
     payload.scores.forEach(newScore => {
@@ -71,18 +74,25 @@ function saveAllScores(payload) {
         }
       }
 
+      // grade と year は INSERT 時のみ記録し、UPDATE 時は既存値を保持する
+      const existingGrade = rowIndex > 0 && gradeCol >= 0
+        ? (String(data[rowIndex - 1][gradeCol] || '').trim() || gradeAtSave) : gradeAtSave;
+      const existingYear  = rowIndex > 0 && yearCol  >= 0
+        ? (String(data[rowIndex - 1][yearCol]  || '').trim() || yearAtSave)  : yearAtSave;
+
       const rowValues = [
         rowIndex > 0 ? data[rowIndex - 1][0] : 'SC' + Utilities.getUuid(),
-        '',                              // exam_id（レガシー列、空で保持）
+        '',                 // exam_id（レガシー列、空で保持）
         payload.student_id,
         newScore.subject_id,
         newScore.score,
         newScore.grade_rank,
         newScore.class_rank,
-        new Date(),
+        new Date(),         // update_at（毎回更新）
         newScore.not_taken ? '1' : '',
-        termTestId,                      // term_test_id
-        gradeAtSave,                     // grade（保存時点の学年、年度別集計に使用）
+        termTestId,         // term_test_id
+        existingGrade,      // grade（INSERT 時のみ記録、UPDATE は保持）
+        existingYear,       // year（INSERT 時のみ記録、UPDATE は保持）
       ];
 
       if (rowIndex > 0) {

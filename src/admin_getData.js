@@ -324,13 +324,14 @@ function getDashboardData() {
 }
 
 /**
- * 管理者向け：指定試験区分の exam_schedule・scores_data・students を一括取得する。
+ * 管理者向け：指定試験区分・年度の scores_data・students を一括取得する。
  *
  * @param {string} targetCramId
  * @param {string} termTestId
- * @returns {{ success: boolean, exams?: object[], scores?: object[], students?: object[], error?: string }}
+ * @param {string} [year] - 学年暦年度（例: "2025"）。省略時は全年度を返す
+ * @returns {{ success: boolean, scores?: object[], students?: object[], error?: string }}
  */
-function getAdminScores(targetCramId, termTestId) {
+function getAdminScores(targetCramId, termTestId, year) {
   try {
     const ctx  = getAdminContext();
     const ids  = ctx.cram_ids || [];
@@ -340,6 +341,7 @@ function getAdminScores(targetCramId, termTestId) {
     if (!cramId)     return { success: false, error: '校舎を選択してください' };
     if (!termTestId) return { success: false, error: '試験区分を選択してください' };
 
+    const yearFilter = year ? String(year).trim() : '';
     const childSS = getChildSS(cramId);
 
     // students_master からアクティブ生徒を取得
@@ -358,23 +360,25 @@ function getAdminScores(targetCramId, termTestId) {
       }));
     const studentIdSet = new Set(students.map(s => s.student_id));
 
-    // scores_data を生徒ID × term_test_id で絞り込んで取得
+    // scores_data を生徒ID × term_test_id × year で絞り込んで取得
     const scoresSheet = childSS.getSheetByName('scores_data');
     if (!scoresSheet) return { success: false, error: 'scores_data シートが見つかりません' };
     const scores = getRowsData(scoresSheet)
       .filter(s => studentIdSet.has(String(s.student_id || '').trim())
-                && String(s.term_test_id || '').trim() === termTestId)
+                && String(s.term_test_id || '').trim() === termTestId
+                && (!yearFilter || String(s.year || '').trim() === yearFilter))
       .map(s => ({
         score_id:     String(s.score_id     || '').trim(),
         student_id:   String(s.student_id   || '').trim(),
         subject_id:   String(s.subject_id   || '').trim(),
         term_test_id: String(s.term_test_id || '').trim(),
+        year:         String(s.year         || '').trim(),
+        grade:        String(s.grade        || '').trim(),
         score:      (s.score      !== '' && s.score      != null) ? String(s.score)      : null,
         grade_rank: (s.grade_rank !== '' && s.grade_rank != null) ? String(s.grade_rank) : null,
         class_rank: (s.class_rank !== '' && s.class_rank != null) ? String(s.class_rank) : null,
         not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
         update_at:  String(s.update_at || ''),
-        grade:      String(s.grade || '').trim(),
       }));
 
     return {
@@ -382,6 +386,7 @@ function getAdminScores(targetCramId, termTestId) {
       scores,
       students,
       termTestId,
+      year: yearFilter,
     };
   } catch (e) {
     console.error('getAdminScores error:', e);
@@ -603,11 +608,74 @@ function migrateScoresAddGrade() {
   return results;
 }
 
+/**
+ * 【使い捨てマイグレーション関数】
+ * 本番の全校舎の scores_data に year 列を追加し、
+ * update_at から学年暦年度を計算して埋める（既存データの近似値）。
+ * 実行後に確認が取れたら、この関数ごと削除する。
+ */
+function migrateScoresAddYear() {
+  function _academicYear(val) {
+    const d = val instanceof Date ? val : new Date(val);
+    if (isNaN(d)) return '';
+    return String(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1);
+  }
+
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const branchSheet = parentSS.getSheetByName('branches_master');
+  if (!branchSheet) throw new Error('branches_master が見つかりません');
+
+  const branches = getRowsData(branchSheet).filter(function (b) {
+    return b.is_active === true || String(b.is_active) === '1';
+  });
+  const results = [];
+
+  branches.forEach(function (branch) {
+    const cramId = String(branch.cram_id || '').trim();
+    if (!cramId) return;
+    try {
+      const ss          = getChildSS(cramId);
+      const scoresSheet = ss.getSheetByName('scores_data');
+      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
+
+      const data    = scoresSheet.getDataRange().getValues();
+      const headers = data[0].map(function (h) { return String(h).trim(); });
+
+      // year 列がなければ末尾に追加
+      let yearCol = headers.indexOf('year');
+      if (yearCol < 0) {
+        scoresSheet.getRange(1, headers.length + 1).setValue('year');
+        yearCol = headers.length;
+        headers.push('year');
+      }
+
+      const updateAtCol = headers.indexOf('update_at');
+      let updated = 0;
+      for (let i = 1; i < data.length; i++) {
+        const existing = String(data[i][yearCol] || '').trim();
+        if (existing) continue; // すでに入力済みはスキップ
+        const yr = updateAtCol >= 0 ? _academicYear(data[i][updateAtCol]) : '';
+        if (yr) {
+          scoresSheet.getRange(i + 1, yearCol + 1).setValue(yr);
+          updated++;
+        }
+      }
+      results.push(cramId + ': ' + updated + '行更新');
+    } catch (e) {
+      results.push(cramId + ': ERROR ' + e.message);
+    }
+  });
+
+  Logger.log(results.join('\n'));
+  return results;
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
   getAdminScores, updateAdminScore,
   migrateScoresAddTermTestId,
   migrateScoresAddGrade,
+  migrateScoresAddYear,
   getSchoolCoursesFromSettingsSheet,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
   _setDefaultSubjectsForPatterns,

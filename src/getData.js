@@ -182,7 +182,9 @@ function getInitialData(lineUserId) {
     // 9. 全試験区分に対してタブデータを構築
     const examTabs = relevantTermTests.map(termTest => {
       const ttId  = String(termTest.term_test_id).trim();
-      const year  = String(new Date().getFullYear());
+      // 学年暦（4月始まり）で年度を計算する（カレンダー年ではない）
+      const _d    = new Date();
+      const year  = String(_d.getMonth() >= 3 ? _d.getFullYear() : _d.getFullYear() - 1);
       const period = _findPeriod(ttId, year);
 
       const subjects = patternSubjectIds.map(sid => {
@@ -199,6 +201,7 @@ function getInitialData(lineUserId) {
 
       return {
         term_test_id: ttId,
+        year,
         test_name:    termTest.test_name,
         exam_id:      null,
         pattern_id:   patternId,
