@@ -41,10 +41,6 @@ function getAdminInitialData(targetCramId) {
     const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
     results.schoolSubjectAliases = aliasSheet ? stringifyDates(getRowsData(aliasSheet)) : [];
 
-    // 学校別試験区分設定
-    const sttSheet = parentSS.getSheetByName('school_term_test_settings');
-    results.schoolTermTestSettings = sttSheet ? stringifyDates(getRowsData(sttSheet)) : [];
-
     // 校舎一覧を返す（master は全件、branch_admin は担当校舎のみ）
     if (adminContext.role === 'master' || adminContext.role === 'branch_admin') {
       const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
@@ -475,8 +471,8 @@ function updateAdminScore(payload) {
  */
 function migrateScoresAddTermTestId() {
   const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches_master');
-  if (!branchSheet) throw new Error('branches_master が見つかりません');
+  const branchSheet = parentSS.getSheetByName('branches');
+  if (!branchSheet) throw new Error('branches が見つかりません');
 
   const branches = getRowsData(branchSheet).filter(b =>
     b.is_active === true || String(b.is_active) === '1'
@@ -543,8 +539,8 @@ function migrateScoresAddTermTestId() {
  */
 function migrateScoresAddGrade() {
   const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches_master');
-  if (!branchSheet) throw new Error('branches_master が見つかりません');
+  const branchSheet = parentSS.getSheetByName('branches');
+  if (!branchSheet) throw new Error('branches が見つかりません');
 
   const branches = getRowsData(branchSheet).filter(b =>
     b.is_active === true || String(b.is_active) === '1'
@@ -622,8 +618,8 @@ function migrateScoresAddYear() {
   }
 
   const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches_master');
-  if (!branchSheet) throw new Error('branches_master が見つかりません');
+  const branchSheet = parentSS.getSheetByName('branches');
+  if (!branchSheet) throw new Error('branches が見つかりません');
 
   const branches = getRowsData(branchSheet).filter(function (b) {
     return b.is_active === true || String(b.is_active) === '1';

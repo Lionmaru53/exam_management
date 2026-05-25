@@ -38,7 +38,6 @@
   <?!= include('admin_logic_import'); ?>
   <?!= include('admin_logic_admin_users'); ?>
   <?!= include('admin_logic_branches'); ?>
-  <?!= include('admin_logic_master_data'); ?>
   <?!= include('admin_logic_students'); ?>
   <?!= include('admin_logic_scores'); ?>
 
@@ -91,8 +90,7 @@
       if (role === 'master') {
         tabs.push(
           { section: 'adminUsers', label: '管理者管理' },
-          { section: 'branches',   label: '校舎管理' },
-          { section: 'masterData', label: 'マスターデータ' }
+          { section: 'branches',   label: '校舎管理' }
         );
       }
       const nav = document.getElementById('admin-nav');
@@ -164,7 +162,7 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['dashboard', 'patterns', 'exams', 'scores', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
+      const valid = ['dashboard', 'patterns', 'exams', 'scores', 'students', 'import', 'adminUsers', 'branches'];
       window.currentSection = valid.includes(section) ? section : 'dashboard';
 
       const overlay = document.getElementById('loading-overlay');
@@ -194,8 +192,7 @@
         students:   function () { window.renderStudentManager(); },
         import:     function () { window.renderImportManager(); },
         adminUsers: function () { window.renderAdminUserManager(); },
-        branches:   function () { window.renderBranchManager(); },
-        masterData: function () { window.renderMasterDataManager(window.masterData); }
+        branches:   function () { window.renderBranchManager(); }
       };
       (renderers[section] || renderers.dashboard)();
     };
