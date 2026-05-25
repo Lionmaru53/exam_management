@@ -464,6 +464,84 @@ function updateAdminScore(payload) {
 }
 
 /**
+ * 管理者向け：scores_data に新規スコアを1件追加
+ * （admin UI の空欄セルをクリックして登録する場合）
+ *
+ * @param {{ cramId, studentId, subjectId, termTestId, year, grade, score, gradeRank, classRank, notTaken }} payload
+ */
+function createAdminScore(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+
+    const ctx    = getAdminContext();
+    const cramId = String(payload.cramId || '').trim();
+    const ids    = ctx.cram_ids || [];
+    if (ctx.role !== 'master' && !ids.includes(cramId))
+      return { success: false, error: '権限がありません' };
+    if (!cramId) return { success: false, error: '校舎が指定されていません' };
+
+    const studentId  = String(payload.studentId  || '').trim();
+    const subjectId  = String(payload.subjectId  || '').trim();
+    const termTestId = String(payload.termTestId || '').trim();
+    if (!studentId || !subjectId || !termTestId)
+      return { success: false, error: '必須パラメータが不足しています' };
+
+    const childSS = getChildSS(cramId);
+    const sheet   = childSS.getSheetByName('scores_data');
+    if (!sheet) return { success: false, error: 'scores_data シートが見つかりません' };
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const sidCol  = headers.indexOf('student_id');
+    const subCol  = headers.indexOf('subject_id');
+    const ttCol   = headers.indexOf('term_test_id');
+
+    // 重複チェック
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][sidCol] || '').trim() === studentId &&
+          String(data[i][subCol] || '').trim() === subjectId &&
+          String(data[i][ttCol]  || '').trim() === termTestId) {
+        return { success: false, error: '既存レコードが存在します' };
+      }
+    }
+
+    const scoreId   = 'SC' + Utilities.getUuid().replace(/-/g, '');
+    const scoreVal  = payload.score     !== '' && payload.score     != null ? Number(payload.score)     : '';
+    const gradeRkVal= payload.gradeRank !== '' && payload.gradeRank != null ? Number(payload.gradeRank) : '';
+    const classRkVal= payload.classRank !== '' && payload.classRank != null ? Number(payload.classRank) : '';
+    const now = new Date();
+
+    const row = headers.map(h => {
+      switch (h) {
+        case 'score_id':    return scoreId;
+        case 'exam_id':     return '';
+        case 'student_id':  return studentId;
+        case 'subject_id':  return subjectId;
+        case 'score':       return scoreVal;
+        case 'grade_rank':  return gradeRkVal;
+        case 'class_rank':  return classRkVal;
+        case 'update_at':   return now;
+        case 'not_taken':   return payload.notTaken ? '1' : '';
+        case 'term_test_id': return termTestId;
+        case 'grade':       return String(payload.grade || '').trim();
+        case 'year':        return String(payload.year  || '').trim();
+        default:            return '';
+      }
+    });
+
+    sheet.appendRow(row);
+    writeAuditLog(ctx, 'create_admin_score', { cramId, scoreId, studentId, subjectId, termTestId }, 'success');
+    return { success: true, score_id: scoreId };
+  } catch (e) {
+    console.error('createAdminScore error:', e);
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * 【使い捨てマイグレーション関数】
  * 本番の全校舎の scores_data に term_test_id 列を追加し、
  * exam_schedule との結合で値を埋める。
@@ -668,7 +746,7 @@ function migrateScoresAddYear() {
 
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
-  getAdminScores, updateAdminScore,
+  getAdminScores, updateAdminScore, createAdminScore,
   migrateScoresAddTermTestId,
   migrateScoresAddGrade,
   migrateScoresAddYear,
