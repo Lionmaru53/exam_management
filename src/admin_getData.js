@@ -342,33 +342,6 @@ function getAdminScores(targetCramId, termTestId) {
 
     const childSS = getChildSS(cramId);
 
-    // exam_schedule から term_test_id が一致するエントリを取得
-    const schedSheet = childSS.getSheetByName('exam_schedule');
-    if (!schedSheet) return { success: false, error: 'exam_schedule シートが見つかりません' };
-    const allExams = getRowsData(schedSheet);
-    const exams = allExams.filter(ex =>
-      String(ex.term_test_id || '').trim() === String(termTestId).trim()
-    );
-    const examIdSet = new Set(exams.map(ex => String(ex.exam_id || '').trim()));
-
-    // scores_data から対象 exam_id のスコアを一括取得
-    const scoresSheet = childSS.getSheetByName('scores_data');
-    if (!scoresSheet) return { success: false, error: 'scores_data シートが見つかりません' };
-    const allScores = getRowsData(scoresSheet);
-    const scores = allScores
-      .filter(s => examIdSet.has(String(s.exam_id || '').trim()))
-      .map(s => ({
-        score_id:   String(s.score_id   || '').trim(),
-        exam_id:    String(s.exam_id    || '').trim(),
-        student_id: String(s.student_id || '').trim(),
-        subject_id: String(s.subject_id || '').trim(),
-        score:      (s.score !== '' && s.score !== null && s.score !== undefined) ? String(s.score) : null,
-        grade_rank: (s.grade_rank !== '' && s.grade_rank !== null && s.grade_rank !== undefined) ? String(s.grade_rank) : null,
-        class_rank: (s.class_rank !== '' && s.class_rank !== null && s.class_rank !== undefined) ? String(s.class_rank) : null,
-        not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
-        update_at:  String(s.update_at || ''),
-      }));
-
     // students_master からアクティブ生徒を取得
     const studentsSheet = childSS.getSheetByName('students_master');
     if (!studentsSheet) return { success: false, error: 'students_master シートが見つかりません' };
@@ -383,11 +356,33 @@ function getAdminScores(targetCramId, termTestId) {
         sub_course:    String(s.sub_course    || '').trim(),
         grade:         String(s.grade         || '').trim(),
       }));
+    const studentIdSet = new Set(students.map(s => s.student_id));
+
+    // exam_schedule を全件取得（フロントで termTestId によるフィルタを行う）
+    const schedSheet = childSS.getSheetByName('exam_schedule');
+    const exams = schedSheet ? stringifyDates(getRowsData(schedSheet)) : [];
+
+    // scores_data をこの校舎の生徒 ID で絞り込んで全件取得
+    const scoresSheet = childSS.getSheetByName('scores_data');
+    if (!scoresSheet) return { success: false, error: 'scores_data シートが見つかりません' };
+    const scores = getRowsData(scoresSheet)
+      .filter(s => studentIdSet.has(String(s.student_id || '').trim()))
+      .map(s => ({
+        score_id:   String(s.score_id   || '').trim(),
+        exam_id:    String(s.exam_id    || '').trim(),
+        student_id: String(s.student_id || '').trim(),
+        subject_id: String(s.subject_id || '').trim(),
+        score:      (s.score !== '' && s.score !== null && s.score !== undefined) ? String(s.score) : null,
+        grade_rank: (s.grade_rank !== '' && s.grade_rank !== null && s.grade_rank !== undefined) ? String(s.grade_rank) : null,
+        class_rank: (s.class_rank !== '' && s.class_rank !== null && s.class_rank !== undefined) ? String(s.class_rank) : null,
+        not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
+        update_at:  String(s.update_at || ''),
+      }));
 
     return {
-      success:    true,
-      exams:      stringifyDates(exams),
-      scores,
+      success: true,
+      exams,       // exam_schedule 全件（フロントで term_test_id フィルタに使用）
+      scores,      // この校舎の生徒のスコア全件
       students,
       termTestId,
     };

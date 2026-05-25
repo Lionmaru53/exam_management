@@ -88,18 +88,28 @@ function _scRerender() {
     return;
   }
 
-  // ── exam_id 検索マップ: pattern_id → exam_id ────────────────────
-  var examByPattern = {};
+  // ── exam_schedule から examId → termTestId マップを構築 ─────────
+  var examToTermTest = {};
   exams.forEach(function (ex) {
-    var pid = String(ex.pattern_id || '').trim();
-    if (pid) examByPattern[pid] = String(ex.exam_id || '').trim();
+    var eid  = String(ex.exam_id      || '').trim();
+    var ttid = String(ex.term_test_id || '').trim();
+    if (eid && ttid) examToTermTest[eid] = ttid;
   });
 
-  // ── スコア検索マップ: "examId||studentId||subjectId" → score ────
+  // ── 選択中の試験区分でスコアを絞り込み ──────────────────────────
+  // キー: "studentId||subjectId"（examId 経由の解決不要）
   var scoreMap = {};
   scores.forEach(function (sc) {
-    var key = sc.exam_id + '||' + sc.student_id + '||' + sc.subject_id;
-    scoreMap[key] = sc;
+    var eid = String(sc.exam_id || '').trim();
+    // exam_schedule に term_test_id がない場合（旧スキーマ）は全スコアを表示
+    var ttid = examToTermTest[eid];
+    if (ttid && ttid !== _scSelectedTermTestId) return;
+    var key = sc.student_id + '||' + sc.subject_id;
+    // 同じ生徒×科目で複数レコードがある場合は更新日時が新しいものを優先
+    var existing = scoreMap[key];
+    if (!existing || sc.update_at >= existing.update_at) {
+      scoreMap[key] = sc;
+    }
   });
 
   // ── (学校, 学年) ごとの科目セット（同一学年の全パターンの union）──
@@ -201,17 +211,12 @@ function _scRerender() {
       // tbody
       html += '<tbody>';
       gradeStudents.forEach(function (student) {
-        var examId = _scResolveExamId(student, patterns, examByPattern);
-
         html += '<tr>';
         html += '<td class="sc-td-name">' + _scEsc(student.name || '') + '</td>';
 
         subjectList.forEach(function (subj) {
-          var scoreObj = null;
-          if (examId) {
-            var key = examId + '||' + student.student_id + '||' + subj.subject_id;
-            scoreObj = scoreMap[key] || null;
-          }
+          var key      = student.student_id + '||' + subj.subject_id;
+          var scoreObj = scoreMap[key] || null;
 
           var cellBg = _scGetGenreColor(subj.genre_name);
           if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
@@ -253,25 +258,6 @@ function _scRerender() {
   });
 
   area.innerHTML = html;
-}
-
-// =====================================================================
-// 補助：生徒の exam_id を解決
-// =====================================================================
-function _scResolveExamId(student, patterns, examByPattern) {
-  var pattern = null;
-  for (var i = 0; i < patterns.length; i++) {
-    var p = patterns[i];
-    if (String(p.school_name   || '').trim() === String(student.school_name   || '').trim() &&
-        String(p.school_course || '').trim() === String(student.school_course || '').trim() &&
-        String(p.grade         || '').trim() === String(student.grade         || '').trim() &&
-        String(p.sub_course    || '').trim() === String(student.sub_course    || '').trim()) {
-      pattern = p;
-      break;
-    }
-  }
-  if (!pattern) return null;
-  return examByPattern[String(pattern.pattern_id || '').trim()] || null;
 }
 
 // =====================================================================
