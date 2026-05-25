@@ -26,52 +26,44 @@ function saveAllScores(payload) {
     // 子 SS を開く
     const ss = getChildSS(cramId);
 
-    // exam_id が未設定の場合、(pattern_id, term_test_id) 複合キーで既存エントリを探すか新規作成する
-    let examId = String(payload.exam_id || '').trim();
-    if (!examId && payload.pattern_id) {
-      const schedSheet = ss.getSheetByName('exam_schedule');
-      if (!schedSheet) throw new Error('exam_schedule シートが見つかりません');
-      const ttId    = String(payload.term_test_id || '').trim();
-      const schedRows = getRowsData(schedSheet);
-      const existing = schedRows.find(r =>
-        String(r.pattern_id   || '').trim() === String(payload.pattern_id).trim() &&
-        String(r.term_test_id || '').trim() === ttId
-      );
-      if (existing) {
-        examId = String(existing.exam_id).trim();
-      } else {
-        examId = 'EX' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-        schedSheet.appendRow([examId, payload.pattern_id, ttId, new Date().getFullYear(), '', '']);
-      }
-    }
-    if (!examId) throw new Error('exam_id が取得できませんでした');
+    // term_test_id を payload から直接取得（exam_schedule 不要）
+    const termTestId = String(payload.term_test_id || '').trim();
+    if (!termTestId) throw new Error('term_test_id が指定されていません');
 
     const sheet = ss.getSheetByName('scores_data');
     if (!sheet) throw new Error('scores_data シートが見つかりません');
 
-    const data = sheet.getDataRange().getValues();
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const sidCol  = headers.indexOf('student_id');
+    const subjCol = headers.indexOf('subject_id');
+    const ttCol   = headers.indexOf('term_test_id');
+    if (sidCol < 0 || subjCol < 0) throw new Error('scores_data の列定義が不正です');
 
     payload.scores.forEach(newScore => {
       let rowIndex = -1;
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][1]) === examId &&
-            String(data[i][2]) === String(payload.student_id) &&
-            String(data[i][3]) === String(newScore.subject_id)) {
-          rowIndex = i + 1;
-          break;
+      if (ttCol >= 0) {
+        for (let i = 1; i < data.length; i++) {
+          if (String(data[i][sidCol])  === String(payload.student_id)  &&
+              String(data[i][subjCol]) === String(newScore.subject_id) &&
+              String(data[i][ttCol])   === termTestId) {
+            rowIndex = i + 1;
+            break;
+          }
         }
       }
 
       const rowValues = [
         rowIndex > 0 ? data[rowIndex - 1][0] : 'SC' + Utilities.getUuid(),
-        examId,
+        '',                              // exam_id（レガシー列、空で保持）
         payload.student_id,
         newScore.subject_id,
         newScore.score,
         newScore.grade_rank,
         newScore.class_rank,
         new Date(),
-        newScore.not_taken ? '1' : ''
+        newScore.not_taken ? '1' : '',
+        termTestId,                      // term_test_id（新）
       ];
 
       if (rowIndex > 0) {

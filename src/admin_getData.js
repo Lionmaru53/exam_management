@@ -358,31 +358,27 @@ function getAdminScores(targetCramId, termTestId) {
       }));
     const studentIdSet = new Set(students.map(s => s.student_id));
 
-    // exam_schedule を全件取得（フロントで termTestId によるフィルタを行う）
-    const schedSheet = childSS.getSheetByName('exam_schedule');
-    const exams = schedSheet ? stringifyDates(getRowsData(schedSheet)) : [];
-
-    // scores_data をこの校舎の生徒 ID で絞り込んで全件取得
+    // scores_data を生徒ID × term_test_id で絞り込んで取得
     const scoresSheet = childSS.getSheetByName('scores_data');
     if (!scoresSheet) return { success: false, error: 'scores_data シートが見つかりません' };
     const scores = getRowsData(scoresSheet)
-      .filter(s => studentIdSet.has(String(s.student_id || '').trim()))
+      .filter(s => studentIdSet.has(String(s.student_id || '').trim())
+                && String(s.term_test_id || '').trim() === termTestId)
       .map(s => ({
-        score_id:   String(s.score_id   || '').trim(),
-        exam_id:    String(s.exam_id    || '').trim(),
-        student_id: String(s.student_id || '').trim(),
-        subject_id: String(s.subject_id || '').trim(),
-        score:      (s.score !== '' && s.score !== null && s.score !== undefined) ? String(s.score) : null,
-        grade_rank: (s.grade_rank !== '' && s.grade_rank !== null && s.grade_rank !== undefined) ? String(s.grade_rank) : null,
-        class_rank: (s.class_rank !== '' && s.class_rank !== null && s.class_rank !== undefined) ? String(s.class_rank) : null,
+        score_id:     String(s.score_id     || '').trim(),
+        student_id:   String(s.student_id   || '').trim(),
+        subject_id:   String(s.subject_id   || '').trim(),
+        term_test_id: String(s.term_test_id || '').trim(),
+        score:      (s.score      !== '' && s.score      != null) ? String(s.score)      : null,
+        grade_rank: (s.grade_rank !== '' && s.grade_rank != null) ? String(s.grade_rank) : null,
+        class_rank: (s.class_rank !== '' && s.class_rank != null) ? String(s.class_rank) : null,
         not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
         update_at:  String(s.update_at || ''),
       }));
 
     return {
       success: true,
-      exams,       // exam_schedule 全件（フロントで term_test_id フィルタに使用）
-      scores,      // この校舎の生徒のスコア全件
+      scores,
       students,
       termTestId,
     };
@@ -465,9 +461,78 @@ function updateAdminScore(payload) {
   }
 }
 
+/**
+ * 【使い捨てマイグレーション関数】
+ * 本番の全校舎の scores_data に term_test_id 列を追加し、
+ * exam_schedule との結合で値を埋める。
+ * 実行後に確認が取れたら、この関数ごと削除する。
+ */
+function migrateScoresAddTermTestId() {
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const branchSheet = parentSS.getSheetByName('branches_master');
+  if (!branchSheet) throw new Error('branches_master が見つかりません');
+
+  const branches = getRowsData(branchSheet).filter(b =>
+    b.is_active === true || String(b.is_active) === '1'
+  );
+  const results = [];
+
+  branches.forEach(function (branch) {
+    const cramId = String(branch.cram_id || '').trim();
+    if (!cramId) return;
+    try {
+      const ss          = getChildSS(cramId);
+      const scoresSheet = ss.getSheetByName('scores_data');
+      const schedSheet  = ss.getSheetByName('exam_schedule');
+      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
+
+      const data    = scoresSheet.getDataRange().getValues();
+      const headers = data[0].map(function (h) { return String(h).trim(); });
+
+      // term_test_id 列がなければ末尾に追加
+      let ttCol = headers.indexOf('term_test_id');
+      if (ttCol < 0) {
+        scoresSheet.getRange(1, headers.length + 1).setValue('term_test_id');
+        ttCol = headers.length;
+        headers.push('term_test_id');
+      }
+
+      // exam_schedule から examId → termTestId マップを構築
+      const examToTermTest = {};
+      if (schedSheet) {
+        getRowsData(schedSheet).forEach(function (r) {
+          const eid  = String(r.exam_id      || '').trim();
+          const ttid = String(r.term_test_id || '').trim();
+          if (eid && ttid) examToTermTest[eid] = ttid;
+        });
+      }
+
+      const examIdCol = headers.indexOf('exam_id');
+      let updated = 0;
+      for (let i = 1; i < data.length; i++) {
+        const existing = String(data[i][ttCol] || '').trim();
+        if (existing) continue; // すでに入力済みはスキップ
+        const eid  = examIdCol >= 0 ? String(data[i][examIdCol] || '').trim() : '';
+        const ttid = examToTermTest[eid];
+        if (ttid) {
+          scoresSheet.getRange(i + 1, ttCol + 1).setValue(ttid);
+          updated++;
+        }
+      }
+      results.push(cramId + ': ' + updated + '行更新');
+    } catch (e) {
+      results.push(cramId + ': ERROR ' + e.message);
+    }
+  });
+
+  Logger.log(results.join('\n'));
+  return results;
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
   getAdminScores, updateAdminScore,
+  migrateScoresAddTermTestId,
   getSchoolCoursesFromSettingsSheet,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
   _setDefaultSubjectsForPatterns,

@@ -264,23 +264,6 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 
 ---
 
-### `exam_schedule`
-試験スケジュール（年度別の実施日程）。管理画面「試験日程」タブで管理する。  
-日程未設定でも生徒が得点入力可能（保存時に `exam_schedule` へ自動エントリを作成）。
-
-| 列 | 列名 | 説明 |
-|----|------|------|
-| 1 | `exam_id` | 試験 ID（`EX` + タイムスタンプ） |
-| 2 | `pattern_id` | パターン ID（`exam_patterns` 参照） |
-| 3 | `year` | 年度（例: `2024`） |
-| 4 | `start_date` | 開始日 |
-| 5 | `end_date` | 終了日 |
-
-**主キー**: `exam_id`  
-**備考**: 同一パターンで年度が異なれば別行。年度をまたいだ集計の基点。
-
----
-
 ### `pattern_subjects`
 試験パターンと教科の紐付け。  
 管理画面「教科パターン」タブで管理。パターン自動生成時にデフォルト教科（各ジャンル最大2教科）が自動設定される。
@@ -298,15 +281,18 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 | 列 | 列名 | 説明 |
 |----|------|------|
 | 1 | `score_id` | スコアレコード ID（`SC` + UUID） |
-| 2 | `exam_id` | 試験 ID（`exam_schedule` 参照） |
+| 2 | `exam_id` | ~~試験 ID（廃止予定・既存レコードは値あり、新規は空）~~ |
 | 3 | `student_id` | 生徒 ID（`students_master` 参照） |
 | 4 | `subject_id` | 教科 ID（`subjects_master` 参照・親 SS） |
 | 5 | `score` | 得点（0〜200 の整数、空欄可） |
 | 6 | `grade_rank` | 学年順位（1 以上の整数、空欄可） |
 | 7 | `class_rank` | クラス順位（1 以上の整数、空欄可） |
 | 8 | `update_at` | 更新日時 |
+| 9 | `not_taken` | 欠試フラグ（`1` or 空） |
+| 10 | `term_test_id` | 試験区分 ID（`term_tests_master` 参照・親 SS） |
 
-**主キー**: `score_id`
+**主キー**: `score_id`  
+**upsert キー**: `(student_id, subject_id, term_test_id)`
 
 ---
 
@@ -329,11 +315,8 @@ school_course_master
     ↑ (school_name, school_course)
 exam_patterns ──────────── pattern_subjects ─── subjects_master（親SS）
     ↑ pattern_id                ↑ subject_id
-exam_schedule
-    ↑ exam_id
-scores_data ─── student_id ─── students_master
-            └── exam_id ───── exam_schedule
-                                    ↑ pattern_id ─── exam_patterns
+scores_data ─── student_id ──── students_master
+            └── term_test_id ── term_tests_master（親SS）
 ```
 
 ---
@@ -342,15 +325,14 @@ scores_data ─── student_id ─── students_master
 
 - **学校・コース別集計**: `exam_patterns.school_name / school_course` でフィルタ
 - **学年別集計**: `exam_patterns.grade` でフィルタ（試験時点の学年を表す）
-- **年度別集計**: `exam_schedule.year` でフィルタ
 - **文理別集計**: `exam_patterns.sub_course` でフィルタ
 
-例: 「2024年度・A高校・理系・高2の1学期中間の全得点」
+例: 「A高校・理系・高2の1学期中間の全得点」
 ```
 scores_data
-  JOIN exam_schedule  WHERE year = 2024
-  JOIN exam_patterns  WHERE school_name = 'A高校' AND sub_course = '理系' AND grade = '高2'
   JOIN term_tests_master（親SS）  WHERE test_name = '1学期中間'
+  JOIN students_master            WHERE school_name = 'A高校'
+  （→ exam_patterns で sub_course = '理系', grade = '高2' に絞り込み）
 ```
 
 ---
@@ -360,6 +342,8 @@ scores_data
 | シート/列 | 廃止理由 |
 |-----------|---------|
 | `admin_users.cram_ids` | 校舎ごとの動的列方式（5列目以降）に変更 |
+| `exam_schedule`（子SS） | `scores_data.term_test_id` で直接結合する設計に移行。本番 SS からは手動削除。 |
+| `scores_data.exam_id` | `exam_schedule` 廃止に伴い不要。既存レコードの値は残し、新規は空文字。 |
 | `admin_users.created_at` | 不要と判断し廃止 |
 | `admin_users.last_login` | 不要と判断し廃止 |
 | `term_tests_master.is_two_terms` | `school_term_test_settings` に移行（2026-05-24） |

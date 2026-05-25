@@ -77,7 +77,6 @@ function _scRerender() {
   if (!area || !_scScoreData) return;
 
   var students       = _scScoreData.students      || [];
-  var exams          = _scScoreData.exams          || [];
   var scores         = _scScoreData.scores         || [];
   var patterns       = (window.masterData && window.masterData.patterns)        || [];
   var patternSubjects= (window.masterData && window.masterData.patternSubjects) || [];
@@ -88,24 +87,11 @@ function _scRerender() {
     return;
   }
 
-  // ── exam_schedule から examId → termTestId マップを構築 ─────────
-  var examToTermTest = {};
-  exams.forEach(function (ex) {
-    var eid  = String(ex.exam_id      || '').trim();
-    var ttid = String(ex.term_test_id || '').trim();
-    if (eid && ttid) examToTermTest[eid] = ttid;
-  });
-
-  // ── 選択中の試験区分でスコアを絞り込み ──────────────────────────
-  // キー: "studentId||subjectId"（examId 経由の解決不要）
+  // ── スコアマップ構築（サーバー側で term_test_id フィルタ済み）──────
+  // キー: "studentId||subjectId"
   var scoreMap = {};
   scores.forEach(function (sc) {
-    var eid = String(sc.exam_id || '').trim();
-    // exam_schedule に term_test_id がない場合（旧スキーマ）は全スコアを表示
-    var ttid = examToTermTest[eid];
-    if (ttid && ttid !== _scSelectedTermTestId) return;
     var key = sc.student_id + '||' + sc.subject_id;
-    // 同じ生徒×科目で複数レコードがある場合は更新日時が新しいものを優先
     var existing = scoreMap[key];
     if (!existing || sc.update_at >= existing.update_at) {
       scoreMap[key] = sc;
