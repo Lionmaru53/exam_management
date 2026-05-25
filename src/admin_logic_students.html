@@ -1,5 +1,6 @@
 <script>
 let _stCachedStudents = [];
+let _stCachedCramId   = null;  // null = 未取得
 let _stShowInactive   = false;   // false = 有効のみ, true = 全員
 let _stSortField      = 'pronunciation';  // 'pronunciation' | 'school_course'
 let _stSortAsc        = true;
@@ -24,6 +25,11 @@ function _stGradeRank(g) {
 function renderStudentManager() {
   _stShowInactive = false;
   _stEditSchool   = null;
+  const cramId = window.selectedCramId || '';
+  if (_stCachedCramId === cramId) {
+    _stRerender();
+    return;
+  }
   _stFetchAndRender();
 }
 
@@ -39,6 +45,7 @@ function _stFetchAndRender() {
       setLoading(false);
       if (res && res.success) {
         _stCachedStudents = res.students || [];
+        _stCachedCramId   = window.selectedCramId || '';
         _stRerender();
       } else {
         showMessage((res && res.error) || '生徒一覧の取得に失敗しました。', 'error');

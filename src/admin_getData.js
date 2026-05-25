@@ -59,7 +59,6 @@ function getAdminInitialData(targetCramId) {
       const childSS = getChildSS(cramId);
 
       const childSheets = {
-        schedules:       'exam_schedule',
         patterns:        'exam_patterns',
         patternSubjects: 'pattern_subjects',
       };
@@ -69,23 +68,20 @@ function getAdminInitialData(targetCramId) {
         results[key] = stringifyDates(getRowsData(sheet));
       }
 
-      // exam_subject_exclusions はオプション（移行前の子 SS には存在しない）
-      const exclSheet = childSS.getSheetByName('exam_subject_exclusions');
-      results.examSubjectExclusions = exclSheet ? stringifyDates(getRowsData(exclSheet)) : [];
+      // school_exam_periods（新スキーマ）
+      const periodSheet = childSS.getSheetByName('school_exam_periods');
+      results.examPeriods = periodSheet ? stringifyDates(getRowsData(periodSheet)) : [];
 
       // school_course_master
       const settingSheet = _ensureSchoolCourseMasterSheet(childSS);
       results.schoolSettings = getSchoolCoursesFromSettingsSheet(settingSheet);
     } else {
       // 校舎未選択時は空配列
-      results.schedules              = [];
       results.patterns               = [];
       results.patternSubjects        = [];
-      results.examSubjectExclusions  = [];
+      results.examPeriods            = [];
       results.schoolSettings         = [];
     }
-
-    results.exams = results.schedules;
     return results;
   } catch (e) {
     console.error(e);
@@ -305,8 +301,30 @@ function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
     psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
 }
 
+/**
+ * ダッシュボード用データを取得する。
+ * liff_access_log の最新5件を返す。将来的に他のカード向けデータもここに追加していく。
+ * @returns {{ success: boolean, recentAccesses?: object[], error?: string }}
+ */
+function getDashboardData() {
+  try {
+    const ctx = getAdminContext();
+    if (!ctx.email) return { success: false, error: ctx.error || 'アクセス権限がありません' };
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const logSheet = ss.getSheetByName('liff_access_log');
+    if (!logSheet) return { success: true, recentAccesses: [] };
+
+    const rows = getRowsData(logSheet);
+    rows.sort(function(a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+    return { success: true, recentAccesses: stringifyDates(rows.slice(0, 5)) };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
-  getAdminInitialData, getStudentList,
+  getAdminInitialData, getStudentList, getDashboardData,
   getSchoolCoursesFromSettingsSheet,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
   _setDefaultSubjectsForPatterns,

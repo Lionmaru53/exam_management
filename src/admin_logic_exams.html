@@ -1,412 +1,452 @@
 <script>
-let _examEditingKey = null;
-let _exclEditKey    = null;    // 'examId:patternId' — 未実施教科パネル表示中
-let _splitByGrade   = {};
-let selectedExamYear = String(new Date().getFullYear());
-let _store = [];
+// ---- 状態変数 ----
+var _exYear      = new Date().getFullYear();
+var _exMonth     = new Date().getMonth() + 1;
+var _exActiveTab = '';
+var _exRowStore  = [];  // [{ school }] — onclick インデックス用
+var _exDragState = null; // { rowIdx, startDate, endDate } | null
+var _exPeriodMap = {};   // "school||termTestId||year" → { startDate, endDate }
 
-function _push(obj) {
-  _store.push(obj);
-  return _store.length - 1;
+// ---- エントリーポイント ----
+
+function renderExamManager(masterData) {
+  _exBuildPeriodMap(masterData);
+  if (!_exActiveTab) {
+    var tt = masterData.termTests || [];
+    if (tt.length > 0) _exActiveTab = String(tt[0].term_test_id || '').trim();
+  }
+  _exRerender(masterData);
+  if (!_exGlobalListenerAttached) {
+    document.addEventListener('mouseup', _exMouseup);
+    _exGlobalListenerAttached = true;
+  }
 }
 
-function sanitizeId(str) {
-  return String(str).replace(/[^a-zA-Z0-9]/g, '_');
-}
+var _exGlobalListenerAttached = false;
 
-function makeGrpKey(schoolName, schoolCourse, subCourse, termTestId) {
-  return [schoolName, schoolCourse, subCourse || '', termTestId].join('||');
-}
+window.renderExamManager = renderExamManager;
 
-// ---- 状態トグル ----
-function toggleGradeSplit(idx) {
-  const { grpKey } = _store[idx];
-  _splitByGrade[grpKey] = !_splitByGrade[grpKey];
-  _examEditingKey = null;
-  renderExamManager(masterData);
-}
+// ---- キャッシュ構築 ----
 
-function startEditMerged(idx) {
-  _examEditingKey = 'merged:' + _store[idx].grpKey;
-  renderExamManager(masterData);
-}
-
-function startEditGrade(idx) {
-  _examEditingKey = 'grade:' + _store[idx].patternId + ':' + _store[idx].termTestId;
-  renderExamManager(masterData);
-}
-
-function cancelEdit() {
-  _examEditingKey = null;
-  renderExamManager(masterData);
-}
-
-function toggleExclPanel(idx) {
-  const { examId, patternId } = _store[idx];
-  const key = examId + ':' + patternId;
-  _exclEditKey = (_exclEditKey === key) ? null : key;
-  renderExamManager(masterData);
-}
-
-// ---- 保存処理 ----
-function saveMergedExam(idx) {
-  const { grpKey, patternIds, examIdMap, termTestId } = _store[idx];
-  const startDate = (document.getElementById('start_' + idx) || {}).value;
-  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
-  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
-
-  const items = patternIds.map(function(pid) {
-    return {
-      exam_id:      examIdMap[pid] || '',
-      pattern_id:   pid,
-      term_test_id: termTestId,
-      year:         selectedExamYear,
-      start_date:   startDate,
-      end_date:     endDate
-    };
+function _exBuildPeriodMap(masterData) {
+  _exPeriodMap = {};
+  var periods = masterData.examPeriods || [];
+  periods.forEach(function(p) {
+    if (p.school_course || p.grade || p.sub_course) return; // school-level 以外はスキップ
+    var key = String(p.school_name || '').trim()
+            + '||' + String(p.term_test_id || '').trim()
+            + '||' + String(p.year || '');
+    _exPeriodMap[key] = { startDate: String(p.start_date || ''), endDate: String(p.end_date || '') };
   });
-
-  setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        _examEditingKey = null;
-        showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(function() { loadSection('exams'); });
-      } else {
-        showMessage((response && response.error) || '保存に失敗しました。', 'error');
-        setLoading(false);
-      }
-    })
-    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
-    .updateExamDataBatch(window.selectedCramId, items);
 }
 
-function saveGradeExam(idx) {
-  const { patternId, examId, termTestId } = _store[idx];
-  const startDate = (document.getElementById('start_' + idx) || {}).value;
-  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
-  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
+// ---- 再描画 ----
 
-  setLoading(true, ['試験日程を保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        _examEditingKey = null;
-        showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(function() { loadSection('exams'); });
-      } else {
-        showMessage((response && response.error) || '保存に失敗しました。', 'error');
-        setLoading(false);
+function _exRerender(masterData) {
+  var content = document.getElementById('admin-content');
+  if (!content) return;
+  content.innerHTML = _exBuildHtml(masterData);
+}
+
+function _exBuildHtml(masterData) {
+  var termTests = masterData.termTests || [];
+  var patterns  = masterData.patterns  || [];
+
+  // 学校名一覧（patterns から）
+  var schoolSet = {};
+  patterns.forEach(function(p) {
+    var sn = String(p.school_name || '').trim();
+    if (sn) schoolSet[sn] = true;
+  });
+  var schools = Object.keys(schoolSet);
+
+  var html = '<h3>試験日程管理</h3>';
+  html += '<p class="tab-desc">'
+       + '試験区分を選択し、学校ごとの実施期間をドラッグで設定します。'
+       + '<span id="ex-save-ind" class="ex-save-ind"></span>'
+       + '</p>';
+
+  if (termTests.length === 0) {
+    html += '<p class="ex-empty">試験区分が登録されていません（マスターデータを確認してください）。</p>';
+    return html;
+  }
+
+  if (schools.length === 0) {
+    html += '<p class="ex-empty">学校が登録されていません（生徒インポートまたはパターン管理から追加してください）。</p>';
+    return html;
+  }
+
+  // ---- タブ ----
+  html += '<div class="ex-tab-bar">';
+  termTests.forEach(function(tt) {
+    var tid     = String(tt.term_test_id || '').trim();
+    var label   = String(tt.test_name   || tid);
+    var isActive = tid === _exActiveTab;
+    html += '<button class="ex-tab' + (isActive ? ' ex-tab-active' : '') + '"'
+          + ' onclick="_exSelectTab(\'' + tid + '\')">'
+          + _exEsc(label) + '</button>';
+  });
+  html += '</div>';
+
+  // ---- 月ナビゲーション ----
+  var yearSel = '<select id="ex-year-sel" onchange="_exChangeYear()">';
+  var curYear = new Date().getFullYear();
+  for (var y = curYear - 1; y <= curYear + 2; y++) {
+    yearSel += '<option value="' + y + '"' + (y === _exYear ? ' selected' : '') + '>' + y + '年</option>';
+  }
+  yearSel += '</select>';
+
+  html += '<div class="ex-month-nav">'
+        + yearSel
+        + '<button class="ex-nav-btn" onclick="_exPrevMonth()">&#8592;</button>'
+        + '<span class="ex-month-label">' + _exYear + '年' + _exMonth + '月</span>'
+        + '<button class="ex-nav-btn" onclick="_exNextMonth()">&#8594;</button>'
+        + '</div>';
+
+  // ---- 表示日付列の構築（前月末7日 + 当月全日 + 翌月頭7日）----
+  var dates = _exGetDisplayDates();
+
+  // ---- ガントテーブル ----
+  _exRowStore = [];
+
+  html += '<div class="ex-gantt-scroll">';
+  html += '<table class="ex-gantt-table" id="ex-gantt-table">';
+
+  // ヘッダー行1: 日付
+  html += '<thead>';
+  html += '<tr>';
+  html += '<th class="ex-gantt-label ex-gantt-header-label"></th>';
+  dates.forEach(function(d) {
+    var isAdj = _exIsAdjacentMonth(d);
+    var isWE  = _exIsWeekend(d);
+    var day   = parseInt(d.split('-')[2], 10);
+    var cls   = 'ex-gantt-hd-cell'
+              + (isAdj ? ' ex-gantt-adj' : '')
+              + (isWE  ? ' ex-gantt-weekend' : '');
+    html += '<th class="' + cls + '">' + day + '</th>';
+  });
+  html += '<th class="ex-gantt-act-header"></th>';
+  html += '</tr>';
+
+  // ヘッダー行2: 曜日
+  var DOW = ['日','月','火','水','木','金','土'];
+  html += '<tr>';
+  html += '<th class="ex-gantt-label ex-gantt-header-label"></th>';
+  dates.forEach(function(d) {
+    var isAdj = _exIsAdjacentMonth(d);
+    var isWE  = _exIsWeekend(d);
+    var dow   = new Date(d).getDay();
+    var cls   = 'ex-gantt-dow-cell'
+              + (isAdj ? ' ex-gantt-adj' : '')
+              + (isWE  ? ' ex-gantt-weekend' : '');
+    html += '<th class="' + cls + '">' + DOW[dow] + '</th>';
+  });
+  html += '<th class="ex-gantt-act-header"></th>';
+  html += '</tr>';
+  html += '</thead>';
+
+  // データ行
+  html += '<tbody>';
+  schools.forEach(function(school) {
+    var rowIdx = _exRowStore.push({ school: school }) - 1;
+    var key    = school + '||' + _exActiveTab + '||' + _exYear;
+    var period = _exPeriodMap[key] || null;
+
+    html += '<tr class="ex-gantt-row" id="ex-row-' + rowIdx + '">';
+    html += '<td class="ex-gantt-label ex-gantt-school-label">' + _exEsc(school) + '</td>';
+
+    dates.forEach(function(d) {
+      var isFilled  = period && d >= period.startDate && d <= period.endDate;
+      var isPreview = false;
+      if (_exDragState && _exDragState.rowIdx === rowIdx) {
+        var ds = _exDragState.startDate <= _exDragState.endDate ? _exDragState.startDate : _exDragState.endDate;
+        var de = _exDragState.startDate <= _exDragState.endDate ? _exDragState.endDate   : _exDragState.startDate;
+        isPreview = d >= ds && d <= de;
       }
-    })
-    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
-    .updateExamData(window.selectedCramId, {
-      exam_id:      examId || '',
-      pattern_id:   patternId,
-      term_test_id: termTestId,
-      year:         selectedExamYear,
-      start_date:   startDate,
-      end_date:     endDate
+      var isAdj = _exIsAdjacentMonth(d);
+      var isWE  = _exIsWeekend(d);
+      var cls   = 'ex-gantt-cell'
+                + (isFilled  ? ' ex-gantt-filled'  : '')
+                + (isPreview ? ' ex-gantt-preview'  : '')
+                + (isAdj     ? ' ex-gantt-adj'      : '')
+                + (isWE      ? ' ex-gantt-weekend'  : '');
+      html += '<td class="' + cls + '"'
+            + ' onmousedown="return _exMousedown(' + rowIdx + ',\'' + d + '\')"'
+            + ' onmouseover="_exMouseover(' + rowIdx + ',\'' + d + '\')">'
+            + '</td>';
     });
+
+    // × ボタン
+    html += '<td class="ex-gantt-act-cell">';
+    if (period) {
+      html += '<button class="ex-clear-btn" onclick="_exClearPeriod(' + rowIdx + ')" title="期間を削除">&#215;</button>';
+    }
+    html += '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  return html;
 }
 
-function saveMergedExamAutoPattern(idx) {
-  const { school_name, school_course, sub_course, term_test_id } = _store[idx];
-  const startDate = (document.getElementById('start_' + idx) || {}).value;
-  const endDate   = (document.getElementById('end_'   + idx) || {}).value;
-  if (!startDate || !endDate) { showMessage('開始日と終了日を入力してください。', 'error'); return; }
+// ---- 日付ユーティリティ ----
 
-  setLoading(true, ['パターンを確認中...', '試験日程を書き込み中...', 'もうしばらくお待ちください...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        _examEditingKey = null;
-        showMessage('試験日程を保存しました。', 'success');
-        refreshMasterData(function() { loadSection('exams'); });
-      } else {
-        showMessage((response && response.error) || '保存に失敗しました。', 'error');
-        setLoading(false);
-      }
-    })
-    .withFailureHandler(function() { showMessage('通信エラーが発生しました。', 'error'); setLoading(false); })
-    .upsertExamWithAutoPattern(window.selectedCramId, {
-      school_name, school_course, sub_course, term_test_id,
-      year: selectedExamYear, start_date: startDate, end_date: endDate
-    });
+function _exGetDisplayDates() {
+  var dates       = [];
+  var daysInMonth = new Date(_exYear, _exMonth, 0).getDate();
+
+  // 前月末7日
+  for (var d = 7; d >= 1; d--) {
+    var dt = new Date(_exYear, _exMonth - 1, 1 - d);
+    dates.push(_exFmtDate(dt));
+  }
+  // 当月全日
+  for (var i = 1; i <= daysInMonth; i++) {
+    dates.push(_exFmtDate(new Date(_exYear, _exMonth - 1, i)));
+  }
+  // 翌月頭7日
+  for (var j = 1; j <= 7; j++) {
+    var dt2 = new Date(_exYear, _exMonth - 1, daysInMonth + j);
+    dates.push(_exFmtDate(dt2));
+  }
+  return dates;
 }
 
-function setSubjectExclusion(cramId, examId, subjectId, excluded) {
+function _exFmtDate(dt) {
+  var y = dt.getFullYear();
+  var m = dt.getMonth() + 1;
+  var d = dt.getDate();
+  return y + '-' + (m < 10 ? '0' + m : m) + '-' + (d < 10 ? '0' + d : d);
+}
+
+function _exIsAdjacentMonth(dateStr) {
+  var parts = dateStr.split('-');
+  return parseInt(parts[1], 10) !== _exMonth;
+}
+
+function _exIsWeekend(dateStr) {
+  var dow = new Date(dateStr).getDay();
+  return dow === 0 || dow === 6;
+}
+
+function _exEsc(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ---- タブ切り替え・月ナビ ----
+
+function _exSelectTab(termTestId) {
+  _exActiveTab = termTestId;
+  _exRerender(window.masterData);
+}
+
+function _exChangeYear() {
+  var sel = document.getElementById('ex-year-sel');
+  if (sel) _exYear = parseInt(sel.value, 10);
+  _exRerender(window.masterData);
+}
+
+function _exPrevMonth() {
+  _exMonth--;
+  if (_exMonth < 1) { _exMonth = 12; _exYear--; }
+  _exRerender(window.masterData);
+}
+
+function _exNextMonth() {
+  _exMonth++;
+  if (_exMonth > 12) { _exMonth = 1; _exYear++; }
+  _exRerender(window.masterData);
+}
+
+// ---- ドラッグ操作 ----
+
+function _exMousedown(rowIdx, dateStr) {
+  _exDragState = { rowIdx: rowIdx, startDate: dateStr, endDate: dateStr };
+  _exUpdatePreview();
+  return false; // テキスト選択を防止
+}
+
+function _exMouseover(rowIdx, dateStr) {
+  if (!_exDragState || _exDragState.rowIdx !== rowIdx) return;
+  _exDragState.endDate = dateStr;
+  _exUpdatePreview();
+}
+
+function _exMouseup() {
+  if (!_exDragState) return;
+  var ds     = _exDragState.startDate <= _exDragState.endDate ? _exDragState.startDate : _exDragState.endDate;
+  var de     = _exDragState.startDate <= _exDragState.endDate ? _exDragState.endDate   : _exDragState.startDate;
+  var rowIdx = _exDragState.rowIdx;
+  _exDragState = null;
+  _exSavePeriod(rowIdx, ds, de);
+}
+
+function _exUpdatePreview() {
+  if (!_exDragState) return;
+  var rowIdx = _exDragState.rowIdx;
+  var ds = _exDragState.startDate <= _exDragState.endDate ? _exDragState.startDate : _exDragState.endDate;
+  var de = _exDragState.startDate <= _exDragState.endDate ? _exDragState.endDate   : _exDragState.startDate;
+
+  var row = document.getElementById('ex-row-' + rowIdx);
+  if (!row) return;
+
+  row.querySelectorAll('.ex-gantt-cell').forEach(function(cell) {
+    var onmd = cell.getAttribute('onmousedown') || '';
+    var m    = onmd.match(/'(\d{4}-\d{2}-\d{2})'/);
+    if (!m) return;
+    var d = m[1];
+    if (d >= ds && d <= de) {
+      cell.classList.add('ex-gantt-preview');
+    } else {
+      cell.classList.remove('ex-gantt-preview');
+    }
+  });
+}
+
+// ---- 保存 ----
+
+function _exSavePeriod(rowIdx, startDate, endDate) {
+  var row = _exRowStore[rowIdx];
+  if (!row) return;
+  _exDoSave(row.school, startDate, endDate);
+}
+
+function _exClearPeriod(rowIdx) {
+  var row = _exRowStore[rowIdx];
+  if (!row) return;
+  _exDoSave(row.school, null, null);
+}
+
+function _exDoSave(school, startDate, endDate) {
+  var ind = document.getElementById('ex-save-ind');
+  if (ind) ind.textContent = '　保存中...';
+
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.success) {
-        const exclList = window.masterData.examSubjectExclusions || [];
-        if (excluded) {
-          const exists = exclList.some(function(e) { return e.exam_id === examId && e.subject_id === subjectId; });
-          if (!exists) exclList.push({ exam_id: examId, subject_id: subjectId, updated_at: '' });
-        } else {
-          const i = exclList.findIndex(function(e) { return e.exam_id === examId && e.subject_id === subjectId; });
-          if (i >= 0) exclList.splice(i, 1);
-        }
-        window.masterData.examSubjectExclusions = exclList;
-        renderExamManager(window.masterData);
+        if (ind) ind.textContent = '　保存済み';
+        window.refreshMasterData(function() {
+          _exBuildPeriodMap(window.masterData);
+          _exRerender(window.masterData);
+        });
       } else {
-        showMessage('未実施設定に失敗しました: ' + ((res && res.error) || ''), 'error');
+        if (ind) ind.textContent = '　保存失敗';
+        showMessage((res && res.error) || '保存に失敗しました。', 'error');
       }
     })
-    .withFailureHandler(function() { showMessage('通信エラー', 'error'); })
-    .setExamSubjectExclusion(cramId, { exam_id: examId, subject_id: subjectId, excluded: !!excluded });
-}
-
-function changeExamYear() {
-  const el = document.getElementById('exam-year-select');
-  if (el) selectedExamYear = el.value;
-  renderExamManager(masterData);
-}
-
-// ---- メイン描画 ----
-function renderExamManager(data) {
-  _store = [];
-
-  const content          = document.getElementById('admin-content');
-  const patterns         = Array.isArray(data.patterns)              ? data.patterns              : [];
-  const termTests        = Array.isArray(data.termTests)             ? data.termTests             : [];
-  const exams            = Array.isArray(data.exams)                 ? data.exams                 : [];
-  const schoolSettings   = Array.isArray(data.schoolSettings)        ? data.schoolSettings        : [];
-  const patternSubjects  = Array.isArray(data.patternSubjects)       ? data.patternSubjects       : [];
-  const exclList         = Array.isArray(data.examSubjectExclusions) ? data.examSubjectExclusions : [];
-  const subjects         = Array.isArray(data.subjects)              ? data.subjects              : [];
-
-  const currentYear = String(new Date().getFullYear());
-  const yearsInData = Array.from(new Set(exams.map(function(e) { return String(e.year || ''); }).filter(Boolean))).sort().reverse();
-  if (!yearsInData.includes(currentYear)) yearsInData.unshift(currentYear);
-  const yearSelectEl = document.getElementById('exam-year-select');
-  if (yearSelectEl) selectedExamYear = yearSelectEl.value;
-  const year          = selectedExamYear;
-  const examsThisYear = exams.filter(function(e) { return String(e.year || '') === year; });
-
-  // 学校グループを構築（空コースのパターンはスキップ）
-  const schoolGroupMap = {};
-  schoolSettings.forEach(function(s) {
-    const sc = String(s.school_course || '').trim();
-    if (!sc) return;
-    const key = s.school_name + '||' + sc;
-    if (!schoolGroupMap[key]) schoolGroupMap[key] = { school_name: s.school_name, school_course: sc, patterns: [] };
-  });
-  patterns.forEach(function(p) {
-    const sc = String(p.school_course || '').trim();
-    if (!sc) return;
-    const key = String(p.school_name) + '||' + sc;
-    if (!schoolGroupMap[key]) schoolGroupMap[key] = { school_name: p.school_name, school_course: sc, patterns: [] };
-    schoolGroupMap[key].patterns.push(p);
-  });
-
-  const schoolGroups = Object.values(schoolGroupMap).sort(function(a, b) {
-    return (a.school_name + a.school_course).localeCompare(b.school_name + b.school_course, 'ja');
-  });
-
-  const yearOptions = yearsInData.map(function(y) {
-    return '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '年度</option>';
-  }).join('');
-
-  let html = '<div style="display:flex; align-items:center; gap:16px; margin-bottom:8px;">' +
-    '<h3 style="margin:0;">試験日程管理</h3>' +
-    '<label style="font-weight:bold;">年度:' +
-    '<select id="exam-year-select" onchange="changeExamYear()" style="margin-left:6px; padding:4px 8px;">' +
-    yearOptions + '</select></label></div>' +
-    '<p class="tab-desc">年度・試験期間を学校・コース・学年ごとに登録します。日程を保存すると生徒が LIFF から得点入力できるようになります。<br>' +
-    '<span class="step">▶ 教科パターンが未設定の場合は先に <strong>学校別教科名・教科パターン管理</strong> で設定してください。</span></p>';
-
-  schoolGroups.forEach(function(sg) {
-    const school_name   = sg.school_name;
-    const school_course = sg.school_course;
-    const schoolPatterns = sg.patterns;
-
-    html += '<div class="admin-genre-container">';
-    html += '<h4 class="admin-genre-title">' + school_name + ' / ' + school_course + '</h4>';
-
-    if (schoolPatterns.length === 0) {
-      // パターン未登録: 日程保存時に自動作成
-      const tableRows = [];
-      termTests.forEach(function(termTest) {
-        const termTestId = String(termTest.term_test_id);
-        const grpKey     = makeGrpKey(school_name, school_course, '', termTestId);
-        const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
-        if (isMergedEdit) {
-          const saveIdx = _push({ school_name, school_course, sub_course: '', term_test_id: termTestId });
-          tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
-            '<td style="display:flex; gap:6px; align-items:center;">' +
-            '<input id="start_' + saveIdx + '" type="date" style="flex:1; padding:4px;" />' +
-            '<span>～</span><input id="end_' + saveIdx + '" type="date" style="flex:1; padding:4px;" /></td>' +
-            '<td><button class="save-btn" onclick="saveMergedExamAutoPattern(' + saveIdx + ')">保存</button>' +
-            '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
-        } else {
-          const editIdx = _push({ grpKey });
-          tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
-            '<td><span style="color:#888;">未設定</span></td>' +
-            '<td><button onclick="startEditMerged(' + editIdx + ')">編集</button></td></tr>');
-        }
-      });
-      if (tableRows.length > 0) {
-        html += '<p style="font-size:0.8rem; color:#888; margin:6px 15px;">教科パターン未登録（日程保存時に自動作成されます）</p>' +
-          '<table class="admin-table"><thead><tr>' +
-          '<th style="width:22%">試験区分</th><th style="width:50%">実施期間</th><th style="width:28%">操作</th>' +
-          '</tr></thead><tbody>' + tableRows.join('') + '</tbody></table>';
-      }
-      html += '</div>';
-      return;
-    }
-
-    // sub_course でグループ化
-    const subCourses = Array.from(new Set(schoolPatterns.map(function(p) { return p.sub_course || ''; }))).sort();
-
-    subCourses.forEach(function(subCourse) {
-      const subPatterns = schoolPatterns.filter(function(p) { return (p.sub_course || '') === subCourse; });
-      if (subCourse) {
-        html += '<div style="margin:8px 0 4px; font-weight:600; color:#555; font-size:0.95em;">' + subCourse + '</div>';
-      }
-
-      const tableRows = [];
-
-      termTests.forEach(function(termTest) {
-        const termTestId = String(termTest.term_test_id);
-        const grpKey     = makeGrpKey(school_name, school_course, subCourse, termTestId);
-        const isSplit    = !!_splitByGrade[grpKey];
-        const isMergedEdit = _examEditingKey === 'merged:' + grpKey;
-
-        // 全パターンIDとその exam_id を取得（このterm_test_idに対して）
-        const patternIds = subPatterns.map(function(p) { return p.pattern_id; });
-        const examIdMap  = {};
-        patternIds.forEach(function(pid) {
-          const e = examsThisYear.find(function(e) {
-            return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
-          });
-          examIdMap[pid] = e ? e.exam_id : '';
-        });
-
-        if (!isSplit) {
-          // 全学年まとめ表示
-          const repExam = patternIds.map(function(pid) {
-            return examsThisYear.find(function(e) {
-              return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
-            });
-          }).find(Boolean) || null;
-
-          if (isMergedEdit) {
-            const saveIdx = _push({ grpKey, patternIds, examIdMap, termTestId });
-            tableRows.push('<tr><td>' + termTest.test_name + '</td>' +
-              '<td style="display:flex; gap:6px; align-items:center;">' +
-              '<input id="start_' + saveIdx + '" type="date" value="' + (repExam ? repExam.start_date : '') + '" style="flex:1; padding:4px;" />' +
-              '<span>～</span>' +
-              '<input id="end_' + saveIdx + '" type="date" value="' + (repExam ? repExam.end_date : '') + '" style="flex:1; padding:4px;" /></td>' +
-              '<td><button class="save-btn" onclick="saveMergedExam(' + saveIdx + ')">保存</button>' +
-              '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
-          } else {
-            const editIdx  = _push({ grpKey });
-            const splitIdx = _push({ grpKey });
-            const dateText = repExam
-              ? repExam.start_date + ' ～ ' + repExam.end_date
-              : '<span style="color:#888;">未設定</span>';
-            tableRows.push('<tr><td>' + termTest.test_name + '</td><td>' + dateText + '</td>' +
-              '<td><button onclick="startEditMerged(' + editIdx + ')">編集</button>' +
-              '<button onclick="toggleGradeSplit(' + splitIdx + ')" style="margin-left:4px;">学年別</button></td></tr>');
-          }
-        } else {
-          // 学年別表示
-          const mergeIdx = _push({ grpKey });
-          tableRows.push('<tr style="background:#f0f4ff;">' +
-            '<td colspan="4" style="padding:6px 10px;"><strong>' + termTest.test_name + '</strong>' +
-            '<button style="margin-left:12px; font-size:0.85em;" onclick="toggleGradeSplit(' + mergeIdx + ')">まとめる</button>' +
-            '</td></tr>');
-
-          ['高1', '高2', '高3'].forEach(function(grade) {
-            const pattern = subPatterns.find(function(p) { return p.grade === grade; });
-            if (!pattern) {
-              tableRows.push('<tr><td style="padding-left:24px; color:#aaa;">↳ ' + grade + '</td>' +
-                '<td colspan="2"><span style="color:#aaa;">パターン未登録</span></td>' +
-                '<td><button onclick="loadSection(\'patterns\')">教科パターン作成</button></td></tr>');
-              return;
-            }
-            const pid         = pattern.pattern_id;
-            const gradeExam   = examsThisYear.find(function(e) {
-              return String(e.pattern_id) === String(pid) && String(e.term_test_id) === termTestId;
-            }) || null;
-            const examId      = gradeExam ? gradeExam.exam_id : '';
-            const isGradeEdit = _examEditingKey === 'grade:' + pid + ':' + termTestId;
-            const exclKey     = examId + ':' + pid;
-            const isExclOpen  = !!examId && _exclEditKey === exclKey;
-
-            if (isGradeEdit) {
-              const saveIdx = _push({ patternId: pid, examId, termTestId });
-              tableRows.push('<tr style="background:#fffde7;">' +
-                '<td style="padding-left:24px; color:#555;">↳ ' + grade + '</td>' +
-                '<td style="display:flex; gap:6px; align-items:center;">' +
-                '<input id="start_' + saveIdx + '" type="date" value="' + (gradeExam ? gradeExam.start_date : '') + '" style="flex:1; padding:4px;" />' +
-                '<span>～</span>' +
-                '<input id="end_' + saveIdx + '" type="date" value="' + (gradeExam ? gradeExam.end_date : '') + '" style="flex:1; padding:4px;" /></td>' +
-                '<td colspan="2"><button class="save-btn" onclick="saveGradeExam(' + saveIdx + ')">保存</button>' +
-                '<button class="btn-cancel-admin" onclick="cancelEdit()">キャンセル</button></td></tr>');
-            } else {
-              const editIdx = _push({ patternId: pid, termTestId });
-              const dateText = gradeExam
-                ? gradeExam.start_date + ' ～ ' + gradeExam.end_date
-                : '<span style="color:#888;">未設定</span>';
-              const exclBtnIdx = _push({ examId, patternId: pid });
-              tableRows.push('<tr>' +
-                '<td style="padding-left:24px; color:#555;">↳ ' + grade + '</td>' +
-                '<td>' + dateText + '</td>' +
-                '<td><button onclick="startEditGrade(' + editIdx + ')">編集</button></td>' +
-                '<td>' + (examId ? '<button onclick="toggleExclPanel(' + exclBtnIdx + ')" style="font-size:0.8em;">' + (isExclOpen ? '▲ 未実施設定' : '▼ 未実施設定') + '</button>' : '') + '</td></tr>');
-
-              if (isExclOpen) {
-                const patSubjects = patternSubjects
-                  .filter(function(ps) { return String(ps.pattern_id) === String(pid); })
-                  .map(function(ps) { return subjects.find(function(s) { return s.subject_id === ps.subject_id; }); })
-                  .filter(Boolean);
-                const cramId = window.selectedCramId;
-                const exclRow = patSubjects.map(function(s) {
-                  const isExcluded = exclList.some(function(e) {
-                    return e.exam_id === examId && e.subject_id === s.subject_id;
-                  });
-                  const chk = isExcluded ? 'checked' : '';
-                  return '<label style="display:inline-flex; align-items:center; gap:4px; margin:2px 8px;">' +
-                    '<input type="checkbox" ' + chk + ' onchange="setSubjectExclusion(\'' + cramId + '\',\'' + examId + '\',\'' + s.subject_id + '\',this.checked)" />' +
-                    s.subject_name + '</label>';
-                }).join('');
-                tableRows.push('<tr style="background:#fff3e0;"><td colspan="4" style="padding:6px 12px;">' +
-                  '<span style="font-weight:600; margin-right:8px;">未実施教科:</span>' +
-                  (exclRow || '<span style="color:#aaa;">教科が登録されていません</span>') + '</td></tr>');
-              }
-            }
-          });
-        }
-      });
-
-      if (tableRows.length > 0) {
-        html += '<table class="admin-table"><thead><tr>' +
-          '<th style="width:20%">試験区分</th>' +
-          '<th style="width:40%">実施期間</th>' +
-          '<th style="width:20%">操作</th>' +
-          '<th style="width:20%">未実施設定</th>' +
-          '</tr></thead><tbody>' + tableRows.join('') + '</tbody></table>';
-      }
+    .withFailureHandler(function(err) {
+      if (ind) ind.textContent = '　保存失敗';
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
+    })
+    .saveSchoolExamPeriod(window.selectedCramId || '', {
+      schoolName: school,
+      termTestId: _exActiveTab,
+      year:       _exYear,
+      startDate:  startDate || null,
+      endDate:    endDate   || null
     });
-
-    html += '</div>';
-  });
-
-  content.innerHTML = html;
 }
-
-window.renderExamManager         = renderExamManager;
-window.startEditMerged           = startEditMerged;
-window.startEditGrade            = startEditGrade;
-window.cancelEdit                = cancelEdit;
-window.saveMergedExam            = saveMergedExam;
-window.saveGradeExam             = saveGradeExam;
-window.toggleGradeSplit          = toggleGradeSplit;
-window.changeExamYear            = changeExamYear;
-window.saveMergedExamAutoPattern = saveMergedExamAutoPattern;
-window.toggleExclPanel           = toggleExclPanel;
-window.setSubjectExclusion       = setSubjectExclusion;
 </script>
+
+<style>
+  /* タブ */
+  .ex-tab-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+  .ex-tab {
+    padding: 5px 14px; border: 1px solid #b0bfda; border-radius: 4px;
+    background: #f5f7fa; color: #3a5a8c; cursor: pointer; font-size: 0.88em;
+  }
+  .ex-tab:hover    { background: #e8eef6; }
+  .ex-tab-active   { background: #4a7fc1; color: #fff; border-color: #4a7fc1; font-weight: bold; }
+
+  /* 月ナビ */
+  .ex-month-nav {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px; font-size: 0.95em;
+  }
+  .ex-nav-btn {
+    padding: 4px 10px; border: 1px solid #b0bfda; border-radius: 4px;
+    background: #f5f7fa; cursor: pointer; font-size: 1em;
+  }
+  .ex-nav-btn:hover { background: #e8eef6; }
+  .ex-month-label { font-weight: bold; min-width: 80px; text-align: center; }
+
+  /* 保存インジケーター */
+  .ex-save-ind { font-size: 0.85em; color: #888; }
+
+  /* ガントスクロールエリア */
+  .ex-gantt-scroll {
+    overflow-x: auto;
+    border: 1px solid #dde3ec;
+    border-radius: 6px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .ex-gantt-table {
+    border-collapse: collapse;
+    white-space: nowrap;
+  }
+
+  /* 固定列（学校名） */
+  .ex-gantt-label {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    z-index: 2;
+    min-width: 130px;
+    max-width: 180px;
+    border-right: 2px solid #c8d4e8;
+    padding: 4px 8px;
+    font-size: 0.88em;
+  }
+  .ex-gantt-header-label { background: #f0f4f9; font-weight: bold; }
+  .ex-gantt-school-label { font-weight: 600; color: #2c4a7c; }
+
+  /* ヘッダーセル（日付・曜日） */
+  .ex-gantt-hd-cell, .ex-gantt-dow-cell {
+    min-width: 24px; width: 24px;
+    text-align: center;
+    font-size: 0.75em;
+    padding: 2px 0;
+    border: 1px solid #e4e8f0;
+    background: #f0f4f9;
+    user-select: none;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .ex-gantt-dow-cell { top: 22px; }
+
+  /* データセル */
+  .ex-gantt-cell {
+    min-width: 24px; width: 24px; height: 26px;
+    border: 1px solid #e8eaf0;
+    cursor: crosshair;
+    user-select: none;
+  }
+  .ex-gantt-cell:hover { background: #dce6f4 !important; }
+
+  /* 状態クラス */
+  .ex-gantt-filled  { background: #4a7fc1; }
+  .ex-gantt-preview { background: #90b8e8; }
+  .ex-gantt-adj     { background: #f2f2f2; }
+  .ex-gantt-adj.ex-gantt-filled  { background: #7aaad8; }
+  .ex-gantt-adj.ex-gantt-preview { background: #a8c8ec; }
+  .ex-gantt-weekend { opacity: 0.7; }
+
+  /* × ボタン列（右端固定） */
+  .ex-gantt-act-header, .ex-gantt-act-cell {
+    position: sticky; right: 0; background: #fff; z-index: 2;
+    min-width: 32px; text-align: center;
+    border-left: 1px solid #dde3ec;
+  }
+  .ex-gantt-act-header { background: #f0f4f9; }
+  .ex-clear-btn {
+    background: none; border: none; color: #c00; cursor: pointer;
+    font-size: 1.1em; padding: 0 4px; line-height: 1;
+  }
+  .ex-clear-btn:hover { color: #900; }
+
+  .ex-gantt-row:hover .ex-gantt-school-label { background: #f5f8ff; }
+
+  .ex-empty { color: #888; padding: 24px 0; }
+</style>

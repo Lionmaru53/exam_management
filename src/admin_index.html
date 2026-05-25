@@ -28,6 +28,7 @@
   </div>
 
   <?!= include('common_showMessage'); ?>
+  <?!= include('admin_logic_dashboard'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
   <?!= include('admin_logic_import'); ?>
@@ -39,7 +40,7 @@
   <script>
     window.masterData     = {};
     window.adminContext   = { role: '', cram_id: '', email: '' };
-    window.currentSection = 'patterns';
+    window.currentSection = 'dashboard';
     window.selectedCramId = '';  // 操作対象の校舎 cram_id
 
     var _loadingMsgTimer = null;
@@ -75,6 +76,7 @@
     // ---- ナビゲーション ----
     function _renderNav(role) {
       const tabs = [
+        { section: 'dashboard',  label: 'ダッシュボード' },
         { section: 'students',   label: '①生徒一覧' },
         { section: 'import',     label: '①生徒インポート' },
         { section: 'patterns',   label: '②学校別教科名・教科パターン管理' },
@@ -156,8 +158,8 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['patterns', 'exams', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
-      window.currentSection = valid.includes(section) ? section : 'students';
+      const valid = ['dashboard', 'patterns', 'exams', 'students', 'import', 'adminUsers', 'branches', 'masterData'];
+      window.currentSection = valid.includes(section) ? section : 'dashboard';
 
       const overlay = document.getElementById('loading-overlay');
       const content = document.getElementById('admin-content');
@@ -179,6 +181,7 @@
       });
 
       const renderers = {
+        dashboard:  function () { window.renderDashboardManager(); },
         patterns:   function () { window.renderPatternManager(window.masterData); },
         exams:      function () { window.renderExamManager(window.masterData); },
         students:   function () { window.renderStudentManager(); },
@@ -187,7 +190,7 @@
         branches:   function () { window.renderBranchManager(); },
         masterData: function () { window.renderMasterDataManager(window.masterData); }
       };
-      (renderers[section] || renderers.patterns)();
+      (renderers[section] || renderers.dashboard)();
     };
 
     // ---- 教科表示名ヘルパー ----
@@ -208,7 +211,7 @@
     };
 
     // ページロード時に自動でデータ取得
-    window.refreshMasterData(function() { window.loadSection('students'); });
+    window.refreshMasterData(function() { window.loadSection('dashboard'); });
   </script>
 </body>
 

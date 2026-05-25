@@ -3,63 +3,47 @@ function generateUniqueId(prefix) {
 }
 
 /**
- * exam_schedule への日程保存（upsert）
- * payload: { exam_id, pattern_id, term_test_id, year, start_date, end_date }
+ * school_exam_periods への日程保存（学校単位 upsert）。
+ * payload: { schoolName, termTestId, year, startDate, endDate }
+ * startDate / endDate が null/'' → 該当行を削除。
  */
-function updateExamData(cramId, payload) {
+function saveSchoolExamPeriod(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const ss    = _getTargetSS(cramId);
-    const sheet = ss.getSheetByName('exam_schedule');
-    const data  = sheet.getDataRange().getValues();
+    const childSS = getChildSS(cramId);
+    const sheet   = childSS.getSheetByName('school_exam_periods');
+    if (!sheet) throw new Error('school_exam_periods シートが見つかりません。setupBranchSS() を実行してください。');
 
-    let rowIndex = -1;
-    let examId   = payload.exam_id;
-    const ttId   = String(payload.term_test_id || '').trim();
+    const sn  = String(payload.schoolName  || '').trim();
+    const tid = String(payload.termTestId  || '').trim();
+    const yr  = String(payload.year        || '');
+    if (!sn || !tid || !yr) return { success: false, error: '必須パラメータが不足しています' };
 
-    if (examId && examId !== '') {
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][0]) === String(examId)) {
-          rowIndex = i + 1;
-          break;
-        }
+    // school-level 行（course/grade/sub_course がすべて空）を逆順で削除
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const col     = function(k) { return headers.indexOf(k); };
+
+    for (let i = data.length - 1; i >= 1; i--) {
+      const row = data[i];
+      if (String(row[col('school_name')]   || '').trim() === sn
+       && String(row[col('school_course')] || '').trim() === ''
+       && String(row[col('grade')]         || '').trim() === ''
+       && String(row[col('sub_course')]    || '').trim() === ''
+       && String(row[col('term_test_id')]  || '').trim() === tid
+       && String(row[col('year')]          || '')         === yr) {
+        sheet.deleteRow(i + 1);
       }
     }
 
-    // exam_id 未確定の場合: (pattern_id, term_test_id, year) で検索
-    if (rowIndex < 0 && payload.pattern_id && ttId && payload.year) {
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][1]) === String(payload.pattern_id) &&
-            String(data[i][2]) === ttId &&
-            String(data[i][3]) === String(payload.year)) {
-          rowIndex = i + 1;
-          examId   = String(data[i][0]);
-          break;
-        }
-      }
+    if (payload.startDate && payload.endDate) {
+      sheet.appendRow([sn, '', '', '', tid, Number(yr), payload.startDate, payload.endDate]);
     }
 
-    if (!examId) examId = generateUniqueId('EX');
-
-    const rowValues = [
-      examId,
-      payload.pattern_id  || '',
-      ttId,
-      payload.year        || '',
-      payload.start_date  || '',
-      payload.end_date    || ''
-    ];
-
-    if (rowIndex > 0) {
-      sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
-    } else {
-      sheet.appendRow(rowValues);
-    }
-
-    return { success: true, exam_id: examId };
+    return { success: true };
   } catch (e) {
-    return { success: false, error: e.toString() };
+    return { success: false, error: e.message };
   } finally {
     lock.releaseLock();
   }
@@ -248,203 +232,3 @@ function batchSetGroupSubjects(cramId, payload) {
   }
 }
 
-/**
- * exam_schedule への複数行一括保存（upsert）
- * items: Array<{ exam_id, pattern_id, term_test_id, year, start_date, end_date }>
- */
-function updateExamDataBatch(cramId, items) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-    const ss    = _getTargetSS(cramId);
-    const sheet = ss.getSheetByName('exam_schedule');
-    const data  = sheet.getDataRange().getValues();
-
-    const byExamId       = {};
-    const byCompositeKey = {};
-    for (let i = 1; i < data.length; i++) {
-      const eid  = String(data[i][0]);
-      const pid  = String(data[i][1]);
-      const ttId = String(data[i][2]);
-      const yr   = String(data[i][3]);
-      if (eid)             byExamId[eid] = i + 1;
-      if (pid && ttId && yr) byCompositeKey[`${pid}||${ttId}||${yr}`] = { rowIndex: i + 1, examId: eid };
-    }
-
-    const base = Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    let autoIdCounter = 0;
-
-    items.forEach(payload => {
-      let rowIndex = -1;
-      let examId   = payload.exam_id;
-      const ttId   = String(payload.term_test_id || '').trim();
-
-      if (examId && byExamId[examId]) {
-        rowIndex = byExamId[examId];
-      } else if (payload.pattern_id && ttId && payload.year) {
-        const ck = `${payload.pattern_id}||${ttId}||${payload.year}`;
-        if (byCompositeKey[ck]) {
-          rowIndex = byCompositeKey[ck].rowIndex;
-          examId   = byCompositeKey[ck].examId;
-        }
-      }
-
-      if (!examId) examId = 'EX' + base + (++autoIdCounter);
-
-      const rowValues = [
-        examId,
-        payload.pattern_id || '',
-        ttId,
-        payload.year       || '',
-        payload.start_date || '',
-        payload.end_date   || ''
-      ];
-
-      if (rowIndex > 0) {
-        sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
-      } else {
-        sheet.appendRow(rowValues);
-        const newRow = data.length;
-        data.push(rowValues);
-        byExamId[examId] = newRow + 1;
-        if (payload.pattern_id && ttId && payload.year) {
-          byCompositeKey[`${payload.pattern_id}||${ttId}||${payload.year}`] = { rowIndex: newRow + 1, examId };
-        }
-      }
-    });
-
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * 試験日程の upsert（既存パターンを参照して exam_schedule に保存）
- * payload: { school_name, school_course, sub_course, grade, term_test_id, year, start_date, end_date }
- * grade を省略した場合は全学年（高1/高2/高3）の対応パターンを処理する。
- */
-function upsertExamWithAutoPattern(cramId, payload) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-    const ss         = _getTargetSS(cramId);
-    const patSheet   = ss.getSheetByName('exam_patterns');
-    const schedSheet = ss.getSheetByName('exam_schedule');
-
-    const sn   = String(payload.school_name  || '').trim();
-    const sc   = String(payload.school_course || '').trim();
-    const sub  = String(payload.sub_course   || '').trim();
-    const ttId = String(payload.term_test_id || '').trim();
-    const gr   = String(payload.grade        || '').trim();
-    const grades = gr ? [gr] : ['高1', '高2', '高3'];
-
-    const patternRows = getRowsData(patSheet);
-    const schedData   = schedSheet.getDataRange().getValues();
-    const byComposite = {};
-    for (let i = 1; i < schedData.length; i++) {
-      const pid  = String(schedData[i][1]);
-      const stId = String(schedData[i][2]);
-      const yr   = String(schedData[i][3]);
-      if (pid && stId && yr) byComposite[`${pid}||${stId}||${yr}`] = { rowIndex: i + 1, examId: String(schedData[i][0]) };
-    }
-
-    for (const grade of grades) {
-      const pattern = patternRows.find(p =>
-        String(p.school_name   || '').trim() === sn  &&
-        String(p.school_course || '').trim() === sc  &&
-        String(p.grade         || '').trim() === grade &&
-        String(p.sub_course    || '').trim() === sub
-      );
-      if (!pattern) continue;
-
-      const patternId = String(pattern.pattern_id);
-      const ck = `${patternId}||${ttId}||${payload.year}`;
-      let rowIndex = -1;
-      let examId   = '';
-
-      if (byComposite[ck]) {
-        rowIndex = byComposite[ck].rowIndex;
-        examId   = byComposite[ck].examId;
-      }
-      if (!examId) examId = generateUniqueId('EX');
-
-      const row = [examId, patternId, ttId, payload.year, payload.start_date || '', payload.end_date || ''];
-      if (rowIndex > 0) {
-        schedSheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
-      } else {
-        schedSheet.appendRow(row);
-        byComposite[ck] = { rowIndex: schedSheet.getLastRow(), examId };
-      }
-    }
-
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * 試験の未実施教科を設定・解除する。
- * payload: { exam_id, subject_id, excluded }
- *   excluded = true  → exam_subject_exclusions に追加
- *   excluded = false → 削除
- */
-function setExamSubjectExclusion(cramId, payload) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(10000);
-    const ss      = _getTargetSS(cramId);
-    const sheet   = ss.getSheetByName('exam_subject_exclusions');
-    if (!sheet) return { success: false, error: 'exam_subject_exclusions シートが見つかりません' };
-
-    const examId    = String(payload.exam_id    || '').trim();
-    const subjectId = String(payload.subject_id || '').trim();
-    if (!examId || !subjectId) return { success: false, error: 'exam_id と subject_id を指定してください' };
-
-    const data = sheet.getDataRange().getValues();
-    let rowIndex = -1;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]).trim() === examId && String(data[i][1]).trim() === subjectId) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
-
-    if (payload.excluded) {
-      if (rowIndex < 0) sheet.appendRow([examId, subjectId, new Date()]);
-    } else {
-      if (rowIndex > 0) sheet.deleteRow(rowIndex);
-    }
-
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * 試験の未実施教科一覧を取得する。
- * @param {string} cramId
- * @param {string} examId
- */
-function getExamSubjectExclusions(cramId, examId) {
-  try {
-    const ss    = _getTargetSS(cramId);
-    const sheet = ss.getSheetByName('exam_subject_exclusions');
-    if (!sheet) return { success: true, subjectIds: [] };
-
-    const rows = getRowsData(sheet).filter(r =>
-      String(r.exam_id || '').trim() === String(examId || '').trim()
-    );
-    return { success: true, subjectIds: rows.map(r => String(r.subject_id).trim()) };
-  } catch (e) {
-    return { success: false, error: e.toString() };
-  }
-}

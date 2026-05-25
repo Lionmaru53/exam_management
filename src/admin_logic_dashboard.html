@@ -1,0 +1,65 @@
+<script>
+var _dbData = null;
+
+function renderDashboardManager() {
+  var content = document.getElementById('admin-content');
+  content.innerHTML = '<p class="db-empty">読み込み中...</p>';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        _dbData = res;
+        _dbRerender();
+      } else {
+        document.getElementById('admin-content').innerHTML =
+          '<p class="db-error">' + ((res && res.error) || 'エラーが発生しました') + '</p>';
+      }
+    })
+    .withFailureHandler(function() {
+      document.getElementById('admin-content').innerHTML =
+        '<p class="db-error">データの取得に失敗しました</p>';
+    })
+    .getDashboardData();
+}
+
+function _dbRerender() {
+  var content = document.getElementById('admin-content');
+  var html = '<div class="db-grid">';
+  html += _dbCardRecentAccess(_dbData ? _dbData.recentAccesses : []);
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+function _dbCardRecentAccess(accesses) {
+  var branches = (window.masterData && window.masterData.branches) || [];
+  var html = '<div class="db-card">';
+  html += '<h3 class="db-card-title">新着情報 — 最近の LIFF アクセス</h3>';
+
+  if (!accesses || accesses.length === 0) {
+    html += '<p class="db-empty">アクセス履歴がありません</p>';
+    html += '</div>';
+    return html;
+  }
+
+  html += '<table class="db-table">';
+  html += '<thead><tr>';
+  html += '<th>日時</th><th>生徒名</th><th>校舎</th><th>結果</th>';
+  html += '</tr></thead><tbody>';
+
+  accesses.forEach(function(row) {
+    var branchHit = branches.find(function(b) { return b.cram_id === row.cram_id; });
+    var branchLabel = branchHit ? (branchHit.branch_name || row.cram_id || '—') : (row.cram_id || '—');
+    var resClass = row.result === 'success' ? 'db-result-ok' : 'db-result-ng';
+    html += '<tr>';
+    html += '<td>' + (row.timestamp || '') + '</td>';
+    html += '<td>' + (row.student_name || '—') + '</td>';
+    html += '<td>' + branchLabel + '</td>';
+    html += '<td class="' + resClass + '">' + (row.result || '') + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  html += '</div>';
+  return html;
+}
+</script>

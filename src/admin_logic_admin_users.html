@@ -3,6 +3,7 @@ let _auStore       = [];
 let _auAddMode     = false;
 let _auEditEmail   = null;
 let _auCachedUsers = [];
+let _auFetched     = false;
 
 function _auPush(obj) {
   _auStore.push(obj);
@@ -14,6 +15,10 @@ function _auPush(obj) {
 function renderAdminUserManager() {
   _auAddMode   = false;
   _auEditEmail = null;
+  if (_auFetched) {
+    _auRerender();
+    return;
+  }
   _auFetchAndRender();
 }
 
@@ -28,6 +33,7 @@ function _auFetchAndRender() {
       setLoading(false);
       if (res && res.success) {
         _auCachedUsers = res.adminUsers || [];
+        _auFetched     = true;
         _auRerender();
       } else {
         showMessage((res && res.error) || '管理者一覧の取得に失敗しました。', 'error');

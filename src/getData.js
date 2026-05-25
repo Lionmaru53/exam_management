@@ -113,11 +113,33 @@ function getInitialData(lineUserId) {
     );
     const patternId = studentPattern ? String(studentPattern.pattern_id).trim() : null;
 
-    // exam_schedule から pattern_id が一致する試験一覧（term_test_id ごと）
-    const examSchedule  = getRowsData(ss.getSheetByName('exam_schedule'));
-    const relevantExams = patternId
-      ? examSchedule.filter(e => String(e.pattern_id || '').trim() === patternId)
-      : [];
+    // school_exam_periods から生徒の学校に一致する試験期間を優先度照合で取得
+    const periodSheet  = ss.getSheetByName('school_exam_periods');
+    const allPeriods   = periodSheet ? getRowsData(periodSheet) : [];
+    const _sn  = String(student.school_name   || '').trim();
+    const _sc  = String(student.school_course || '').trim();
+    const _gr  = String(student.grade         || '').trim();
+    const _sub = String(student.sub_course    || '').trim();
+
+    function _findPeriod(termTestId, year) {
+      const yr = String(year || '');
+      const candidates = allPeriods.filter(function(p) {
+        return String(p.school_name  || '').trim() === _sn
+            && String(p.term_test_id || '').trim() === termTestId
+            && String(p.year         || '')         === yr;
+      });
+      var ranked = candidates.map(function(p) {
+        const c = String(p.school_course || '').trim();
+        const g = String(p.grade         || '').trim();
+        const s = String(p.sub_course    || '').trim();
+        const r = (c === _sc ? 8 : c === '' ? 0 : -99)
+                + (g === _gr  ? 4 : g === '' ? 0 : -99)
+                + (s === _sub ? 2 : s === '' ? 0 : -99);
+        return { p: p, r: r };
+      }).filter(function(x) { return x.r >= 0; });
+      ranked.sort(function(a, b) { return b.r - a.r; });
+      return ranked.length > 0 ? ranked[0].p : null;
+    }
 
     // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master / school_subject_aliases）
     const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
@@ -154,55 +176,38 @@ function getInitialData(lineUserId) {
           .filter(Boolean)
       : [];
 
-    // exam_subject_exclusions を Map 化（exam_id → Set<subject_id>）
-    const exclusionMap = {};
-    const exclSheet = ss.getSheetByName('exam_subject_exclusions');
-    if (exclSheet) {
-      getRowsData(exclSheet).forEach(ex => {
-        const eid = String(ex.exam_id    || '').trim();
-        const sid = String(ex.subject_id || '').trim();
-        if (!eid || !sid) return;
-        if (!exclusionMap[eid]) exclusionMap[eid] = new Set();
-        exclusionMap[eid].add(sid);
-      });
-    }
-
     // 8. 得点（子 SS）
     const allScores = getRowsData(ss.getSheetByName('scores_data'));
 
     // 9. 全試験区分に対してタブデータを構築
     const examTabs = relevantTermTests.map(termTest => {
-      const ttId   = String(termTest.term_test_id).trim();
-      const exam   = relevantExams.find(e => String(e.term_test_id || '').trim() === ttId);
-      const examId = exam ? String(exam.exam_id).trim() : null;
-      const excludedSubs = examId && exclusionMap[examId] ? exclusionMap[examId] : new Set();
+      const ttId  = String(termTest.term_test_id).trim();
+      const year  = String(new Date().getFullYear());
+      const period = _findPeriod(ttId, year);
 
       const subjects = patternSubjectIds.map(sid => {
         const sub = subjectMap[sid];
         if (!sub) return null;
-        return { ...sub, excluded: excludedSubs.has(sid) };
+        return { ...sub, excluded: false };
       }).filter(Boolean);
 
-      const scores = examId
-        ? allScores
-            .filter(s =>
-              String(s.exam_id    || '').trim() === examId &&
-              String(s.student_id || '').trim() === String(student.student_id).trim()
-            )
-            .map(s => ({ ...s, not_taken: String(s.not_taken || '') === '1' }))
-        : [];
+      // scores_data は exam_id で結合しているが、school_exam_periods には exam_id がない。
+      // 暫定: term_test_id × student_id でスコアを検索（将来的に exam_id を school_exam_periods に追加するか検討）
+      const scores = allScores
+        .filter(s => String(s.student_id || '').trim() === String(student.student_id).trim())
+        .map(s => ({ ...s, not_taken: String(s.not_taken || '') === '1' }));
 
       return {
         term_test_id: ttId,
         test_name:    termTest.test_name,
-        exam_id:      examId,
+        exam_id:      null,
         pattern_id:   patternId,
-        start_date:   exam ? exam.start_date : null,
-        end_date:     exam ? exam.end_date   : null,
+        start_date:   period ? period.start_date : null,
+        end_date:     period ? period.end_date   : null,
         subjects,
         scores,
         hasPattern: !!studentPattern,
-        hasExam:    !!exam
+        hasExam:    !!period
       };
     });
 
