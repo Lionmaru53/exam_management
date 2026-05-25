@@ -30,6 +30,24 @@ function saveAllScores(payload) {
     const termTestId = String(payload.term_test_id || '').trim();
     if (!termTestId) throw new Error('term_test_id が指定されていません');
 
+    // 保存時点の学年を students_master から取得（年度別集計で必要）
+    let gradeAtSave = '';
+    const stuSheet = ss.getSheetByName('students_master');
+    if (stuSheet) {
+      const stuData    = stuSheet.getDataRange().getValues();
+      const stuHeaders = stuData[0].map(h => String(h).trim());
+      const stuSidCol  = stuHeaders.indexOf('student_id');
+      const stuGrCol   = stuHeaders.indexOf('grade');
+      if (stuSidCol >= 0 && stuGrCol >= 0) {
+        for (let i = 1; i < stuData.length; i++) {
+          if (String(stuData[i][stuSidCol] || '').trim() === String(payload.student_id).trim()) {
+            gradeAtSave = String(stuData[i][stuGrCol] || '').trim();
+            break;
+          }
+        }
+      }
+    }
+
     const sheet = ss.getSheetByName('scores_data');
     if (!sheet) throw new Error('scores_data シートが見つかりません');
 
@@ -63,7 +81,8 @@ function saveAllScores(payload) {
         newScore.class_rank,
         new Date(),
         newScore.not_taken ? '1' : '',
-        termTestId,                      // term_test_id（新）
+        termTestId,                      // term_test_id
+        gradeAtSave,                     // grade（保存時点の学年、年度別集計に使用）
       ];
 
       if (rowIndex > 0) {

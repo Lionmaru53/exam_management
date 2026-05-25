@@ -290,9 +290,12 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 | 8 | `update_at` | 更新日時 |
 | 9 | `not_taken` | 欠試フラグ（`1` or 空） |
 | 10 | `term_test_id` | 試験区分 ID（`term_tests_master` 参照・親 SS） |
+| 11 | `grade` | 保存時点の学年（年度別集計で使用。`update_at` の学年暦と組み合わせて「2026年度高2」等のフィルタが可能） |
 
 **主キー**: `score_id`  
 **upsert キー**: `(student_id, subject_id, term_test_id)`
+
+**年度の導出**: `update_at` の月が 4 月以降 → その年が年度、3 月以前 → 前年が年度
 
 ---
 

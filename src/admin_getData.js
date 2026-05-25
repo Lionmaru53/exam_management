@@ -374,6 +374,7 @@ function getAdminScores(targetCramId, termTestId) {
         class_rank: (s.class_rank !== '' && s.class_rank != null) ? String(s.class_rank) : null,
         not_taken:  s.not_taken === true || String(s.not_taken || '') === '1',
         update_at:  String(s.update_at || ''),
+        grade:      String(s.grade || '').trim(),
       }));
 
     return {
@@ -529,10 +530,84 @@ function migrateScoresAddTermTestId() {
   return results;
 }
 
+/**
+ * 【使い捨てマイグレーション関数】
+ * 本番の全校舎の scores_data に grade 列を追加し、
+ * students_master の現在学年で埋める（在校生は正確、卒業生は近似値）。
+ * 実行後に確認が取れたら、この関数ごと削除する。
+ */
+function migrateScoresAddGrade() {
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const branchSheet = parentSS.getSheetByName('branches_master');
+  if (!branchSheet) throw new Error('branches_master が見つかりません');
+
+  const branches = getRowsData(branchSheet).filter(b =>
+    b.is_active === true || String(b.is_active) === '1'
+  );
+  const results = [];
+
+  branches.forEach(function (branch) {
+    const cramId = String(branch.cram_id || '').trim();
+    if (!cramId) return;
+    try {
+      const ss          = getChildSS(cramId);
+      const scoresSheet = ss.getSheetByName('scores_data');
+      const stuSheet    = ss.getSheetByName('students_master');
+      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
+
+      const data    = scoresSheet.getDataRange().getValues();
+      const headers = data[0].map(function (h) { return String(h).trim(); });
+
+      // grade 列がなければ末尾に追加
+      let grCol = headers.indexOf('grade');
+      if (grCol < 0) {
+        scoresSheet.getRange(1, headers.length + 1).setValue('grade');
+        grCol = headers.length;
+        headers.push('grade');
+      }
+
+      // students_master から studentId → grade マップを構築
+      const studentGradeMap = {};
+      if (stuSheet) {
+        const stuData    = stuSheet.getDataRange().getValues();
+        const stuHeaders = stuData[0].map(function (h) { return String(h).trim(); });
+        const stuSidCol  = stuHeaders.indexOf('student_id');
+        const stuGrCol   = stuHeaders.indexOf('grade');
+        if (stuSidCol >= 0 && stuGrCol >= 0) {
+          for (let i = 1; i < stuData.length; i++) {
+            const sid = String(stuData[i][stuSidCol] || '').trim();
+            if (sid) studentGradeMap[sid] = String(stuData[i][stuGrCol] || '').trim();
+          }
+        }
+      }
+
+      const sidCol = headers.indexOf('student_id');
+      let updated = 0;
+      for (let i = 1; i < data.length; i++) {
+        const existing = String(data[i][grCol] || '').trim();
+        if (existing) continue; // すでに入力済みはスキップ
+        const sid   = sidCol >= 0 ? String(data[i][sidCol] || '').trim() : '';
+        const grade = studentGradeMap[sid];
+        if (grade) {
+          scoresSheet.getRange(i + 1, grCol + 1).setValue(grade);
+          updated++;
+        }
+      }
+      results.push(cramId + ': ' + updated + '行更新');
+    } catch (e) {
+      results.push(cramId + ': ERROR ' + e.message);
+    }
+  });
+
+  Logger.log(results.join('\n'));
+  return results;
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
   getAdminScores, updateAdminScore,
   migrateScoresAddTermTestId,
+  migrateScoresAddGrade,
   getSchoolCoursesFromSettingsSheet,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
   _setDefaultSubjectsForPatterns,
