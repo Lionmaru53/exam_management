@@ -37,6 +37,22 @@ function updateStudentField(cramId, studentIds, field, newValue) {
     const idSet  = new Set(studentIds.map(String));
     let updated  = 0;
     const affectedPairs = new Set(); // "school_name||school_course"
+
+    // school_course 変更時: 旧コース情報を先に収集
+    const oldCoursePairs = []; // { school_name, school_course }
+    if (field === 'school_course') {
+      const normalizedNew = _normalizeCourseName(newValue);
+      for (let i = 1; i < data.length; i++) {
+        if (idSet.has(String(data[i][sidCol]).trim())) {
+          const sn = String(data[i][snCol] || '').trim();
+          const sc = String(data[i][scCol] || '').trim();
+          if (sn && sc && sc !== normalizedNew) {
+            oldCoursePairs.push({ school_name: sn, school_course: sc });
+          }
+        }
+      }
+    }
+
     for (let i = 1; i < data.length; i++) {
       if (idSet.has(String(data[i][sidCol]).trim())) {
         const normalized = (field === 'school_course') ? _normalizeCourseName(newValue) : String(newValue || '');
@@ -71,8 +87,15 @@ function updateStudentField(cramId, studentIds, field, newValue) {
       });
     }
 
-    writeAuditLog(ctx, 'update_student_field', { cram_id: cramId, field, count: updated }, 'success');
-    return { success: true, updated };
+    // school_course 変更後: 在籍0人になった旧コースを自動削除
+    let autoDeletedCourses = 0;
+    if (field === 'school_course' && oldCoursePairs.length > 0) {
+      const delResult = _deleteOrphanedCourses(ss, oldCoursePairs);
+      autoDeletedCourses = delResult.deleted;
+    }
+
+    writeAuditLog(ctx, 'update_student_field', { cram_id: cramId, field, count: updated, autoDeletedCourses }, 'success');
+    return { success: true, updated, autoDeletedCourses };
   } catch (e) {
     console.error('updateStudentField error:', e);
     return { success: false, error: e.message };
@@ -141,6 +164,124 @@ function deleteCourseFromMaster(cramId, schoolName, courseName) {
   } catch (e) {
     return { success: false, error: e.message };
   }
+}
+
+/**
+ * 孤立コース（在籍0人）を関連シートからまとめて削除する。
+ * 削除対象: school_course_master / exam_patterns / pattern_subjects / school_exam_periods
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss  子SS
+ * @param {{ school_name: string, school_course: string }[]} pairs  削除候補の旧コース一覧
+ * @returns {{ deleted: number }}  実際に削除したコース数
+ */
+function _deleteOrphanedCourses(ss, pairs) {
+  // 重複除去
+  const uniquePairs = [];
+  const seen = new Set();
+  pairs.forEach(function(p) {
+    const key = p.school_name + '||' + p.school_course;
+    if (!seen.has(key)) { seen.add(key); uniquePairs.push(p); }
+  });
+
+  const stSheet = ss.getSheetByName('students_master');
+  if (!stSheet) return { deleted: 0 };
+
+  const stData    = stSheet.getDataRange().getValues();
+  const stHeaders = stData[0].map(function(h) { return String(h).trim(); });
+  const stSnCol   = stHeaders.indexOf('school_name');
+  const stScCol   = stHeaders.indexOf('school_course');
+  const stAcCol   = stHeaders.indexOf('is_active');
+
+  let deleted = 0;
+
+  uniquePairs.forEach(function(pair) {
+    const sn = pair.school_name;
+    const sc = pair.school_course;
+
+    // アクティブ在籍生徒が残っていれば削除しない
+    const inUse = stData.slice(1).some(function(row) {
+      return String(row[stSnCol] || '').trim() === sn &&
+             String(row[stScCol] || '').trim() === sc &&
+             (stAcCol < 0 || row[stAcCol] === true ||
+              String(row[stAcCol]).trim() === '1' ||
+              String(row[stAcCol]).trim().toLowerCase() === 'true');
+    });
+    if (inUse) return;
+
+    // exam_patterns から pattern_id を収集してから削除
+    const epSheet = ss.getSheetByName('exam_patterns');
+    const patternIds = [];
+    if (epSheet) {
+      const epData    = epSheet.getDataRange().getValues();
+      const epHeaders = epData[0].map(function(h) { return String(h).trim(); });
+      const epSnIdx   = epHeaders.indexOf('school_name');
+      const epScIdx   = epHeaders.indexOf('school_course');
+      const epPidIdx  = epHeaders.indexOf('pattern_id');
+      for (let i = 1; i < epData.length; i++) {
+        if (String(epData[i][epSnIdx] || '').trim() === sn &&
+            String(epData[i][epScIdx] || '').trim() === sc) {
+          patternIds.push(String(epData[i][epPidIdx]).trim());
+        }
+      }
+
+      // exam_patterns 削除（後ろから）
+      for (let i = epData.length - 1; i >= 1; i--) {
+        if (String(epData[i][epSnIdx] || '').trim() === sn &&
+            String(epData[i][epScIdx] || '').trim() === sc) {
+          epSheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    // pattern_subjects 削除
+    if (patternIds.length > 0) {
+      const psSheet = ss.getSheetByName('pattern_subjects');
+      if (psSheet) {
+        const psData    = psSheet.getDataRange().getValues();
+        const psHeaders = psData[0].map(function(h) { return String(h).trim(); });
+        const psPidIdx  = psHeaders.indexOf('pattern_id');
+        const pidSet    = new Set(patternIds);
+        for (let i = psData.length - 1; i >= 1; i--) {
+          if (pidSet.has(String(psData[i][psPidIdx]).trim())) {
+            psSheet.deleteRow(i + 1);
+          }
+        }
+      }
+    }
+
+    // school_course_master 削除
+    const scmSheet = ss.getSheetByName('school_course_master');
+    if (scmSheet) {
+      const scmData    = scmSheet.getDataRange().getValues();
+      const scmHeaders = scmData[0].map(function(h) { return String(h).trim(); });
+      const scmSnIdx   = scmHeaders.indexOf('school_name');
+      const scmScIdx   = scmHeaders.indexOf('school_course');
+      for (let i = scmData.length - 1; i >= 1; i--) {
+        if (String(scmData[i][scmSnIdx] || '').trim() === sn &&
+            String(scmData[i][scmScIdx] || '').trim() === sc) {
+          scmSheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    // school_exam_periods 削除
+    const sepSheet = ss.getSheetByName('school_exam_periods');
+    if (sepSheet) {
+      const sepData    = sepSheet.getDataRange().getValues();
+      const sepHeaders = sepData[0].map(function(h) { return String(h).trim(); });
+      const sepSnIdx   = sepHeaders.indexOf('school_name');
+      const sepScIdx   = sepHeaders.indexOf('school_course');
+      for (let i = sepData.length - 1; i >= 1; i--) {
+        if (String(sepData[i][sepSnIdx] || '').trim() === sn &&
+            String(sepData[i][sepScIdx] || '').trim() === sc) {
+          sepSheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    deleted++;
+  });
+
+  return { deleted: deleted };
 }
 
 /**
