@@ -385,8 +385,16 @@ function _stApplyEdit() {
     .withSuccessHandler(function (res) {
       setLoading(false);
       if (res && res.success) {
-        showMessage(res.updated + ' 名を更新しました。', 'success');
-        _stFetchAndRender();
+        var msg = res.updated + ' 名を更新しました。';
+        if (res.autoDeletedCourses > 0) {
+          msg += '（在籍0人になったコース ' + res.autoDeletedCourses + ' 件を自動削除しました）';
+        }
+        showMessage(msg, 'success');
+        if (res.autoDeletedCourses > 0) {
+          window.refreshMasterData(function() { _stFetchAndRender(); });
+        } else {
+          _stFetchAndRender();
+        }
       } else {
         showMessage((res && res.error) || '更新に失敗しました。', 'error');
       }
