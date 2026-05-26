@@ -26,52 +26,73 @@ function saveAllScores(payload) {
     // 子 SS を開く
     const ss = getChildSS(cramId);
 
-    // exam_id が未設定の場合、(pattern_id, term_test_id) 複合キーで既存エントリを探すか新規作成する
-    let examId = String(payload.exam_id || '').trim();
-    if (!examId && payload.pattern_id) {
-      const schedSheet = ss.getSheetByName('exam_schedule');
-      if (!schedSheet) throw new Error('exam_schedule シートが見つかりません');
-      const ttId    = String(payload.term_test_id || '').trim();
-      const schedRows = getRowsData(schedSheet);
-      const existing = schedRows.find(r =>
-        String(r.pattern_id   || '').trim() === String(payload.pattern_id).trim() &&
-        String(r.term_test_id || '').trim() === ttId
-      );
-      if (existing) {
-        examId = String(existing.exam_id).trim();
-      } else {
-        examId = 'EX' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-        schedSheet.appendRow([examId, payload.pattern_id, ttId, new Date().getFullYear(), '', '']);
+    // term_test_id / year を payload から直接取得
+    const termTestId = String(payload.term_test_id || '').trim();
+    if (!termTestId) throw new Error('term_test_id が指定されていません');
+    const yearAtSave = String(payload.year || '').trim();
+
+    // 保存時点の学年を students_master から取得（年度別集計で必要）
+    let gradeAtSave = '';
+    const stuSheet = ss.getSheetByName('students_master');
+    if (stuSheet) {
+      const stuData    = stuSheet.getDataRange().getValues();
+      const stuHeaders = stuData[0].map(h => String(h).trim());
+      const stuSidCol  = stuHeaders.indexOf('student_id');
+      const stuGrCol   = stuHeaders.indexOf('grade');
+      if (stuSidCol >= 0 && stuGrCol >= 0) {
+        for (let i = 1; i < stuData.length; i++) {
+          if (String(stuData[i][stuSidCol] || '').trim() === String(payload.student_id).trim()) {
+            gradeAtSave = String(stuData[i][stuGrCol] || '').trim();
+            break;
+          }
+        }
       }
     }
-    if (!examId) throw new Error('exam_id が取得できませんでした');
 
     const sheet = ss.getSheetByName('scores_data');
     if (!sheet) throw new Error('scores_data シートが見つかりません');
 
-    const data = sheet.getDataRange().getValues();
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const sidCol  = headers.indexOf('student_id');
+    const subjCol = headers.indexOf('subject_id');
+    const ttCol   = headers.indexOf('term_test_id');
+    const gradeCol = headers.indexOf('grade');
+    const yearCol  = headers.indexOf('year');
+    if (sidCol < 0 || subjCol < 0) throw new Error('scores_data の列定義が不正です');
 
     payload.scores.forEach(newScore => {
       let rowIndex = -1;
-      for (let i = 1; i < data.length; i++) {
-        if (String(data[i][1]) === examId &&
-            String(data[i][2]) === String(payload.student_id) &&
-            String(data[i][3]) === String(newScore.subject_id)) {
-          rowIndex = i + 1;
-          break;
+      if (ttCol >= 0) {
+        for (let i = 1; i < data.length; i++) {
+          if (String(data[i][sidCol])  === String(payload.student_id)  &&
+              String(data[i][subjCol]) === String(newScore.subject_id) &&
+              String(data[i][ttCol])   === termTestId) {
+            rowIndex = i + 1;
+            break;
+          }
         }
       }
 
+      // grade と year は INSERT 時のみ記録し、UPDATE 時は既存値を保持する
+      const existingGrade = rowIndex > 0 && gradeCol >= 0
+        ? (String(data[rowIndex - 1][gradeCol] || '').trim() || gradeAtSave) : gradeAtSave;
+      const existingYear  = rowIndex > 0 && yearCol  >= 0
+        ? (String(data[rowIndex - 1][yearCol]  || '').trim() || yearAtSave)  : yearAtSave;
+
       const rowValues = [
         rowIndex > 0 ? data[rowIndex - 1][0] : 'SC' + Utilities.getUuid(),
-        examId,
+        '',                 // exam_id（レガシー列、空で保持）
         payload.student_id,
         newScore.subject_id,
         newScore.score,
         newScore.grade_rank,
         newScore.class_rank,
-        new Date(),
-        newScore.not_taken ? '1' : ''
+        new Date(),         // update_at（毎回更新）
+        newScore.not_taken ? '1' : '',
+        termTestId,         // term_test_id
+        existingGrade,      // grade（INSERT 時のみ記録、UPDATE は保持）
+        existingYear,       // year（INSERT 時のみ記録、UPDATE は保持）
       ];
 
       if (rowIndex > 0) {
@@ -95,7 +116,7 @@ function saveAllScores(payload) {
  */
 function setStudentCourseAndSubCourse(lineUserId, schoolCourse, subCourse) {
   try {
-    const sc = String(schoolCourse || '').trim();
+    const sc = _normalizeCourseName(schoolCourse);
     if (!sc) return { error: 'コース名を入力してください' };
 
     const parentSS = SpreadsheetApp.getActiveSpreadsheet();

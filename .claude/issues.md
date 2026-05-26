@@ -116,6 +116,32 @@
 - **原因**: `groupKeySet` を既存の `exam_patterns` の sub_course 一覧から構築していたため、パターンが存在しないと表示もされない循環依存になっていた。
 - **対処**: `groupKeySet` の初期構築を `schoolSettings`（school_course_master）ベースに変更し、常に標準5組み合わせを生成してから実際のパターンを追加する方式に変更。
 
+### [fixed] #017 教科パターン管理クロス表で全教科が「英語」列に集中して表示される
+- **場所**: `src/admin_logic_patterns.html` → `.pt-cell` CSS クラス
+- **症状**: クロス表の全ジャンル列に `<td class="pt-cell">` が存在するにもかかわらず、すべての教科チップが「英語」列のセルにしか表示されない。DevTools では他の列の td.pt-cell が英語列位置にスタックして見える。
+- **原因**: `.pt-cell { display: flex; }` を `<td>` 要素に直接適用したことで、ブラウザが `<td>` を `display: table-cell`（テーブルセル）ではなく `display: block` として扱い、table formatting context から外れた。その結果、全ての `<td class="pt-cell">` が最初のジャンル列（英語）の位置にブロック要素として縦積みされた。
+- **対処**: `_ptRenderCell()` の `<td>` 内に `<div class="pt-cell-inner">` ラッパーを追加し、`display: flex` は `<td>` ではなく `<div>` に適用するよう変更。`<td>` 自体は `display: table-cell` のままになる。
+- **教訓**: `display: flex` を `<td>` / `<th>` など table 系要素に直接適用してはいけない。flex が必要な場合は td 内の div に適用する。→ memory/feedback_flex_on_td.md に保存済み。
+
+### [fixed] #018 `/exec` URL にアクセスするとdevモードページが表示される
+- **場所**: `src/main.js` → `doGet()`
+- **症状**: 本番 `/exec` URL にパラメータなしでアクセスすると、「LINEアプリからアクセスしてください」ではなく開発者モードページが表示される。
+- **原因**: `Session.getActiveUser().getEmail()` が `/exec` 実行時にもオーナーのメールアドレスを返すため、`devEmail` が truthy になり dev モード分岐に入っていた。
+- **対処**: `?mode=dev` パラメータが明示された場合のみ dev モードページを返すよう変更。開発者は `/dev?mode=dev` でアクセスする。
+
+### [fixed] #019 `updateStudentField` で `activeTermTests` が grades として誤渡し
+- **場所**: `src/admin_save_students.js` → `updateStudentField()` 内 `_autoCreateExamPatterns` 呼び出し
+- **症状**: 文理を設定しても exam_patterns が正しい学年（高2・高3）で生成されず、試験IDが grade 列に書き込まれる。
+- **原因**: `_autoCreateExamPatterns(ss, sn, sc, subCourse, activeTermTests, ['高2', '高3'])` と6引数で呼んでいたため、5番目の引数 `grades` に試験ID配列 `activeTermTests` が入っていた（6番目の `['高2', '高3']` は無視）。
+- **対処**: `_autoCreateExamPatterns(ss, sn, sc, subCourse, ['高2', '高3'])` に修正。`activeTermTests.length > 0` のガードは維持。
+
+### [fixed] #020 生徒一覧スライサークリックで `Uncaught SyntaxError: Unexpected end of input`
+- **場所**: `src/admin_logic_students.html` → `_stRerender()` 内スライサーボタン生成
+- **症状**: 学校・学年スライサーチップをクリックすると `Uncaught SyntaxError: Unexpected end of input` が発生し、フィルターが動作しない。
+- **原因**: `onclick="_stToggleSchoolFilter(' + JSON.stringify(s) + ')"` で生成した HTML が `onclick="_stToggleSchoolFilter("高校A")"` になり、ダブルクォートが onclick 属性を途中で閉じるため `_stToggleSchoolFilter(` だけが実行式として残っていた。
+- **対処**: 値を `data-school` / `data-grade` 属性に格納し、onclick では `this.dataset.school` / `this.dataset.grade` で読み取るよう変更。コース追加ボタンの同問題も合わせて修正。
+- **教訓**: HTML 属性内の onclick に文字列を直接埋め込む場合は `JSON.stringify` を使わず `data-*` 属性経由にする。
+
 ## open
 
 （現在 open の Issue はありません）

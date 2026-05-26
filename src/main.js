@@ -43,11 +43,13 @@ function doGet(e) {
   }
 
   // デフォルト（直接アクセス）
-  // /dev URL 経由の場合は Google ログインが必須のためメールが取得できる → 開発者モード
-  const devEmail = Session.getActiveUser().getEmail();
-  if (devEmail) {
-    return HtmlService.createHtmlOutput(_devInputPage(devEmail))
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  // ?mode=dev を明示指定した場合のみ開発者モードを表示（/exec での誤表示を防ぐ）
+  if (params.mode === 'dev') {
+    const devEmail = Session.getActiveUser().getEmail();
+    if (devEmail) {
+      return HtmlService.createHtmlOutput(_devInputPage(devEmail))
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
   }
 
   return HtmlService.createHtmlOutput(
@@ -77,6 +79,11 @@ function _devInputPage(email) {
              background: #4a7fc1; color: #fff; border: none;
              border-radius: 6px; font-size: 1em; cursor: pointer; }
     button:hover { background: #2c5fa0; }
+    .section-divider { border: none; border-top: 1px solid #eee; margin: 28px 0 16px; }
+    .btn-admin { width: 100%; padding: 10px; background: #fff; color: #2c4a7c;
+                 border: 2px solid #2c4a7c; border-radius: 6px; font-size: 0.95em;
+                 cursor: pointer; font-weight: bold; }
+    .btn-admin:hover { background: #e8f0fb; }
   </style>
 </head>
 <body>
@@ -87,6 +94,8 @@ function _devInputPage(email) {
     <input type="text" id="uid" placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
     <button type="submit">アプリを表示</button>
   </form>
+  <hr class="section-divider">
+  <button class="btn-admin" onclick="goAdmin()">管理画面へ →</button>
   <script>
     function go(e) {
       e.preventDefault();
@@ -108,9 +117,35 @@ function _devInputPage(email) {
         })
         .getStudentAppHtml(uid);
     }
+    function goAdmin() {
+      var btn = document.querySelector('.btn-admin');
+      btn.disabled = true;
+      btn.textContent = '読み込み中...';
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.open();
+          document.write(html);
+          document.close();
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.textContent = '管理画面へ →';
+          alert('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)));
+        })
+        .getAdminPageHtml();
+    }
   </script>
 </body>
 </html>`;
+}
+
+/**
+ * 開発者モード用: 管理画面の HTML 文字列を返す
+ */
+function getAdminPageHtml() {
+  return HtmlService.createTemplateFromFile('admin_index')
+    .evaluate()
+    .getContent();
 }
 
 /**

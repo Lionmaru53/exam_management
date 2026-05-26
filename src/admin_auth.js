@@ -11,7 +11,7 @@ const ADMIN_USERS_SHEET = 'admin_users';
 const AUDIT_LOG_SHEET   = 'audit_log';
 
 // admin_users シートの固定列。それ以外の列名は cram_id として扱う。
-const _ADMIN_FIXED_COLS = new Set(['admin_id', 'email', 'role', 'is_active']);
+const _ADMIN_FIXED_COLS = new Set(['admin_id', 'email', 'name', 'role', 'is_active']);
 
 function _getAdminSS() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -56,6 +56,7 @@ function getAdminContext() {
 
   return {
     email:    email,
+    name:     String(admin.name || '').trim(),
     role:     role,
     cram_id:  cram_ids[0] || '',
     cram_ids: cram_ids,
@@ -89,8 +90,8 @@ function setupAdminSS() {
   let adminSheet = ss.getSheetByName(ADMIN_USERS_SHEET);
   if (!adminSheet) {
     adminSheet = ss.insertSheet(ADMIN_USERS_SHEET);
-    adminSheet.getRange(1, 1, 1, 4).setValues([[
-      'admin_id', 'email', 'role', 'is_active'
+    adminSheet.getRange(1, 1, 1, 5).setValues([[
+      'admin_id', 'email', 'name', 'role', 'is_active'
     ]]);
     Logger.log('admin_users シートを作成しました。');
   } else {
@@ -122,7 +123,7 @@ function setupAdminSS() {
     const exists = rows.some(r => String(r.email || '').toLowerCase() === myEmail.toLowerCase());
     if (!exists) {
       const adminId = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-      adminSheet.appendRow([adminId, myEmail, 'master', true]);
+      adminSheet.appendRow([adminId, myEmail, '', 'master', true]);
       Logger.log('マスター管理者を登録しました: ' + myEmail);
     }
   }
@@ -159,8 +160,8 @@ function addAdminUser(payload) {
     }
 
     const adminId = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    sheet.appendRow([adminId, payload.email.trim(), payload.role || 'branch_admin', true]);
-    writeAuditLog(ctx, 'add_admin', { email: payload.email, role: payload.role }, 'success');
+    sheet.appendRow([adminId, payload.email.trim(), String(payload.name || '').trim(), payload.role || 'branch_admin', true]);
+    writeAuditLog(ctx, 'add_admin', { email: payload.email, name: payload.name, role: payload.role }, 'success');
     return { success: true };
   } catch (e) {
     return { error: e.message };
@@ -209,11 +210,13 @@ function updateAdminUser(payload) {
     const data    = sheet.getDataRange().getValues();
     const headers = data[0];
     const emailCol = headers.indexOf('email') + 1;
-    const roleCol  = headers.indexOf('role') + 1;
+    const nameCol  = headers.indexOf('name')  + 1;
+    const roleCol  = headers.indexOf('role')  + 1;
 
     const target = String(payload.email || '').trim().toLowerCase();
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][emailCol - 1] || '').trim().toLowerCase() === target) {
+        if (payload.name !== undefined && nameCol > 0) sheet.getRange(i + 1, nameCol).setValue(String(payload.name || '').trim());
         if (payload.role !== undefined && roleCol > 0) sheet.getRange(i + 1, roleCol).setValue(payload.role);
         writeAuditLog(ctx, 'update_admin', payload, 'success');
         return { success: true };

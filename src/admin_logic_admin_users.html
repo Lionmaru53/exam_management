@@ -3,6 +3,7 @@ let _auStore       = [];
 let _auAddMode     = false;
 let _auEditEmail   = null;
 let _auCachedUsers = [];
+let _auFetched     = false;
 
 function _auPush(obj) {
   _auStore.push(obj);
@@ -14,6 +15,10 @@ function _auPush(obj) {
 function renderAdminUserManager() {
   _auAddMode   = false;
   _auEditEmail = null;
+  if (_auFetched) {
+    _auRerender();
+    return;
+  }
   _auFetchAndRender();
 }
 
@@ -28,6 +33,7 @@ function _auFetchAndRender() {
       setLoading(false);
       if (res && res.success) {
         _auCachedUsers = res.adminUsers || [];
+        _auFetched     = true;
         _auRerender();
       } else {
         showMessage((res && res.error) || '管理者一覧の取得に失敗しました。', 'error');
@@ -85,6 +91,9 @@ function _auRerender() {
           <label>メールアドレス<br>
             <input type="email" id="au_email" placeholder="example@gmail.com" class="admin-input" style="width:100%;" />
           </label>
+          <label>氏名<br>
+            <input type="text" id="au_name" placeholder="例: 山田 太郎" class="admin-input" style="width:100%;" />
+          </label>
           <label>ロール<br>
             <select id="au_role" class="admin-select" style="width:100%;">
               <option value="branch_admin">校舎管理者</option>
@@ -106,6 +115,7 @@ function _auRerender() {
 
   html += `<table class="admin-table">
     <thead><tr>
+      <th>氏名</th>
       <th>メールアドレス</th>
       <th>ロール</th>
       <th>担当校舎</th>
@@ -122,6 +132,7 @@ function _auRerender() {
     if (isEditing) {
       const editIdx = _auPush({ email: user.email });
       html += `<tr style="background:#fffde7;">
+        <td><input type="text" id="au_edit_name_${editIdx}" class="admin-input" style="width:100%;" value="${(user.name || '').replace(/"/g, '&quot;')}" placeholder="氏名" /></td>
         <td>${user.email}</td>
         <td><select id="au_edit_role_${editIdx}" class="admin-select" style="width:auto;">
           <option value="branch_admin" ${user.role !== 'master' ? 'selected' : ''}>校舎管理者</option>
@@ -137,6 +148,7 @@ function _auRerender() {
     } else {
       const idx = _auPush({ email: user.email, is_active: isActive });
       html += `<tr>
+        <td>${user.name || '<span style="color:#aaa;">—</span>'}</td>
         <td>${user.email}</td>
         <td>${roleLabel}</td>
         <td>${_auBranchBadges(user)}</td>
@@ -173,6 +185,7 @@ function _auCancelAdd() {
 
 function _auSubmitAdd() {
   const email = document.getElementById('au_email')?.value.trim();
+  const name  = document.getElementById('au_name')?.value.trim() || '';
   const role  = document.getElementById('au_role')?.value;
 
   if (!email) { showMessage('メールアドレスを入力してください。', 'error'); return; }
@@ -190,7 +203,7 @@ function _auSubmitAdd() {
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .addAdminUser({ email, role });
+    .addAdminUser({ email, name, role });
 }
 
 // ---- 編集 ----
@@ -208,6 +221,7 @@ function _auCancelEdit() {
 
 function _auSubmitEdit(idx) {
   const { email } = _auStore[idx];
+  const name      = document.getElementById(`au_edit_name_${idx}`)?.value.trim() || '';
   const role      = document.getElementById(`au_edit_role_${idx}`)?.value;
 
   setLoading(true, '管理者情報を更新中...');
@@ -223,7 +237,7 @@ function _auSubmitEdit(idx) {
       }
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
-    .updateAdminUser({ email, role });
+    .updateAdminUser({ email, name, role });
 }
 
 // ---- 無効化 ----

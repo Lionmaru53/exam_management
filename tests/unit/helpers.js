@@ -58,12 +58,13 @@ function makeAdminUsersSheet(users) {
     return raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
   }))];
 
-  const headers  = ['admin_id', 'email', 'role', 'is_active', ...allCramIds];
+  const headers  = ['admin_id', 'email', 'name', 'role', 'is_active', ...allCramIds];
   const dataRows = users.map((u, i) => {
     const userCramIds = (u.cram_id || '').split(',').map(s => s.trim()).filter(Boolean);
     return [
       'A000' + i,
       u.email,
+      u.name || '',
       u.role,
       u.is_active !== undefined ? u.is_active : true,
       ...allCramIds.map(col => userCramIds.includes(col)),

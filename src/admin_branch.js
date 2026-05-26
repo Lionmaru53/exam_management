@@ -186,10 +186,9 @@ function _createChildSheets(ss) {
   const defs = [
     { name: 'school_course_master',    headers: ['school_name', 'school_course'] },
     { name: 'exam_patterns',           headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course'] },
-    { name: 'exam_schedule',           headers: ['exam_id', 'pattern_id', 'term_test_id', 'year', 'start_date', 'end_date'] },
+    { name: 'school_exam_periods',     headers: ['school_name', 'school_course', 'grade', 'sub_course', 'term_test_id', 'year', 'start_date', 'end_date'] },
     { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
-    { name: 'exam_subject_exclusions', headers: ['exam_id', 'subject_id', 'updated_at'] },
-    { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken'] },
+    { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
     { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
   ];
   defs.forEach(({ name, headers }) => {

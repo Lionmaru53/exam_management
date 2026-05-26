@@ -207,7 +207,7 @@ function renderApp(data) {
       listHtml += `
         <div class="tab-footer">
           <button type="button" class="btn-save"
-            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${displayKey}', this)">
+            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${exam.year || ''}', '${displayKey}', this)">
             保存する
           </button>
         </div>
@@ -410,33 +410,73 @@ var _courseFlowData       = null;
 var _courseFlowCourse     = '';
 var _courseFlowSubCourse  = '';
 
+// 入力禁止文字（全角丸括弧・半角括弧・中点・読点・句点など）
+var _COURSE_BANNED_RE = /[（）()｛｝「」【】『』・。、，．！？　]/;
+
+function _escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function renderCourseInput(data) {
   _courseFlowData = data;
-  const s = data.student;
+  const s       = data.student;
+  const courses = Array.isArray(data.availableCourses) ? data.availableCourses : [];
+
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container">
       <h2 class="app-title">定期テスト得点入力フォーム</h2>
       <p class="student-name">${s.name} さん <span class="student-info">(${s.school_name}　${s.grade})</span></p>
     </div>
   `;
-  document.getElementById('subject-list').innerHTML = `
-    <div class="sub-course-select-wrap">
-      <p class="sub-course-select-title">科・コースを教えてください</p>
-      <p class="sub-course-select-desc">例：普通(科)・理数(科)・特進(コース)・総合(コース)・中高一貫 など</p>
-      <div class="course-input-row">
-        <input type="text" id="course-input-field" class="course-input-field" placeholder="例：普通" />
-      </div>
-      <div class="sub-course-select-btns" style="margin-top:16px;">
-        <button class="sub-course-btn sub-course-btn-confirm" onclick="_courseInputNext()">次へ</button>
-      </div>
-    </div>
-  `;
+
+  let radioItems = courses.map(c =>
+    `<label class="course-radio-item">` +
+    `<input type="radio" name="course-radio" value="${_escHtml(c)}" onchange="_courseOtherToggle()">` +
+    `${_escHtml(c)}</label>`
+  ).join('');
+
+  radioItems +=
+    `<label class="course-radio-item">` +
+    `<input type="radio" name="course-radio" value="__other__" onchange="_courseOtherToggle()">` +
+    `その他（以下に入力）</label>`;
+
+  document.getElementById('subject-list').innerHTML =
+    `<div class="sub-course-select-wrap">` +
+    `<p class="sub-course-select-title">科・コースを選択してください</p>` +
+    `<div class="course-radio-list">${radioItems}</div>` +
+    `<div class="course-other-input-wrap" id="course-other-wrap">` +
+    `<input type="text" id="course-other-input" class="course-input-field" placeholder="コース名を入力" maxlength="30" />` +
+    `<p class="course-other-note">（ ） ・ などの記号は使用できません</p>` +
+    `</div>` +
+    `<div class="sub-course-select-btns" style="margin-top:16px;">` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="_courseInputNext()">次へ</button>` +
+    `</div></div>`;
+
   document.getElementById('footer').innerHTML = '';
 }
 
+function _courseOtherToggle() {
+  const wrap     = document.getElementById('course-other-wrap');
+  const selected = document.querySelector('input[name="course-radio"]:checked');
+  if (wrap) wrap.style.display = (selected && selected.value === '__other__') ? 'block' : 'none';
+}
+
 function _courseInputNext() {
-  const val = (document.getElementById('course-input-field').value || '').trim();
-  if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
+  const selected = document.querySelector('input[name="course-radio"]:checked');
+  if (!selected) { showMessage('科・コースを選択してください。', 'error'); return; }
+
+  let val;
+  if (selected.value === '__other__') {
+    val = (document.getElementById('course-other-input').value || '').trim();
+    if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
+    if (_COURSE_BANNED_RE.test(val)) {
+      showMessage('コース名に使用できない記号が含まれています。\n（ ） ・ などの記号は使用できません。', 'error');
+      return;
+    }
+  } else {
+    val = selected.value;
+  }
+
   _courseFlowCourse = val;
   const grade = String((_courseFlowData.student || {}).grade || '').trim();
   if (grade === '高2' || grade === '高3') {
@@ -448,19 +488,25 @@ function _courseInputNext() {
 }
 
 function _courseSubCourseStep() {
-  document.getElementById('subject-list').innerHTML = `
-    <div class="sub-course-select-wrap">
-      <p class="sub-course-select-title">文系・理系を選択してください</p>
-      <p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたのコースを教えてください。</p>
-      <div class="sub-course-select-btns">
-        <button class="sub-course-btn" onclick="_courseSubCourseSelect('文系')">文系</button>
-        <button class="sub-course-btn" onclick="_courseSubCourseSelect('理系')">理系</button>
-      </div>
-      <div style="margin-top:12px;">
-        <button class="sub-course-btn sub-course-btn-back" onclick="renderCourseInput(_courseFlowData)">戻る</button>
-      </div>
-    </div>
-  `;
+  document.getElementById('subject-list').innerHTML =
+    `<div class="sub-course-select-wrap">` +
+    `<p class="sub-course-select-title">文系・理系を選択してください</p>` +
+    `<p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたの文理を教えてください。</p>` +
+    `<div class="course-radio-list">` +
+    `<label class="course-radio-item"><input type="radio" name="subcourse-radio" value="文系"> 文系</label>` +
+    `<label class="course-radio-item"><input type="radio" name="subcourse-radio" value="理系"> 理系</label>` +
+    `</div>` +
+    `<div class="sub-course-select-btns" style="margin-top:16px;">` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="_courseSubCourseNext()">次へ</button>` +
+    `<button class="sub-course-btn sub-course-btn-back" onclick="renderCourseInput(_courseFlowData)">戻る</button>` +
+    `</div></div>`;
+}
+
+function _courseSubCourseNext() {
+  const selected = document.querySelector('input[name="subcourse-radio"]:checked');
+  if (!selected) { showMessage('文系・理系を選択してください。', 'error'); return; }
+  _courseFlowSubCourse = selected.value;
+  _courseConfirmStep();
 }
 
 function _courseSubCourseSelect(subCourse) {
@@ -471,20 +517,18 @@ function _courseSubCourseSelect(subCourse) {
 function _courseConfirmStep() {
   const hasSubCourse = !!_courseFlowSubCourse;
   const confirmText  = hasSubCourse
-    ? `<strong>${_courseFlowCourse}</strong> ／ <strong>${_courseFlowSubCourse}</strong> で設定します。よろしいですか？`
-    : `<strong>${_courseFlowCourse}</strong> で設定します。よろしいですか？`;
+    ? `<strong>${_escHtml(_courseFlowCourse)}</strong> ／ <strong>${_escHtml(_courseFlowSubCourse)}</strong> で設定します。よろしいですか？`
+    : `<strong>${_escHtml(_courseFlowCourse)}</strong> で設定します。よろしいですか？`;
   const backFn = hasSubCourse ? '_courseSubCourseStep()' : 'renderCourseInput(_courseFlowData)';
 
-  document.getElementById('subject-list').innerHTML = `
-    <div class="sub-course-select-wrap">
-      <p class="sub-course-select-title">確認</p>
-      <p class="sub-course-select-desc">${confirmText}</p>
-      <div class="sub-course-select-btns">
-        <button class="sub-course-btn sub-course-btn-confirm" onclick="_courseSubmit()">確定</button>
-        <button class="sub-course-btn sub-course-btn-back" onclick="${backFn}">戻る</button>
-      </div>
-    </div>
-  `;
+  document.getElementById('subject-list').innerHTML =
+    `<div class="sub-course-select-wrap">` +
+    `<p class="sub-course-select-title">確認</p>` +
+    `<p class="sub-course-select-desc">${confirmText}</p>` +
+    `<div class="sub-course-select-btns">` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="_courseSubmit()">確定</button>` +
+    `<button class="sub-course-btn sub-course-btn-back" onclick="${backFn}">戻る</button>` +
+    `</div></div>`;
 }
 
 function _courseSubmit() {
@@ -503,30 +547,35 @@ function renderSubCourseSelect(data) {
       <p class="student-name">${s.name} さん <span class="student-info">(${s.school_name}　${s.grade})</span></p>
     </div>
   `;
-  document.getElementById('subject-list').innerHTML = `
-    <div class="sub-course-select-wrap">
-      <p class="sub-course-select-title">文系・理系を選択してください</p>
-      <p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたの文理選択を教えてください。</p>
-      <div class="sub-course-select-btns">
-        <button class="sub-course-btn" onclick="_subCourseConfirm('文系')">文系</button>
-        <button class="sub-course-btn" onclick="_subCourseConfirm('理系')">理系</button>
-      </div>
-    </div>
-  `;
+  document.getElementById('subject-list').innerHTML =
+    `<div class="sub-course-select-wrap">` +
+    `<p class="sub-course-select-title">文系・理系を選択してください</p>` +
+    `<p class="sub-course-select-desc">試験の教科セットを正しく表示するため、あなたの文理選択を教えてください。</p>` +
+    `<div class="course-radio-list">` +
+    `<label class="course-radio-item"><input type="radio" name="subcourse-only-radio" value="文系"> 文系</label>` +
+    `<label class="course-radio-item"><input type="radio" name="subcourse-only-radio" value="理系"> 理系</label>` +
+    `</div>` +
+    `<div class="sub-course-select-btns" style="margin-top:16px;">` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="_subCourseNext()">次へ</button>` +
+    `</div></div>`;
   document.getElementById('footer').innerHTML = '';
 }
 
+function _subCourseNext() {
+  const selected = document.querySelector('input[name="subcourse-only-radio"]:checked');
+  if (!selected) { showMessage('文系・理系を選択してください。', 'error'); return; }
+  _subCourseConfirm(selected.value);
+}
+
 function _subCourseConfirm(subCourse) {
-  document.getElementById('subject-list').innerHTML = `
-    <div class="sub-course-select-wrap">
-      <p class="sub-course-select-title">確認</p>
-      <p class="sub-course-select-desc"><strong>${subCourse}</strong> で設定します。よろしいですか？</p>
-      <div class="sub-course-select-btns">
-        <button class="sub-course-btn sub-course-btn-confirm" onclick="handleSubCourseSelect('${_subCourseData.lineUserId}', '${subCourse}')">確定</button>
-        <button class="sub-course-btn sub-course-btn-back" onclick="renderSubCourseSelect(_subCourseData)">戻る</button>
-      </div>
-    </div>
-  `;
+  document.getElementById('subject-list').innerHTML =
+    `<div class="sub-course-select-wrap">` +
+    `<p class="sub-course-select-title">確認</p>` +
+    `<p class="sub-course-select-desc"><strong>${_escHtml(subCourse)}</strong> で設定します。よろしいですか？</p>` +
+    `<div class="sub-course-select-btns">` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="handleSubCourseSelect('${_escHtml(_subCourseData.lineUserId)}', '${_escHtml(subCourse)}')">確定</button>` +
+    `<button class="sub-course-btn sub-course-btn-back" onclick="renderSubCourseSelect(_subCourseData)">戻る</button>` +
+    `</div></div>`;
 }
 
 function toggleNotTaken(displayKey, subjectId, isChecked) {

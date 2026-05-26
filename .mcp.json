@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--user-data-dir",
+        "C:\\Users\\1100717\\Documents\\exam_management\\.playwright-mcp\\user-data"
+      ],
+      "env": {}
+    }
+  }
+}

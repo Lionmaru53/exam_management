@@ -1,44 +1,120 @@
+<style>
+/* ---- スライサー ---- */
+.st-slicer-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.st-slicer-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.st-slicer-label {
+  font-size: 0.82em;
+  font-weight: bold;
+  color: #555;
+  min-width: 36px;
+  flex-shrink: 0;
+}
+.st-slicer-chip {
+  padding: 3px 12px;
+  border: 1px solid #b0c4de;
+  border-radius: 14px;
+  background: #fff;
+  color: #334;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.st-slicer-chip:hover { background: #e8edf7; }
+.st-slicer-active {
+  background: #3a4f80;
+  color: #fff;
+  border-color: #3a4f80;
+}
+
+/* ---- コース削除チップ ---- */
+.st-course-del-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #fff0f0;
+  border: 1px solid #ffb3b3;
+  border-radius: 12px;
+  padding: 2px 6px 2px 9px;
+  font-size: 0.83em;
+}
+.st-course-del-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #c00;
+  font-size: 1.05em;
+  padding: 0 1px;
+  line-height: 1;
+}
+.st-course-del-btn:hover { color: #f00; }
+
+/* ---- 編集バー ---- */
+.st-edit-top-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f7fb;
+  border: 1px solid #dde4f0;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  min-height: 40px;
+}
+.st-edit-field-label { font-weight: bold; color: #3a4f80; }
+</style>
+
 <script>
 let _stCachedStudents = [];
-let _stShowInactive   = false;   // false = 有効のみ, true = 全員
-let _stSortField      = 'pronunciation';  // 'pronunciation' | 'school_course'
+let _stCachedCramId   = null;
+let _stShowInactive   = false;
+let _stSortField      = 'pronunciation';
 let _stSortAsc        = true;
-let _stEditSchool     = null;    // 編集モード中の学校名（null = 非編集）
-let _stEditField      = 'school_course'; // 編集中フィールド: 'school_course' | 'sub_course'
-let _stDndStore       = [];      // DnD インデックス → 学校名
-let _stDragSrcIdx     = -1;      // ドラッグ中のインデックス
-let _stDndSrcEl       = null;    // ドラッグ元の .st-school-group
-let _stDndPlaceholder = null;    // ドロップ位置を示すプレースホルダー
-let _stDndLastInsert  = null;    // 前回のプレースホルダー挿入位置
-let _stCollapsed      = {};      // schoolName → true で折り畳み
+let _stEditMode       = false;
+let _stEditField      = 'school_course';
+let _stFilterSchools  = [];
+let _stFilterGrades   = [];
 
-// 学年の表示順
 const _ST_GRADE_ORDER = ['中1','中2','中3','高1','高2','高3'];
 function _stGradeRank(g) {
   const i = _ST_GRADE_ORDER.indexOf(g);
   return i >= 0 ? i : 99;
 }
 
-// ---- 外部から呼ばれるエントリーポイント ----
+// ---- エントリーポイント ----
 
 function renderStudentManager() {
-  _stShowInactive = false;
-  _stEditSchool   = null;
+  _stShowInactive  = false;
+  _stEditMode      = false;
+  _stFilterSchools = [];
+  _stFilterGrades  = [];
+  const cramId = window.selectedCramId || '';
+  if (_stCachedCramId === cramId) { _stRerender(); return; }
   _stFetchAndRender();
 }
 
-// ---- 内部関数 ----
+// ---- データ取得 ----
 
 function _stFetchAndRender() {
   const content = document.getElementById('admin-content');
   content.innerHTML = '<h3>生徒一覧</h3><p>読み込み中...</p>';
   setLoading(true, '生徒一覧を取得中...');
-
   google.script.run
     .withSuccessHandler(function (res) {
       setLoading(false);
       if (res && res.success) {
         _stCachedStudents = res.students || [];
+        _stCachedCramId   = window.selectedCramId || '';
         _stRerender();
       } else {
         showMessage((res && res.error) || '生徒一覧の取得に失敗しました。', 'error');
@@ -46,29 +122,30 @@ function _stFetchAndRender() {
       }
     })
     .withFailureHandler(function (err) {
-      const m = err && err.message ? err.message : JSON.stringify(err);
-      console.error('[getStudentList] failure:', err);
       setLoading(false);
-      showMessage('エラー: ' + m, 'error');
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
     })
     .getStudentList(window.selectedCramId || '');
 }
 
+// ---- ソート ----
+
 function _stSetSort(field) {
-  if (_stSortField === field) {
-    _stSortAsc = !_stSortAsc;
-  } else {
-    _stSortField = field;
-    _stSortAsc   = true;
-  }
+  if (_stSortField === field) { _stSortAsc = !_stSortAsc; }
+  else { _stSortField = field; _stSortAsc = true; }
   _stRerender();
 }
 
 function _stSortStudents(arr) {
   return arr.slice().sort(function (a, b) {
-    const va = String(a[_stSortField] || '').toLowerCase();
-    const vb = String(b[_stSortField] || '').toLowerCase();
-    const cmp = va.localeCompare(vb, 'ja');
+    let cmp;
+    if (_stSortField === 'grade') {
+      cmp = _stGradeRank(a.grade || '') - _stGradeRank(b.grade || '');
+    } else {
+      const va = String(a[_stSortField] || '').toLowerCase();
+      const vb = String(b[_stSortField] || '').toLowerCase();
+      cmp = va.localeCompare(vb, 'ja');
+    }
     return _stSortAsc ? cmp : -cmp;
   });
 }
@@ -80,365 +157,226 @@ function _stSortIcon(field) {
     : '<span class="st-sort-icon st-sort-active">▼</span>';
 }
 
-function _stRerender() {
-  const content  = document.getElementById('admin-content');
-  const students = _stShowInactive
-    ? _stCachedStudents
-    : _stCachedStudents.filter(s => s.is_active);
+// ---- フィルター ----
 
-  const total   = _stCachedStudents.length;
-  const showing = students.length;
-
-  let html = '<h3>生徒一覧</h3>'
-           + '<p class="tab-desc">'
-           + '校舎に所属する生徒を学校名・学年でグループ化して表示します。<br>'
-           + '<span class="step">▶ <strong>コース・文理は必ず設定してください。</strong> 試験パターンの照合に使用するため、未設定の場合は試験・得点が表示されません。</span><br>'
-           + '<span class="step">▶ <strong>コースを編集 / 文理を編集</strong> ： チェックボックスで複数の生徒を選択し、コースまたは文理を一括変更できます。</span>'
-           + '</p>';
-
-  // ---- フィルターバー ----
-  html += '<div class="st-filter-bar">'
-        + '<span class="st-count">全 ' + total + ' 名中 ' + showing + ' 名表示</span>'
-        + '<label class="st-toggle">'
-        + '<input type="checkbox" onchange="_stToggleInactive(this.checked)"'
-        + (_stShowInactive ? ' checked' : '') + '>'
-        + ' 無効な生徒も表示'
-        + '</label>'
-        + '</div>';
-
-  if (students.length === 0) {
-    html += '<p class="st-empty">表示できる生徒がいません。</p>';
-    content.innerHTML = html;
-    return;
-  }
-
-  // ---- 学校名 → 学年 の2段階グループ化 ----
-  const schoolMap = {};
-  students.forEach(function (s) {
-    const school = s.school_name || '（学校名未設定）';
-    const grade  = s.grade       || '（学年未設定）';
-    if (!schoolMap[school])        schoolMap[school] = {};
-    if (!schoolMap[school][grade]) schoolMap[school][grade] = [];
-    schoolMap[school][grade].push(s);
-  });
-
-  const cramIdForOrder = window.selectedCramId || '';
-  const sortedSchools  = _stGetSortedSchools(schoolMap, cramIdForOrder);
-  _stDndStore = [];
-
-  const thName   = '<th class="st-th-sort" onclick="_stSetSort(\'pronunciation\')">氏名' + _stSortIcon('pronunciation') + '</th>';
-  const thCourse = '<th class="st-th-sort" onclick="_stSetSort(\'school_course\')">コース' + _stSortIcon('school_course') + '</th>';
-
-  // ジャンプナビゲーション
-  if (sortedSchools.length >= 2) {
-    html += '<div class="st-jump-nav">';
-    sortedSchools.forEach(function (sn, i) {
-      html += '<a class="st-jump-chip" href="javascript:void(0)"'
-            + ' onclick="document.getElementById(\'st-sg-' + i + '\').scrollIntoView({behavior:\'smooth\',block:\'start\'})">'
-            + _esc(sn) + '</a>';
-    });
-    html += '</div>';
-  }
-
-  sortedSchools.forEach(function (schoolName) {
-    const dndIdx      = _stDndStore.push(schoolName) - 1;
-    const gradeMap    = schoolMap[schoolName];
-    const schoolTotal = Object.values(gradeMap).reduce(function (s, a) { return s + a.length; }, 0);
-    const isEditing   = _stEditSchool === schoolName;
-    const escapedSN   = _esc(schoolName).replace(/'/g, "\\'");
-
-    const isCollapsed  = !!_stCollapsed[schoolName];
-    const toggleIcon   = isCollapsed ? '▶' : '▼';
-
-    html += '<div class="st-school-group" id="st-sg-' + dndIdx + '" data-dnd-idx="' + dndIdx + '"'
-          + ' ondragover="_stDragOver(event,' + dndIdx + ')"'
-          + ' ondrop="_stDragDrop(event,' + dndIdx + ')">'
-          + '<div class="st-school-header' + (isCollapsed ? ' st-school-collapsed' : '') + '"'
-          + ' draggable="true"'
-          + ' ondragstart="_stDragStart(event,' + dndIdx + ')"'
-          + ' ondragend="_stDragEnd()"'
-          + ' onclick="_stToggleSchool(event,' + dndIdx + ')">'
-          + '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span>'
-          + '<span class="st-toggle-icon">' + toggleIcon + '</span>'
-          + '<span class="st-school-name">' + _esc(schoolName) + '</span>'
-          + '<span class="st-school-count">' + schoolTotal + ' 名</span>'
-          + (isEditing
-              ? '<button class="st-edit-cancel-btn" onclick="_stCancelEdit()">編集を終了</button>'
-              : '<button class="st-edit-btn" onclick="_stStartEdit(\'' + escapedSN + '\',\'school_course\')">コースを編集</button>'
-              + '<button class="st-edit-btn st-edit-btn-sub" onclick="_stStartEdit(\'' + escapedSN + '\',\'sub_course\')">文理を編集</button>')
-          + '</div>';
-
-    // 折り畳み中はコンテンツをスキップ
-    if (!isCollapsed) {
-
-    // 編集モードの操作バー
-    if (isEditing) {
-      const courseOptions = _stGetCourseOptions(schoolName, _stEditField);
-      const editFieldLabel = _stEditField === 'sub_course' ? '文理' : 'コース';
-      html += '<div class="st-edit-bar" id="st-edit-bar">'
-            + '<button class="btn-sm" onclick="_stSelectAll()">全選択</button>'
-            + '<button class="btn-sm" onclick="_stDeselectAll()">全解除</button>'
-            + '&nbsp;<span class="st-edit-field-label">【' + editFieldLabel + '】</span>→&nbsp;'
-            + '<select id="st-edit-value" class="admin-select" style="width:auto;">'
-            + '<option value="">（空欄にする）</option>'
-            + courseOptions
-            + '</select>'
-            + (_stEditField !== 'sub_course'
-              ? '<span id="st-add-course-section">'
-              + '<span style="margin-left:12px; color:#666; font-size:0.85em;">新規追加:</span>'
-              + '<input type="text" id="st-new-course" class="admin-input" placeholder="コース名" style="width:100px;" />'
-              + '<button class="btn-sm" onclick="_stAddNewCourse(\'' + escapedSN + '\')">追加</button>'
-              + '</span>'
-              : '')
-            + '&nbsp;<button class="btn-save-admin" onclick="_stApplyEdit()">適用</button>'
-            + '</div>';
-    }
-
-    const sortedGrades = Object.keys(gradeMap).sort(function (a, b) {
-      return _stGradeRank(a) - _stGradeRank(b);
-    });
-
-    sortedGrades.forEach(function (grade) {
-      const members = _stSortStudents(gradeMap[grade]);
-
-      const cbHeader = isEditing
-        ? '<th style="width:32px; text-align:center;"><input type="checkbox" onchange="_stToggleGrade(this)" title="この学年を全選択/解除" /></th>'
-        : '';
-      const theadHtml = '<thead><tr>' + cbHeader + '<th>管理番号</th>' + thName + thCourse
-                      + '<th>文理</th><th>状態</th>'
-                      + '</tr></thead>';
-
-      html += '<div class="st-grade-group">'
-            + '<div class="st-grade-header">'
-            + '<span class="st-grade-name">' + _esc(grade) + '</span>'
-            + '<span class="st-grade-count">' + members.length + ' 名</span>'
-            + '</div>'
-            + '<table class="admin-table st-table">'
-            + theadHtml
-            + '<tbody>';
-
-      members.forEach(function (s) {
-        const statusBadge = s.is_active
-          ? '<span class="st-badge-active">有効</span>'
-          : '<span class="st-badge-inactive">無効</span>';
-        const cbCell = isEditing
-          ? '<td><input type="checkbox" class="st-cb" value="' + _esc(s.student_id) + '" /></td>'
-          : '';
-
-        html += '<tr class="' + (s.is_active ? '' : 'st-row-inactive') + '">'
-              + cbCell
-              + '<td class="td-mono">'  + _esc(s.student_id) + '</td>'
-              + '<td>'
-              +   '<span class="st-name">' + _esc(s.name) + '</span>'
-              +   (s.pronunciation ? '<span class="st-kana"> （' + _esc(s.pronunciation) + '）</span>' : '')
-              + '</td>'
-              + '<td>' + _esc(s.school_course || '—') + '</td>'
-              + '<td>' + _esc(s.sub_course    || '—') + '</td>'
-              + '<td>' + statusBadge + '</td>'
-              + '</tr>';
-      });
-
-      html += '</tbody></table></div>';
-    });
-
-    } // end if (!isCollapsed)
-
-    html += '</div>';
-  });
-
-  content.innerHTML = html;
+function _stGetFilteredStudents() {
+  let s = _stShowInactive ? _stCachedStudents : _stCachedStudents.filter(function(s) { return s.is_active; });
+  if (_stFilterSchools.length > 0) s = s.filter(function(x) { return _stFilterSchools.indexOf(x.school_name || '') >= 0; });
+  if (_stFilterGrades.length  > 0) s = s.filter(function(x) { return _stFilterGrades.indexOf(x.grade || '')  >= 0; });
+  return s;
 }
 
-// ---- アコーディオン ----
-
-function _stToggleSchool(event, idx) {
-  if (event.target.closest('button, input, select')) return;
-  const schoolName = _stDndStore[idx];
-  if (!schoolName) return;
-  _stCollapsed[schoolName] = !_stCollapsed[schoolName];
-  if (_stCollapsed[schoolName] && _stEditSchool === schoolName) _stEditSchool = null;
+function _stToggleSchoolFilter(school) {
+  const i = _stFilterSchools.indexOf(school);
+  if (i >= 0) _stFilterSchools.splice(i, 1); else _stFilterSchools.push(school);
   _stRerender();
 }
 
-// ---- 学校並び順（localStorage 連携） ----
-
-function _stGetSortedSchools(schoolMap, cramId) {
-  const byCount = Object.keys(schoolMap).slice().sort(function (a, b) {
-    return _stSchoolCount(schoolMap[b]) - _stSchoolCount(schoolMap[a]);
-  });
-  var saved = null;
-  try {
-    var raw = localStorage.getItem('st_school_order_' + cramId);
-    if (raw) saved = JSON.parse(raw);
-  } catch {}
-  if (!saved || !Array.isArray(saved)) return byCount;
-  var existing = saved.filter(function (s) { return schoolMap[s]; });
-  var newOnes  = byCount.filter(function (s) { return existing.indexOf(s) === -1; });
-  return existing.concat(newOnes);
-}
-
-function _stSchoolCount(gradeMap) {
-  return Object.values(gradeMap).reduce(function (s, a) { return s + a.length; }, 0);
-}
-
-function _stSaveSchoolOrder(cramId, schools) {
-  try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch {}
-}
-
-// ---- ドラッグ&ドロップ（FLIP アニメーション） ----
-
-function _stDragStart(event, idx) {
-  _stDragSrcIdx = idx;
-  _stDndSrcEl   = document.querySelector('.st-school-group[data-dnd-idx="' + idx + '"]');
-  if (!_stDndSrcEl) return;
-
-  var cs = window.getComputedStyle(_stDndSrcEl);
-  _stDndPlaceholder = document.createElement('div');
-  _stDndPlaceholder.className   = 'dnd-placeholder';
-  _stDndPlaceholder.style.height       = _stDndSrcEl.offsetHeight + 'px';
-  _stDndPlaceholder.style.marginBottom = cs.marginBottom;
-  _stDndPlaceholder.addEventListener('dragover', function(e) { e.preventDefault(); });
-  _stDndPlaceholder.addEventListener('drop',     function(e) { _stCommitDrop(e); });
-  _stDndSrcEl.parentNode.insertBefore(_stDndPlaceholder, _stDndSrcEl.nextSibling);
-  _stDndLastInsert = null;
-
-  setTimeout(function() { if (_stDndSrcEl) _stDndSrcEl.classList.add('st-dragging'); }, 0);
-}
-
-function _stDragOver(event, idx) {
-  event.preventDefault();
-  if (!_stDndPlaceholder || !_stDndSrcEl) return;
-
-  var target = document.querySelector('.st-school-group[data-dnd-idx="' + idx + '"]');
-  if (!target || target === _stDndSrcEl) return;
-
-  var rect           = target.getBoundingClientRect();
-  var insertBeforeEl = event.clientY < rect.top + rect.height / 2
-    ? target : target.nextSibling;
-
-  if (insertBeforeEl === _stDndLastInsert || insertBeforeEl === _stDndPlaceholder) return;
-  _stDndLastInsert = insertBeforeEl;
-
-  // FLIP: 移動前の位置を記録 → プレースホルダーを移動 → 差分を逆 transform で打ち消す → transition でゼロへ
-  var els  = Array.from(document.querySelectorAll('.st-school-group'));
-  var prev = els.map(function(el) { return el.getBoundingClientRect().top; });
-  _stDndSrcEl.parentNode.insertBefore(_stDndPlaceholder, insertBeforeEl);
-  els.forEach(function(el, i) {
-    var delta = prev[i] - el.getBoundingClientRect().top;
-    if (Math.abs(delta) < 1) return;
-    el.style.transition = 'none';
-    el.style.transform  = 'translateY(' + delta + 'px)';
-    requestAnimationFrame(function() {
-      el.style.transition = 'transform 0.18s ease';
-      el.style.transform  = '';
-    });
-  });
-}
-
-function _stDragEnd() {
-  if (_stDndSrcEl) _stDndSrcEl.classList.remove('st-dragging');
-  document.querySelectorAll('.st-school-group').forEach(function(el) {
-    el.style.transition = '';
-    el.style.transform  = '';
-  });
-  if (_stDndPlaceholder && _stDndPlaceholder.parentNode) {
-    _stDndPlaceholder.parentNode.removeChild(_stDndPlaceholder);
-  }
-  _stDndSrcEl = _stDndPlaceholder = _stDndLastInsert = null;
-  _stDragSrcIdx = -1;
-}
-
-function _stCommitDrop(event) {
-  event.preventDefault();
-  if (_stDragSrcIdx < 0 || !_stDndPlaceholder || !_stDndPlaceholder.parentNode) {
-    _stDragEnd(); return;
-  }
-  var parent   = _stDndPlaceholder.parentNode;
-  var children = Array.from(parent.children).filter(function(el) {
-    return el.classList.contains('st-school-group') || el === _stDndPlaceholder;
-  });
-  var srcName  = _stDndStore[_stDragSrcIdx];
-  var newOrder = [];
-  children.forEach(function(el) {
-    if (el === _stDndPlaceholder) {
-      newOrder.push(srcName);
-    } else if (el !== _stDndSrcEl) {
-      var i = parseInt(el.dataset.dndIdx, 10);
-      if (!isNaN(i) && _stDndStore[i]) newOrder.push(_stDndStore[i]);
-    }
-  });
-  if (newOrder.length > 0) _stSaveSchoolOrder(window.selectedCramId || '', newOrder);
-  _stDragEnd();
+function _stToggleGradeFilter(grade) {
+  const i = _stFilterGrades.indexOf(grade);
+  if (i >= 0) _stFilterGrades.splice(i, 1); else _stFilterGrades.push(grade);
   _stRerender();
 }
-
-function _stDragDrop(event, targetIdx) {
-  _stCommitDrop(event);
-}
-
-// ---- ソート / フィルター ----
 
 function _stToggleInactive(checked) {
   _stShowInactive = checked;
   _stRerender();
 }
 
+// ---- メイン描画 ----
+
+function _stRerender() {
+  const content  = document.getElementById('admin-content');
+  const allBase  = _stShowInactive ? _stCachedStudents : _stCachedStudents.filter(function(s) { return s.is_active; });
+  const filtered = _stGetFilteredStudents();
+
+  // スライサー用ユニーク値
+  const allSchools = _stGetSortedSchoolList(allBase);
+  const allGrades  = _ST_GRADE_ORDER.filter(function(g) { return allBase.some(function(s) { return s.grade === g; }); });
+
+  let html = '<h3>生徒一覧</h3>'
+    + '<p class="tab-desc">'
+    + '<span class="step">▶ <strong>コース・文理は必ず設定してください。</strong> 試験パターンの照合に使用するため、未設定の場合は試験・得点が表示されません。</span><br>'
+    + '<span class="step">▶ <strong>コースを編集 / 文理を編集</strong>：チェックボックスで複数の生徒を選択し一括変更できます。</span>'
+    + '</p>';
+
+  // ---- スライサー ----
+  html += '<div class="st-slicer-bar">';
+
+  if (allSchools.length >= 2) {
+    html += '<div class="st-slicer-group"><span class="st-slicer-label">学校</span>';
+    allSchools.forEach(function(s) {
+      const active = _stFilterSchools.indexOf(s) >= 0;
+      html += '<button class="st-slicer-chip' + (active ? ' st-slicer-active' : '') + '"'
+            + ' data-school="' + _esc(s) + '"'
+            + ' onclick="_stToggleSchoolFilter(this.dataset.school)">' + _esc(s) + '</button>';
+    });
+    html += '</div>';
+  }
+
+  if (allGrades.length >= 2) {
+    html += '<div class="st-slicer-group"><span class="st-slicer-label">学年</span>';
+    allGrades.forEach(function(g) {
+      const active = _stFilterGrades.indexOf(g) >= 0;
+      html += '<button class="st-slicer-chip' + (active ? ' st-slicer-active' : '') + '"'
+            + ' data-grade="' + _esc(g) + '"'
+            + ' onclick="_stToggleGradeFilter(this.dataset.grade)">' + _esc(g) + '</button>';
+    });
+    html += '</div>';
+  }
+
+  // 件数・無効表示トグル
+  html += '<div class="st-filter-bar">'
+        + '<span class="st-count">全 ' + _stCachedStudents.length + ' 名中 ' + filtered.length + ' 名表示</span>'
+        + '<label class="st-toggle"><input type="checkbox" onchange="_stToggleInactive(this.checked)"' + (_stShowInactive ? ' checked' : '') + '> 無効も表示</label>'
+        + '</div>';
+
+  html += '</div>'; // end slicer-bar
+
+  // ---- 編集バー ----
+  html += '<div class="st-edit-top-bar">';
+  if (_stEditMode) {
+    const editLabel  = _stEditField === 'sub_course' ? '文理' : 'コース';
+    const courseOpts = _stGetCourseOptionsForEdit();
+    html += '<button class="btn-sm" onclick="_stSelectAll()">全選択</button>'
+          + '<button class="btn-sm" onclick="_stDeselectAll()">全解除</button>'
+          + '&nbsp;<span class="st-edit-field-label">【' + editLabel + '】</span>→&nbsp;'
+          + '<select id="st-edit-value" class="admin-select" style="width:auto;">'
+          + '<option value="">（空欄にする）</option>'
+          + courseOpts
+          + '</select>';
+    if (_stEditField !== 'sub_course') {
+      const schoolForAdd = _stFilterSchools.length === 1 ? _stFilterSchools[0] : null;
+      if (schoolForAdd) {
+        // 既存コース一覧（削除チップ）
+        const settings = (window.masterData && window.masterData.schoolSettings) || [];
+        const coursesForSchool = settings
+          .filter(function(s) { return s.school_name === schoolForAdd; })
+          .map(function(s) { return s.school_course; })
+          .filter(Boolean);
+        if (coursesForSchool.length > 0) {
+          html += '<span style="margin-left:12px; color:#666; font-size:0.85em; flex-shrink:0;">削除:</span>';
+          coursesForSchool.forEach(function(c) {
+            html += '<span class="st-course-del-chip">'
+                  + _esc(c)
+                  + '<button class="st-course-del-btn"'
+                  + ' data-school="' + _esc(schoolForAdd) + '" data-course="' + _esc(c) + '"'
+                  + ' onclick="_stDeleteCourse(this.dataset.school,this.dataset.course)" title="削除">×</button>'
+                  + '</span>';
+          });
+        }
+        // 新規追加
+        html += '<span id="st-add-course-section" style="margin-left:8px;">'
+              + '<span style="color:#666; font-size:0.85em; flex-shrink:0;">追加:</span>'
+              + '<input type="text" id="st-new-course" class="admin-input" placeholder="コース名" style="width:100px;" />'
+              + '<button class="btn-sm" data-school="' + _esc(schoolForAdd) + '" onclick="_stAddNewCourse(this.dataset.school)">追加</button>'
+              + '</span>';
+      }
+    }
+    html += '&nbsp;<button class="btn-save-admin" onclick="_stApplyEdit()">適用</button>'
+          + '&nbsp;<button class="btn-cancel-admin" onclick="_stCancelEdit()">編集を終了</button>';
+  } else {
+    html += '<button class="st-edit-btn" onclick="_stStartEdit(\'school_course\')">コースを編集</button>'
+          + '<button class="st-edit-btn st-edit-btn-sub" onclick="_stStartEdit(\'sub_course\')">文理を編集</button>';
+  }
+  html += '</div>';
+
+  // ---- テーブル ----
+  if (filtered.length === 0) {
+    html += '<p class="st-empty">条件に一致する生徒がいません。</p>';
+    content.innerHTML = html;
+    return;
+  }
+
+  const sorted    = _stSortStudents(filtered);
+  const cbHeader  = _stEditMode
+    ? '<th style="width:32px; text-align:center;"><input type="checkbox" onchange="_stToggleAll(this)" title="全選択/解除" /></th>'
+    : '';
+
+  html += '<table class="admin-table st-table"><thead><tr>'
+        + cbHeader
+        + '<th>管理番号</th>'
+        + '<th class="st-th-sort" onclick="_stSetSort(\'pronunciation\')">氏名' + _stSortIcon('pronunciation') + '</th>'
+        + '<th class="st-th-sort" onclick="_stSetSort(\'school_name\')">学校名' + _stSortIcon('school_name') + '</th>'
+        + '<th class="st-th-sort" onclick="_stSetSort(\'grade\')">学年' + _stSortIcon('grade') + '</th>'
+        + '<th class="st-th-sort" onclick="_stSetSort(\'school_course\')">コース' + _stSortIcon('school_course') + '</th>'
+        + '<th>文理</th>'
+        + '<th>状態</th>'
+        + '</tr></thead><tbody>';
+
+  sorted.forEach(function(s) {
+    const statusBadge = s.is_active
+      ? '<span class="st-badge-active">有効</span>'
+      : '<span class="st-badge-inactive">無効</span>';
+    const cbCell = _stEditMode
+      ? '<td><input type="checkbox" class="st-cb" value="' + _esc(s.student_id) + '" /></td>'
+      : '';
+
+    html += '<tr class="' + (s.is_active ? '' : 'st-row-inactive') + '">'
+          + cbCell
+          + '<td class="td-mono">' + _esc(s.student_id) + '</td>'
+          + '<td><span class="st-name">' + _esc(s.name) + '</span>'
+          + (s.pronunciation ? '<span class="st-kana"> （' + _esc(s.pronunciation) + '）</span>' : '') + '</td>'
+          + '<td>' + _esc(s.school_name    || '—') + '</td>'
+          + '<td>' + _esc(s.grade          || '—') + '</td>'
+          + '<td>' + _esc(s.school_course  || '—') + '</td>'
+          + '<td>' + _esc(s.sub_course     || '—') + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '</tr>';
+  });
+
+  html += '</tbody></table>';
+  content.innerHTML = html;
+}
+
 // ---- 編集モード ----
 
-function _stStartEdit(schoolName, field) {
-  if (_stEditSchool && (_stEditSchool !== schoolName || _stEditField !== field)) {
-    if (!confirm('別の編集を開始します。現在の選択は破棄されます。よろしいですか？')) return;
-  }
-  _stEditSchool = schoolName;
-  _stEditField  = field || 'school_course';
+function _stStartEdit(field) {
+  _stEditMode  = true;
+  _stEditField = field || 'school_course';
   _stRerender();
 }
 
 function _stCancelEdit() {
-  _stEditSchool = null;
+  _stEditMode = false;
   _stRerender();
 }
 
 function _stSelectAll() {
-  document.querySelectorAll('.st-cb').forEach(cb => { cb.checked = true; });
+  document.querySelectorAll('.st-cb').forEach(function(cb) { cb.checked = true; });
 }
 
 function _stDeselectAll() {
-  document.querySelectorAll('.st-cb').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('.st-cb').forEach(function(cb) { cb.checked = false; });
 }
 
-function _stToggleGrade(headerCb) {
-  const table = headerCb.closest('table');
-  if (!table) return;
-  table.querySelectorAll('.st-cb').forEach(cb => { cb.checked = headerCb.checked; });
+function _stToggleAll(headerCb) {
+  document.querySelectorAll('.st-cb').forEach(function(cb) { cb.checked = headerCb.checked; });
 }
 
-/** field に応じた選択肢 <option> HTML を返す */
-function _stGetCourseOptions(schoolName, field) {
-  if (field === 'sub_course') {
-    // 文理は固定3択（空欄・文系・理系）
+function _stGetCourseOptionsForEdit() {
+  if (_stEditField === 'sub_course') {
     return '<option value="文系">文系</option><option value="理系">理系</option>';
   }
   const settings = (window.masterData && window.masterData.schoolSettings) || [];
-  const courses  = [...new Set(
-    settings.filter(function (s) { return s.school_name === schoolName && s.school_course; })
-            .map(function (s) { return s.school_course; })
-  )];
-  return courses.map(function (c) {
-    return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>';
-  }).join('');
+  let src = settings;
+  if (_stFilterSchools.length > 0) {
+    src = settings.filter(function(s) { return _stFilterSchools.indexOf(s.school_name) >= 0; });
+  }
+  const courses = [];
+  src.forEach(function(s) {
+    if (s.school_course && courses.indexOf(s.school_course) < 0) courses.push(s.school_course);
+  });
+  return courses.map(function(c) { return '<option value="' + _esc(c) + '">' + _esc(c) + '</option>'; }).join('');
 }
-
 
 function _stApplyEdit() {
   const field   = _stEditField;
-  const value   = document.getElementById('st-edit-value')?.value || '';
-  const checked = Array.from(document.querySelectorAll('.st-cb:checked')).map(cb => cb.value);
+  const value   = (document.getElementById('st-edit-value') || {}).value || '';
+  const checked = Array.from(document.querySelectorAll('.st-cb:checked')).map(function(cb) { return cb.value; });
 
   if (checked.length === 0) { showMessage('生徒を選択してください。', 'error'); return; }
-  if (!field) return;
-
-  const label = field === 'school_course' ? 'コース' : '文理';
+  const label      = field === 'school_course' ? 'コース' : '文理';
   const displayVal = value || '（空欄）';
   if (!confirm(checked.length + ' 名の ' + label + ' を「' + displayVal + '」に変更します。よろしいですか？')) return;
 
@@ -460,23 +398,31 @@ function _stApplyEdit() {
     .updateStudentField(window.selectedCramId || '', checked, field, value);
 }
 
+function _stDeleteCourse(schoolName, courseName) {
+  if (!confirm('コース「' + courseName + '」を削除します。\n使用中の有効な生徒がいる場合は削除できません。')) return;
+  setLoading(true, 'コースを削除中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('コース「' + courseName + '」を削除しました。', 'success');
+        window.refreshMasterData(function() { _stRerender(); });
+      } else {
+        showMessage((res && res.error) || '削除に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
+    })
+    .deleteCourseFromMaster(window.selectedCramId || '', schoolName, courseName);
+}
+
 function _stAddNewCourse(schoolName) {
   const input = document.getElementById('st-new-course');
   const val   = input ? input.value.trim() : '';
-  const field = document.getElementById('st-edit-field') ? document.getElementById('st-edit-field').value : 'school_course';
-  if (!val) { showMessage('コース名を入力してください。', 'error'); return; }
-
-  if (field === 'sub_course') {
-    // サブ区分はマスター不要 — 選択肢に直接追加して選択状態にする
-    const sel = document.getElementById('st-edit-value');
-    if (sel) {
-      const opt = document.createElement('option');
-      opt.value = val; opt.textContent = val; opt.selected = true;
-      sel.appendChild(opt);
-    }
-    if (input) input.value = '';
-    return;
-  }
+  if (!val)       { showMessage('コース名を入力してください。', 'error'); return; }
+  if (!schoolName){ showMessage('対象の学校が特定できません。学校フィルターで1校を選択してください。', 'error'); return; }
 
   setLoading(true, 'コースを追加中...');
   google.script.run
@@ -484,10 +430,7 @@ function _stAddNewCourse(schoolName) {
       setLoading(false);
       if (res && res.success) {
         showMessage('コース「' + val + '」を追加しました。', 'success');
-        window.refreshMasterData(function () {
-          _stEditSchool = schoolName;
-          _stRerender();
-        });
+        window.refreshMasterData(function () { _stRerender(); });
       } else {
         showMessage((res && res.error) || '追加に失敗しました。', 'error');
       }
@@ -499,146 +442,27 @@ function _stAddNewCourse(schoolName) {
     .addCourseToMaster(window.selectedCramId || '', schoolName, val);
 }
 
+// ---- 学校並び順（localStorage 連携） ----
+
+function _stGetSortedSchoolList(students) {
+  const set = {};
+  students.forEach(function(s) { if (s.school_name) set[s.school_name] = true; });
+  const all    = Object.keys(set);
+  const cramId = window.selectedCramId || '';
+  var saved = null;
+  try {
+    var raw = localStorage.getItem('st_school_order_' + cramId);
+    if (raw) saved = JSON.parse(raw);
+  } catch {}
+  if (!saved || !Array.isArray(saved)) return all.sort(function(a,b){ return a.localeCompare(b,'ja'); });
+  const existing = saved.filter(function(s) { return set[s]; });
+  const newOnes  = all.filter(function(s) { return existing.indexOf(s) < 0; });
+  return existing.concat(newOnes);
+}
+
 function _esc(str) {
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 window.renderStudentManager = renderStudentManager;
 </script>
-
-<style>
-  .st-filter-bar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
-    padding: 8px 12px;
-    background: #f5f7fa;
-    border-radius: 6px;
-    border: 1px solid #e0e4ea;
-  }
-  .st-count  { color: #555; font-size: 0.9em; }
-  .st-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9em; color: #444; }
-
-  /* 学校グループ */
-  .st-school-group  { margin-bottom: 32px; }
-  .st-school-header {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 8px 12px;
-    background: #e8eef6;
-    border-left: 4px solid #4a7fc1;
-    border-radius: 0 4px 4px 0;
-    margin-bottom: 4px;
-  }
-  .st-school-name  { font-weight: bold; font-size: 1.05em; color: #2c4a7c; }
-  .st-school-count { font-size: 0.85em; color: #666; }
-  .st-edit-btn     { margin-left: auto; padding: 2px 10px; font-size: 0.82em;
-                     background: #fff; border: 1px solid #4a7fc1; color: #4a7fc1;
-                     border-radius: 4px; cursor: pointer; }
-  .st-edit-btn:hover     { background: #e8eef6; }
-  .st-edit-btn-sub { margin-left: 6px; border-color: #7a5fc1; color: #7a5fc1; }
-  .st-edit-btn-sub:hover { background: #f0eef6; }
-  .st-edit-field-label { font-weight: bold; color: #3a5a8c; }
-  .st-edit-cancel-btn    { margin-left: auto; padding: 2px 10px; font-size: 0.82em;
-                           background: #fff3cd; border: 1px solid #f0a500; color: #856404;
-                           border-radius: 4px; cursor: pointer; }
-
-  /* 編集操作バー */
-  .st-edit-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 12px;
-    background: #fffde7;
-    border: 1px solid #f0c060;
-    border-radius: 4px;
-    margin-bottom: 8px;
-    font-size: 0.9em;
-  }
-  .btn-sm { padding: 3px 10px; font-size: 0.85em; background: #f0f4f9;
-            border: 1px solid #c0cce0; border-radius: 4px; cursor: pointer; }
-  .btn-sm:hover { background: #dce6f0; }
-
-  /* 学年グループ */
-  .st-grade-group  { margin-bottom: 16px; margin-left: 16px; }
-  .st-grade-header {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 4px 10px;
-    background: #f0f4f9;
-    border-left: 3px solid #8aadd4;
-    border-radius: 0 3px 3px 0;
-    margin-bottom: 4px;
-  }
-  .st-grade-name  { font-weight: 600; font-size: 0.95em; color: #3a5a8c; }
-  .st-grade-count { font-size: 0.82em; color: #888; }
-
-  /* ソートヘッダー */
-  .st-th-sort        { cursor: pointer; user-select: none; white-space: nowrap; }
-  .st-th-sort:hover  { background: #e4eaf4; }
-  .st-sort-icon      { margin-left: 4px; font-size: 0.75em; color: #aaa; }
-  .st-sort-active    { color: #4a7fc1; }
-
-  .st-table { width: 100%; }
-  .st-name  { font-weight: 500; }
-  .st-kana  { color: #888; font-size: 0.85em; }
-
-  .st-badge-active   { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #d4edda; color: #155724; }
-  .st-badge-inactive { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.8em; background: #f8d7da; color: #721c24; }
-
-  .st-row-inactive td { opacity: 0.55; }
-  .st-empty { color: #888; padding: 24px 0; }
-
-  /* ジャンプナビ */
-  .st-jump-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 20px;
-    padding: 10px 12px;
-    background: #f5f7fa;
-    border: 1px solid #dde3ec;
-    border-radius: 6px;
-  }
-  .st-jump-chip {
-    display: inline-block;
-    padding: 3px 10px;
-    background: #fff;
-    border: 1px solid #b0bfda;
-    border-radius: 12px;
-    font-size: 0.83em;
-    color: #3a5a8c;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .st-jump-chip:hover { background: #e8eef6; border-color: #4a7fc1; }
-
-  /* アコーディオン */
-  .st-school-header { cursor: pointer; }
-  .st-toggle-icon {
-    font-size: 0.7em;
-    color: #6a8abf;
-    margin-right: 2px;
-    user-select: none;
-    transition: transform 0.15s;
-  }
-  .st-school-collapsed { background: #dde4ef; }
-
-  /* ドラッグハンドル */
-  .st-drag-handle {
-    cursor: grab;
-    color: #bbb;
-    font-size: 1.1em;
-    padding: 0 4px 0 0;
-    user-select: none;
-    line-height: 1;
-  }
-  .st-drag-handle:active { cursor: grabbing; }
-
-  /* ドラッグ中の要素 */
-  .st-school-group.st-dragging { opacity: 0.35; }
-</style>

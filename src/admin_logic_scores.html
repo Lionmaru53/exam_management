@@ -1,0 +1,733 @@
+<script>
+// =====================================================================
+// 得点一覧タブ  (admin_logic_scores.html)
+// =====================================================================
+// 状態変数（プレフィックス _sc_ で他タブと衝突回避）
+var _scSelectedTermTestId = '';
+var _scSelectedYear       = '';     // 選択中の年度（空=全年度）
+var _scSelectedSchool     = '';     // 選択中の学校名（空=最初の学校）
+var _scDisplayMode        = 'score'; // 'score' | 'class_rank' | 'grade_rank'
+var _scScoreData          = null;   // { scores, students }
+var _scCellStore          = [];     // [{scoreId,studentName,...}] クリック参照用
+var _scCurrentDetailIdx   = -1;     // モーダル用（XSS回避のため HTML 非埋め込み）
+
+// =====================================================================
+// エントリーポイント
+// =====================================================================
+window.renderScoreManager = function () {
+  var content = document.getElementById('admin-content');
+  if (!content) return;
+
+  var termTests = (window.masterData && window.masterData.termTests) || [];
+  if (termTests.length === 0) {
+    content.innerHTML = '<h3>④得点一覧</h3><p class="sc-empty-msg">試験区分が登録されていません。</p>';
+    return;
+  }
+
+  if (!_scSelectedTermTestId) {
+    _scSelectedTermTestId = String(termTests[0].term_test_id || '').trim();
+  }
+
+  // 年度リストを examPeriods から構築（新しい年度を先頭に）
+  var examPeriods = (window.masterData && window.masterData.examPeriods) || [];
+  var _yearSet = {};
+  var availableYears = [];
+  examPeriods.forEach(function (p) {
+    var y = String(p.year || '').trim();
+    if (y && !_yearSet[y]) { _yearSet[y] = true; availableYears.push(y); }
+  });
+  availableYears.sort(function (a, b) { return Number(b) - Number(a); });
+
+  // デフォルト年度: 現在の学年暦年度
+  if (!_scSelectedYear) {
+    var _now = new Date();
+    _scSelectedYear = String(_now.getMonth() >= 3 ? _now.getFullYear() : _now.getFullYear() - 1);
+  }
+
+  var toolbarHtml = '<div class="sc-toolbar">';
+  if (availableYears.length > 0) {
+    toolbarHtml += '<label class="sc-label">年度：</label>'
+      + '<select id="sc-year-sel" class="sc-sel" onchange="_scOnYearChange(this.value)">';
+    availableYears.forEach(function (y) {
+      var sel = y === _scSelectedYear ? ' selected' : '';
+      toolbarHtml += '<option value="' + _scEsc(y) + '"' + sel + '>' + _scEsc(y) + '年度</option>';
+    });
+    toolbarHtml += '</select>';
+  }
+  toolbarHtml += '<label class="sc-label">試験区分：</label>'
+    + '<select id="sc-termtest-sel" class="sc-sel" onchange="_scOnTermTestChange(this.value)">';
+  termTests.forEach(function (tt) {
+    var tid   = String(tt.term_test_id || '').trim();
+    var label = String(tt.test_name   || tid);
+    var sel   = tid === _scSelectedTermTestId ? ' selected' : '';
+    toolbarHtml += '<option value="' + _scEsc(tid) + '"' + sel + '>' + _scEsc(label) + '</option>';
+  });
+  toolbarHtml += '</select>';
+  toolbarHtml += '<label class="sc-label">表示：</label>'
+    + '<select id="sc-mode-sel" class="sc-sel" onchange="_scOnDisplayModeChange(this.value)">'
+    + '<option value="score"'      + (_scDisplayMode === 'score'      ? ' selected' : '') + '>得点</option>'
+    + '<option value="class_rank"' + (_scDisplayMode === 'class_rank' ? ' selected' : '') + '>クラス順位</option>'
+    + '<option value="grade_rank"' + (_scDisplayMode === 'grade_rank' ? ' selected' : '') + '>学年順位</option>'
+    + '</select>';
+  toolbarHtml += '</div>';
+
+  content.innerHTML = '<h3>④得点一覧</h3>' + toolbarHtml
+    + '<div id="sc-table-area"><p class="sc-empty-msg">読み込み中...</p></div>';
+
+  _scFetchAndRender();
+};
+
+function _scOnTermTestChange(termTestId) {
+  _scSelectedTermTestId = termTestId;
+  _scFetchAndRender();
+}
+
+function _scOnYearChange(year) {
+  _scSelectedYear = year;
+  _scFetchAndRender();
+}
+
+function _scOnDisplayModeChange(mode) {
+  _scDisplayMode = mode;
+  _scRerender();
+}
+
+function _scOnSchoolChange(school) {
+  _scSelectedSchool = school;
+  _scRerender();
+}
+
+// =====================================================================
+// データ取得
+// =====================================================================
+function _scFetchAndRender() {
+  var area = document.getElementById('sc-table-area');
+  if (area) area.innerHTML = '<p class="sc-empty-msg">読み込み中...</p>';
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _scEsc((res && res.error) || '取得失敗') + '</p>';
+        return;
+      }
+      _scScoreData = res;
+
+      // 学校タブ選択の調整：前回選択校がデータに存在しない場合は先頭にリセット
+      var schoolsInData = [];
+      var _snSet = {};
+      (res.students || []).forEach(function (s) {
+        var sn = s.school_name || '（学校名未設定）';
+        if (!_snSet[sn]) { _snSet[sn] = true; schoolsInData.push(sn); }
+      });
+      var sortedForCheck = _scGetSortedSchools(schoolsInData);
+      if (!_scSelectedSchool || sortedForCheck.indexOf(_scSelectedSchool) < 0) {
+        _scSelectedSchool = sortedForCheck[0] || '';
+      }
+
+      _scRerender();
+    })
+    .withFailureHandler(function (err) {
+      if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _scEsc(err && err.message ? err.message : String(err)) + '</p>';
+    })
+    .getAdminScores(window.selectedCramId, _scSelectedTermTestId, _scSelectedYear);
+}
+
+// =====================================================================
+// クロス表の描画
+// =====================================================================
+function _scRerender() {
+  var area = document.getElementById('sc-table-area');
+  if (!area || !_scScoreData) return;
+
+  var students        = _scScoreData.students       || [];
+  var scores          = _scScoreData.scores          || [];
+  var patterns        = (window.masterData && window.masterData.patterns)        || [];
+  var patternSubjects = (window.masterData && window.masterData.patternSubjects) || [];
+  var subjects        = (window.masterData && window.masterData.subjects)        || [];
+
+  if (students.length === 0) {
+    area.innerHTML = '<p class="sc-empty-msg">対象の生徒が見つかりません。</p>';
+    return;
+  }
+
+  // ── スコアマップ構築（サーバー側で term_test_id フィルタ済み）──────
+  // キー: "studentId||subjectId"
+  var scoreMap = {};
+  scores.forEach(function (sc) {
+    var key = sc.student_id + '||' + sc.subject_id;
+    var existing = scoreMap[key];
+    if (!existing || sc.update_at >= existing.update_at) {
+      scoreMap[key] = sc;
+    }
+  });
+
+  // ── 得点が1件以上ある生徒セット ───────────────────────────────────
+  var studentHasAnyScore = {};
+  scores.forEach(function (sc) {
+    studentHasAnyScore[sc.student_id] = true;
+  });
+
+  // ── (学校, 学年) ごとの科目セット（パターンの union）────────────
+  // 値: true=パターン内, 'orphaned'=パターン外
+  var sgSubjectMap = {};
+  patterns.forEach(function (p) {
+    var sn  = String(p.school_name || '').trim();
+    var gr  = String(p.grade       || '').trim();
+    if (!sn) return;
+    var key = sn + '||' + gr;
+    if (!sgSubjectMap[key]) sgSubjectMap[key] = {};
+    patternSubjects.forEach(function (ps) {
+      if (String(ps.pattern_id || '').trim() === String(p.pattern_id || '').trim()) {
+        if (!sgSubjectMap[key][ps.subject_id]) {
+          sgSubjectMap[key][ps.subject_id] = true;
+        }
+      }
+    });
+  });
+
+  // scores に含まれる教科のうちパターンにないものも列として追加（孤立教科）
+  var studentById = {};
+  students.forEach(function (s) { studentById[s.student_id] = s; });
+  scores.forEach(function (sc) {
+    var st = studentById[sc.student_id];
+    if (!st) return;
+    var sn  = st.school_name || '（学校名未設定）';
+    var gr  = st.grade       || '（学年未設定）';
+    var key = sn + '||' + gr;
+    if (!sgSubjectMap[key]) sgSubjectMap[key] = {};
+    if (!sgSubjectMap[key][sc.subject_id]) {
+      sgSubjectMap[key][sc.subject_id] = 'orphaned';
+    }
+  });
+
+  // (学校, 学年) ごとの科目リスト
+  var subjectById = {};
+  subjects.forEach(function (s) { subjectById[s.subject_id] = s; });
+
+  var sgSubjectList = {};
+  Object.keys(sgSubjectMap).forEach(function (key) {
+    var sn     = key.split('||')[0];
+    var subMap = sgSubjectMap[key];
+    var allIds = Object.keys(subMap);
+    sgSubjectList[key] = allIds.map(function (sid) {
+      var s = subjectById[sid];
+      return {
+        subject_id:  sid,
+        displayName: s ? window._resolveDisplayName(sn, sid) : sid,
+        genre_name:  s ? (s.genre_name || 'その他') : 'その他',
+        orphaned:    subMap[sid] === 'orphaned'
+      };
+    }).sort(function (a, b) {
+      var ai = subjects.findIndex(function (s) { return s.subject_id === a.subject_id; });
+      var bi = subjects.findIndex(function (s) { return s.subject_id === b.subject_id; });
+      var ao = ai < 0 ? 9999 : ai;
+      var bo = bi < 0 ? 9999 : bi;
+      return ao - bo;
+    });
+  });
+
+  // ── 学校 → 学年 → 生徒 の2段階グループ化 ──────────────────────
+  var schoolMap = {};
+  students.forEach(function (s) {
+    var sn = s.school_name || '（学校名未設定）';
+    var gr = s.grade       || '（学年未設定）';
+    if (!schoolMap[sn])     schoolMap[sn]     = {};
+    if (!schoolMap[sn][gr]) schoolMap[sn][gr] = [];
+    schoolMap[sn][gr].push(s);
+  });
+
+  var sortedSchools = _scGetSortedSchools(Object.keys(schoolMap));
+
+  // ── セルストアをリセット ───────────────────────────────────────
+  _scCellStore = [];
+
+  var html = '';
+
+  // ── 学校タブセレクター ────────────────────────────────────────
+  if (sortedSchools.length > 0) {
+    html += '<div class="sc-school-tabs">';
+    sortedSchools.forEach(function (sn) {
+      var active = sn === _scSelectedSchool ? ' sc-school-tab-active' : '';
+      html += '<button class="sc-school-tab' + active + '"'
+            + ' onclick="_scOnSchoolChange(\'' + _scEscAttr(sn) + '\')">'
+            + _scEsc(sn) + '</button>';
+    });
+    html += '</div>';
+  }
+
+  // ── 選択中の学校のみ描画 ──────────────────────────────────────
+  var targetSchool = _scSelectedSchool || sortedSchools[0] || '';
+  var gradeMap     = schoolMap[targetSchool] || {};
+  var sortedGrades = _scSortGrades(Object.keys(gradeMap));
+
+  if (sortedGrades.length === 0) {
+    html += '<p class="sc-empty-msg">この学校の生徒データがありません。</p>';
+    area.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="sc-school-block">';
+
+  sortedGrades.forEach(function (grade) {
+    var gradeStudents = (gradeMap[grade] || []).slice().sort(function (a, b) {
+      return (a.pronunciation || a.name || '').localeCompare(b.pronunciation || b.name || '', 'ja');
+    });
+    var sgKey       = targetSchool + '||' + grade;
+    var subjectList = sgSubjectList[sgKey] || [];
+
+    html += '<div class="sc-grade-block">';
+    html += '<div class="sc-grade-header">' + _scEsc(grade) + '</div>';
+
+    if (subjectList.length === 0) {
+      html += '<p class="sc-empty-msg" style="padding:6px 12px;">教科パターンが設定されていません。</p>';
+      html += '</div>';
+      return;
+    }
+
+    html += '<div class="sc-table-wrap"><table class="sc-table">';
+
+    // thead
+    html += '<thead><tr>';
+    html += '<th class="sc-th-name">氏名</th>';
+    subjectList.forEach(function (subj) {
+      var headerBg    = _scGetGenreHeaderColor(subj.genre_name);
+      var orphanClass = subj.orphaned ? ' sc-th-orphaned' : '';
+      html += '<th class="' + orphanClass.trim() + '" style="background-color:' + headerBg + '; color:#fff;">'
+            + _scEsc(subj.displayName) + '</th>';
+    });
+    html += '</tr></thead>';
+
+    // tbody
+    html += '<tbody>';
+    gradeStudents.forEach(function (student) {
+      html += '<tr>';
+      html += '<td class="sc-td-name">' + _scEsc(student.name || '') + '</td>';
+
+      var hasScore = !!studentHasAnyScore[student.student_id];
+
+      subjectList.forEach(function (subj) {
+        var key      = student.student_id + '||' + subj.subject_id;
+        var scoreObj = scoreMap[key] || null;
+        var cellBg   = _scGetGenreColor(subj.genre_name);
+
+        var cellVal = _scGetCellValue(scoreObj, _scDisplayMode);
+
+        if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
+          // スコアあり（クリック可）
+          var idx = _scCellStore.length;
+          _scCellStore.push(_scMakeCellEntry(scoreObj, student, subj));
+          if (scoreObj.not_taken) {
+            html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                  + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+                  + '<span class="sc-badge-absent">欠</span></td>';
+          } else {
+            html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                  + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+                  + _scEsc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
+                  + '</td>';
+          }
+        } else if (hasScore) {
+          // スコアなし・編集可（同じ生徒に別教科のスコアあり）
+          var idx = _scCellStore.length;
+          _scCellStore.push(_scMakeCellEntry(null, student, subj));
+          html += '<td class="sc-cell sc-cell-editable" style="background-color:' + cellBg + '"'
+                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックして登録">—</td>';
+        } else {
+          // スコアなし・編集不可
+          html += '<td class="sc-cell sc-cell-empty" style="background-color:' + cellBg + '">—</td>';
+        }
+      });
+
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '</div>'; // sc-grade-block
+  });
+
+  html += '</div>'; // sc-school-block
+
+  area.innerHTML = html;
+}
+
+// セルストアエントリ生成ヘルパー
+function _scMakeCellEntry(scoreObj, student, subj) {
+  return {
+    scoreId:     scoreObj ? (scoreObj.score_id || '') : '',
+    studentId:   student.student_id,
+    studentName: student.name || '',
+    subjectId:   subj.subject_id,
+    displayName: subj.displayName,
+    score:       scoreObj ? scoreObj.score      : null,
+    gradeRank:   scoreObj ? scoreObj.grade_rank : null,
+    classRank:   scoreObj ? scoreObj.class_rank : null,
+    notTaken:    scoreObj ? !!scoreObj.not_taken : false,
+    // 新規作成用
+    termTestId:  _scSelectedTermTestId,
+    year:        (_scScoreData && _scScoreData.year) || _scSelectedYear,
+    grade:       student.grade || '',
+  };
+}
+
+// 表示モードに応じたセル値
+function _scGetCellValue(scoreObj, mode) {
+  if (!scoreObj) return null;
+  if (scoreObj.not_taken) return 'absent';
+  if (mode === 'class_rank') return scoreObj.class_rank;
+  if (mode === 'grade_rank') return scoreObj.grade_rank;
+  return scoreObj.score;
+}
+
+// =====================================================================
+// 補助：学年を高1→高2→高3 順にソート
+// =====================================================================
+function _scSortGrades(grades) {
+  var order = { '高1': 1, '高2': 2, '高3': 3 };
+  return grades.slice().sort(function (a, b) {
+    var ao = order[a] !== undefined ? order[a] : 99;
+    var bo = order[b] !== undefined ? order[b] : 99;
+    if (ao !== bo) return ao - bo;
+    return a.localeCompare(b, 'ja');
+  });
+}
+
+// =====================================================================
+// 補助：学校の並び順（生徒一覧と共用の localStorage キー）
+// =====================================================================
+function _scGetSortedSchools(schools) {
+  try {
+    var key       = 'st_school_order_' + (window.selectedCramId || '');
+    var savedJson = localStorage.getItem(key);
+    if (savedJson) {
+      var saved   = JSON.parse(savedJson);
+      var ordered = saved.filter(function (s) { return schools.indexOf(s) >= 0; });
+      schools.forEach(function (s) { if (ordered.indexOf(s) < 0) ordered.push(s); });
+      return ordered;
+    }
+  } catch (e) { /* localStorage 利用不可の場合は無視 */ }
+  return schools.slice().sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+}
+
+// =====================================================================
+// スコア詳細モーダル
+// =====================================================================
+window._scOpenDetail = function (idx) {
+  var cell = _scCellStore[idx];
+  if (!cell) return;
+  _scCurrentDetailIdx = idx;
+
+  var card = document.querySelector('#score-detail-modal .modal-card');
+  if (!card) return;
+
+  var isNew = !cell.scoreId;
+
+  card.innerHTML = ''
+    + '<h4 style="margin:0 0 8px;">' + (isNew ? '得点登録' : '得点詳細') + '</h4>'
+    + '<p style="margin:0 0 16px; color:#555;">'
+    +   '<strong>' + _scEsc(cell.studentName) + '</strong>'
+    +   ' <span style="color:#888;">/</span> '
+    +   _scEsc(cell.displayName)
+    + '</p>'
+    + '<div class="sc-form-group">'
+    +   '<label class="sc-form-label">得点</label>'
+    +   '<input type="number" id="sc-inp-score" class="sc-form-input" min="0" max="200"'
+    +   ' value="' + (cell.score !== null && cell.score !== undefined ? _scEsc(String(cell.score)) : '') + '">'
+    + '</div>'
+    + '<div class="sc-form-group">'
+    +   '<label class="sc-form-label">学年順位</label>'
+    +   '<input type="number" id="sc-inp-grade-rank" class="sc-form-input" min="1"'
+    +   ' value="' + (cell.gradeRank !== null && cell.gradeRank !== undefined ? _scEsc(String(cell.gradeRank)) : '') + '">'
+    + '</div>'
+    + '<div class="sc-form-group">'
+    +   '<label class="sc-form-label">クラス順位</label>'
+    +   '<input type="number" id="sc-inp-class-rank" class="sc-form-input" min="1"'
+    +   ' value="' + (cell.classRank !== null && cell.classRank !== undefined ? _scEsc(String(cell.classRank)) : '') + '">'
+    + '</div>'
+    + '<div class="sc-form-group" style="align-items:center;">'
+    +   '<label class="sc-form-label">欠試</label>'
+    +   '<input type="checkbox" id="sc-inp-not-taken"' + (cell.notTaken ? ' checked' : '') + '>'
+    + '</div>'
+    + '<div style="display:flex; gap:8px; margin-top:20px; justify-content:flex-end;">'
+    +   '<button class="sc-btn-cancel" onclick="_scCloseDetail()">キャンセル</button>'
+    +   '<button class="sc-btn-save" onclick="_scSaveDetail()">保存</button>'
+    + '</div>';
+
+  var modal = document.getElementById('score-detail-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window._scCloseDetail = function () {
+  var modal = document.getElementById('score-detail-modal');
+  if (modal) modal.style.display = 'none';
+  _scCurrentDetailIdx = -1;
+};
+
+window._scSaveDetail = function () {
+  var cell = _scCellStore[_scCurrentDetailIdx];
+  if (!cell) return;
+
+  var scoreVal     = document.getElementById('sc-inp-score');
+  var gradeRankVal = document.getElementById('sc-inp-grade-rank');
+  var classRankVal = document.getElementById('sc-inp-class-rank');
+  var notTakenVal  = document.getElementById('sc-inp-not-taken');
+  if (!scoreVal) return;
+
+  var payload = {
+    cramId:     window.selectedCramId,
+    scoreId:    cell.scoreId,
+    studentId:  cell.studentId,
+    subjectId:  cell.subjectId,
+    termTestId: cell.termTestId,
+    year:       cell.year,
+    grade:      cell.grade,
+    score:      scoreVal.value,
+    gradeRank:  gradeRankVal ? (gradeRankVal.value || null) : null,
+    classRank:  classRankVal ? (classRankVal.value || null) : null,
+    notTaken:   notTakenVal  ? notTakenVal.checked : false,
+  };
+
+  var fn = cell.scoreId ? 'updateAdminScore' : 'createAdminScore';
+
+  setLoading(true, 'スコアを保存中...');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('保存しました。', 'success');
+        _scCloseDetail();
+        _scFetchAndRender();
+      } else {
+        showMessage((res && res.error) || '保存に失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    })
+    [fn](payload);
+};
+
+// =====================================================================
+// 補助：ジャンル色（ユーザー画面の logic_ui_render.html と同じパレット）
+// =====================================================================
+var _scGenrePalette = {
+  '数学': '#dbeafe',
+  '英語': '#fed7aa',
+  '国語': '#bbf7d0',
+  '理科': '#fbcfe8',
+  '社会': '#fde68a',
+  'その他': '#f8fafc'
+};
+var _scGenreHeaderPalette = {
+  '数学': '#1d4ed8',
+  '英語': '#c2410c',
+  '国語': '#15803d',
+  '理科': '#be185d',
+  '社会': '#a16207',
+  'その他': '#475569'
+};
+function _scGetGenreColor(genreName) {
+  var hex = _scGenrePalette[genreName] || _scGenrePalette['その他'];
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
+}
+function _scGetGenreHeaderColor(genreName) {
+  return _scGenreHeaderPalette[genreName] || _scGenreHeaderPalette['その他'];
+}
+
+// =====================================================================
+// 補助：HTML エスケープ
+// =====================================================================
+function _scEsc(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+// onclick 属性内のシングルクォート用（文字列引数をシングルクォートで括る場合）
+function _scEscAttr(str) {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
+}
+</script>
+
+<style>
+/* ── ツールバー ─────────────────────────────────────────── */
+.sc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.sc-label {
+  font-weight: bold;
+  white-space: nowrap;
+}
+.sc-sel {
+  padding: 5px 10px;
+  border: 1px solid #c8d4e8;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+
+/* ── 学校タブセレクター ─────────────────────────────────── */
+.sc-school-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.sc-school-tab {
+  padding: 5px 16px;
+  border: 1px solid #a8bcdf;
+  border-radius: 20px;
+  background: #f4f7fc;
+  color: #3a5d9c;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sc-school-tab:hover { background: #e2eaf5; }
+.sc-school-tab-active {
+  background: #3b6fc4;
+  color: #fff;
+  border-color: #3b6fc4;
+}
+
+/* ── メッセージ ──────────────────────────────────────────── */
+.sc-empty-msg { color: #888; padding: 16px 0; }
+.sc-error-msg { color: #c00; padding: 16px 0; }
+
+/* ── 学校グループ ────────────────────────────────────────── */
+.sc-school-block { margin-bottom: 36px; }
+
+/* ── 学年サブヘッダー ────────────────────────────────────── */
+.sc-grade-block { margin-bottom: 20px; }
+.sc-grade-header {
+  padding: 4px 12px 4px 24px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 0.95em;
+  color: #3a5d9c;
+  border-left: 3px solid #a8bcdf;
+  background: #f4f7fc;
+}
+
+/* ── テーブルラッパー（横スクロール対応）────────────────── */
+.sc-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dde3ec;
+  border-radius: 6px;
+}
+
+/* ── テーブル本体 ────────────────────────────────────────── */
+.sc-table {
+  border-collapse: collapse;
+  white-space: nowrap;
+  min-width: 100%;
+}
+.sc-table th,
+.sc-table td {
+  border: 1px solid #e0e4ea;
+  padding: 5px 10px;
+  font-size: 0.88em;
+  text-align: center;
+}
+.sc-table th { background: #f0f4f9; font-weight: 600; }
+
+/* ── 孤立教科ヘッダー（パターン外）──────────────────────── */
+.sc-th-orphaned {
+  font-style: italic;
+  opacity: 0.7;
+  border-top: 2px dashed #c0c0c0 !important;
+}
+
+/* ── 氏名列 sticky ────────────────────────────────────────── */
+.sc-th-name,
+.sc-td-name {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  text-align: left;
+  min-width: 90px;
+  border-right: 2px solid #c8d4e8;
+  z-index: 1;
+}
+.sc-th-name { background: #f0f4f9; }
+
+/* ── セル ─────────────────────────────────────────────────── */
+.sc-cell { min-width: 52px; }
+.sc-cell-filled {
+  cursor: pointer;
+  font-weight: 500;
+}
+.sc-cell-filled:hover { filter: brightness(0.93); }
+.sc-cell-empty { color: #ccc; }
+.sc-cell-editable {
+  cursor: pointer;
+  color: #bbb;
+}
+.sc-cell-editable:hover {
+  background-color: rgba(59, 111, 196, 0.08) !important;
+  color: #555;
+}
+
+/* ── 欠試バッジ ─────────────────────────────────────────── */
+.sc-badge-absent {
+  display: inline-block;
+  padding: 1px 6px;
+  background: #ffeeba;
+  color: #856404;
+  border-radius: 4px;
+  font-size: 0.78em;
+}
+
+/* ── モーダル内フォーム ──────────────────────────────────── */
+#score-detail-modal .modal-card { max-width: 460px; }
+.sc-form-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sc-form-label {
+  min-width: 80px;
+  font-weight: 600;
+  font-size: 0.9em;
+  color: #444;
+}
+.sc-form-input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #c8d4e8;
+  border-radius: 4px;
+  font-size: 0.95em;
+}
+
+/* ── ボタン ────────────────────────────────────────────────── */
+.sc-btn-save {
+  padding: 7px 20px;
+  background: #3b6fc4;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+.sc-btn-save:hover { background: #2e5baa; }
+.sc-btn-cancel {
+  padding: 7px 16px;
+  background: #fff;
+  color: #555;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font-size: 0.95em;
+  cursor: pointer;
+}
+.sc-btn-cancel:hover { background: #f5f5f5; }
+</style>

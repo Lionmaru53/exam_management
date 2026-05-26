@@ -5,9 +5,10 @@
  * @param {string} examId      - 試験ID（未設定の場合は空文字）
  * @param {string} patternId   - パターンID
  * @param {string} termTestId  - 試験区分ID
+ * @param {string} year        - 学年暦年度（例: "2025"）
  * @param {string} displayKey  - input 要素の ID プレフィックスキー
  */
-function handleSave(studentId, examId, patternId, termTestId, displayKey, btn) {
+function handleSave(studentId, examId, patternId, termTestId, year, displayKey, btn) {
   const button = btn || document.getElementById('submitBtn');
   const panel  = button ? button.closest('.tab-panel') : document;
   const scores = [];
@@ -91,8 +92,7 @@ function handleSave(studentId, examId, patternId, termTestId, displayKey, btn) {
     })
     .saveAllScores({
       student_id:   studentId,
-      exam_id:      examId     || null,
-      pattern_id:   patternId  || null,
+      year:         year       || '',
       term_test_id: termTestId || null,
       scores:       scores
     });
