@@ -43,10 +43,10 @@ function doGet(e) {
   }
 
   // デフォルト（直接アクセス）
-  // ?mode=dev を明示指定した場合のみ開発者モードを表示（/exec での誤表示を防ぐ）
+  // ?mode=dev を明示指定した場合のみ開発者モードを表示（master 権限保持者のみ）
   if (params.mode === 'dev') {
     const devEmail = Session.getActiveUser().getEmail();
-    if (devEmail) {
+    if (_isScriptOwner(devEmail)) {
       return HtmlService.createHtmlOutput(_devInputPage(devEmail))
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
     }
@@ -56,6 +56,22 @@ function doGet(e) {
     '<p style="font-family:sans-serif;padding:24px;text-align:center;">LINE アプリからアクセスしてください。</p>'
   )
   .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * 訪問者がスクリプトオーナー（デプロイ者）本人かを確認する。
+ * getEffectiveUser() は "Execute as: Me" 設定で常にオーナーのメールを返す。
+ * getActiveUser() は /dev URL 経由でログイン中の場合に訪問者メールを返す。
+ * 両者が一致 → オーナー本人 → dev モード許可。
+ */
+function _isScriptOwner(visitorEmail) {
+  try {
+    const ownerEmail = Session.getEffectiveUser().getEmail();
+    return !!(visitorEmail && ownerEmail &&
+      visitorEmail.trim().toLowerCase() === ownerEmail.trim().toLowerCase());
+  } catch (_) {
+    return false;
+  }
 }
 
 function _devInputPage(email) {
