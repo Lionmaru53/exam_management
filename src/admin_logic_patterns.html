@@ -1,395 +1,648 @@
+<style>
+/* ---- 学年ツールバー ---- */
+.pt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 14px;
+  flex-wrap: wrap;
+}
+.pt-grade-btn {
+  padding: 5px 16px;
+  border: 1px solid #3a4f80;
+  border-radius: 20px;
+  background: #fff;
+  color: #3a4f80;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background 0.15s, color 0.15s;
+}
+.pt-grade-btn:hover { background: #e8edf7; }
+.pt-grade-active {
+  background: #3a4f80;
+  color: #fff;
+}
+
+/* ---- クロス表 ---- */
+.pt-cross-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+.pt-cross-table {
+  border-collapse: collapse;
+  min-width: 600px;
+  width: 100%;
+  font-size: 0.88em;
+}
+.pt-cross-table th,
+.pt-cross-table td {
+  border: 1px solid #ddd;
+  padding: 4px 6px;
+  vertical-align: top;
+}
+.pt-row-label-th {
+  background: #f0f4fb;
+  font-weight: bold;
+  white-space: nowrap;
+  min-width: 120px;
+}
+.pt-genre-th {
+  background: #e8edf7;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  min-width: 90px;
+}
+/* 学校名セル（rowspan, ドラッグ可） */
+.pt-school-label {
+  background: #e8edf7;
+  font-weight: bold;
+  white-space: nowrap;
+  cursor: grab;
+  vertical-align: middle;
+  padding: 6px 10px;
+  min-width: 120px;
+  border-right: 2px solid #b0bcdc;
+}
+.pt-school-label:active { cursor: grabbing; }
+.pt-school-label-over { background: #bbd0ff !important; }
+.pt-row-label {
+  background: #f8f9fd;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pt-cell {
+  padding: 0;
+  transition: background 0.1s;
+  vertical-align: top;
+}
+.pt-cell-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-content: flex-start;
+  min-height: 36px;
+  padding: 4px;
+}
+.pt-cell-hover {
+  background: #dce8ff !important;
+}
+.pt-cell-nopattern {
+  background: #f5f5f5;
+}
+.pt-cell-nopattern .pt-cell-inner {
+  opacity: 0.5;
+}
+
+/* ---- 教科チップ ---- */
+.pt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #e8edf7;
+  border: 1px solid #b0bcdc;
+  border-radius: 12px;
+  padding: 2px 7px;
+  font-size: 0.85em;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+}
+.pt-chip:active { cursor: grabbing; }
+.pt-chip-dragging { opacity: 0.4; }
+.pt-chip-pool {
+  background: #fff;
+  border-color: #ccc;
+  cursor: grab;
+}
+.pt-chip-editing {
+  background: #fffbdd;
+  border-color: #e6c800;
+  cursor: default;
+  padding: 2px 4px;
+}
+.pt-chip-close {
+  background: none;
+  border: none;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  color: #888;
+  font-size: 1em;
+  line-height: 1;
+}
+.pt-chip-close:hover { color: #c00; }
+.pt-alias-input {
+  width: 90px;
+  font-size: 0.85em;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* ---- 教科プール ---- */
+.pt-pool-area {
+  border: 2px dashed #b0bcdc;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  min-height: 60px;
+  background: #fafbff;
+}
+.pt-pool-area.pt-cell-hover {
+  background: #dce8ff;
+  border-color: #3a4f80;
+}
+.pt-pool-title {
+  font-weight: bold;
+  color: #3a4f80;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+}
+.pt-pool-genre-section {
+  display: inline-block;
+  vertical-align: top;
+  margin-right: 20px;
+  margin-bottom: 8px;
+}
+.pt-pool-genre-label {
+  font-size: 0.8em;
+  color: #666;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.pt-pool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+</style>
+
 <script>
-let _patStore         = [];
-let _patDndStore      = [];    // DnD インデックス → 学校名
-let _patDragSrcIdx    = -1;    // ドラッグ中のインデックス
-let _patDndSrcEl      = null;
-let _patDndPlaceholder = null;
-let _patDndLastInsert = null;
-let editingGroupKey = null;
+/* ========== 状態変数 ========== */
+var _ptSelectedGrade    = '高1';
+var _ptSubjectMap       = {};   // patternId → [subjectId, ...]
+var _ptDragPayload      = null; // { subjectId, fromPatternId } | null
+var _ptSaving           = {};   // patternId → bool
+var _ptPatterns         = [];
+var _ptSubjects         = [];
+var _ptSchoolSettings   = [];
+var _ptGenreOrder       = [];   // ジャンル名の表示順
+var _ptSchoolNames      = [];   // ソート済み学校名リスト
+var _ptSubjectInfoMap   = {};   // String(subject_id) → subject オブジェクト
+var _ptSubjectGenreMap  = {};   // String(subject_id) → genre_name
+var _ptDragSrcSchool    = null;
+var _showAddCoursePanel = false;
 
-let _collapseSchools = new Set();
-let _collapseCourses = new Set();  // school||course
-let _collapseGrades  = new Set();  // school||course||grade
-let _hierInitialized = false;
-let _allGroups       = [];         // [{ school_name, school_course }] 一意のコースペア
-let _showAddCoursePanel = false;   // コース追加パネル表示フラグ
-
-function _patPush(obj) {
-  _patStore.push(obj);
-  return _patStore.length - 1;
-}
-
-function sanitizePat(str) {
-  return String(str).replace(/[^a-zA-Z0-9]/g, '_');
-}
-
-function makeGroupKey(sn, sc, grade, sub) {
-  return sn + '||' + sc + '||' + grade + '||' + sub;
-}
-
+/* ========== エントリーポイント ========== */
 function renderPatternManager(data) {
-  _patStore = [];
+  var content         = document.getElementById('admin-content');
+  var patterns        = Array.isArray(data.patterns)        ? data.patterns        : [];
+  var subjects        = Array.isArray(data.subjects)        ? data.subjects        : [];
+  var patternSubjects = Array.isArray(data.patternSubjects) ? data.patternSubjects : [];
+  var schoolSettings  = Array.isArray(data.schoolSettings)  ? data.schoolSettings  : [];
 
-  const content         = document.getElementById('admin-content');
-  const patterns        = Array.isArray(data.patterns)        ? data.patterns        : [];
-  const subjects        = Array.isArray(data.subjects)        ? data.subjects        : [];
-  const patternSubjects = Array.isArray(data.patternSubjects) ? data.patternSubjects : [];
-  const schoolSettings  = Array.isArray(data.schoolSettings)  ? data.schoolSettings  : [];
+  _ptPatterns       = patterns;
+  _ptSubjects       = subjects;
+  _ptSchoolSettings = schoolSettings;
 
-  const genreNames = Array.from(new Set(subjects.map(function(s) { return s.genre_name || 'その他'; })));
-  const gradeOrder = { '高1': 1, '高2': 2, '高3': 3 };
-
-  const subjectByPattern = patternSubjects.reduce(function(acc, ps) {
-    if (!acc[ps.pattern_id]) acc[ps.pattern_id] = [];
-    acc[ps.pattern_id].push(ps.subject_id);
-    return acc;
-  }, {});
-
-  // グループキー: school||course||grade||sub_course（空コースはスキップ）
-  const groupKeySet = new Set();
-  schoolSettings.forEach(function(setting) {
-    const sn = String(setting.school_name   || '').trim();
-    const sc = String(setting.school_course || '').trim();
-    if (!sc) return;
-    groupKeySet.add(makeGroupKey(sn, sc, '高1', ''));
-    groupKeySet.add(makeGroupKey(sn, sc, '高2', '文系'));
-    groupKeySet.add(makeGroupKey(sn, sc, '高2', '理系'));
-    groupKeySet.add(makeGroupKey(sn, sc, '高3', '文系'));
-    groupKeySet.add(makeGroupKey(sn, sc, '高3', '理系'));
-  });
-  patterns.forEach(function(p) {
-    const sc = String(p.school_course || '').trim();
-    if (!sc) return;
-    groupKeySet.add(makeGroupKey(
-      String(p.school_name || '').trim(), sc,
-      String(p.grade       || '').trim(),
-      String(p.sub_course  || '').trim()
-    ));
+  // subject_id → subject の高速ルックアップ用 Map を構築（String 変換で型の揺れを吸収）
+  _ptSubjectInfoMap  = {};
+  _ptSubjectGenreMap = {};
+  subjects.forEach(function(s) {
+    var key = String(s.subject_id).trim();
+    _ptSubjectInfoMap[key]  = s;
+    _ptSubjectGenreMap[key] = String(s.genre_name || 'その他').trim();
   });
 
-  const patternGroups = Array.from(groupKeySet)
-    .sort(function(a, b) {
-      const pa = a.split('||'), pb = b.split('||');
-      if (pa[0] !== pb[0]) return pa[0].localeCompare(pb[0], 'ja');
-      if (pa[1] !== pb[1]) return pa[1].localeCompare(pb[1], 'ja');
-      const agi = gradeOrder[pa[2]] || 99, bgi = gradeOrder[pb[2]] || 99;
-      if (agi !== bgi) return agi - bgi;
-      return pa[3].localeCompare(pb[3], 'ja');
-    })
-    .map(function(key) {
-      const parts = key.split('||');
-      const school_name = parts[0], school_course = parts[1], grade = parts[2], sub_course = parts[3];
-      const pattern = patterns.find(function(p) {
-        return String(p.school_name   || '').trim() === school_name   &&
-               String(p.school_course || '').trim() === school_course &&
-               String(p.grade         || '').trim() === grade         &&
-               String(p.sub_course    || '').trim() === sub_course;
-      });
-      const subjectIds = pattern ? (subjectByPattern[pattern.pattern_id] || []) : [];
-      return { school_name, school_course, grade, sub_course, pattern, subjectIds };
-    });
+  // ジャンル順を構築（全教科、学年問わず）
+  var genreSet = [];
+  subjects.forEach(function(s) {
+    var g = String(s.genre_name || 'その他').trim();
+    if (genreSet.indexOf(g) < 0) genreSet.push(g);
+  });
+  _ptGenreOrder = genreSet;
 
-  // _allGroups: 一意の school+course ペア（デフォルト初期化用）
-  const seenSC = new Set();
-  _allGroups = [];
-  patternGroups.forEach(function(g) {
-    const k = g.school_name + '||' + g.school_course;
-    if (!seenSC.has(k)) {
-      seenSC.add(k);
-      _allGroups.push({ school_name: g.school_name, school_course: g.school_course });
-    }
+  // patternSubjects から _ptSubjectMap を構築
+  var freshMap = {};
+  patternSubjects.forEach(function(ps) {
+    var pid = String(ps.pattern_id).trim();
+    var sid = String(ps.subject_id).trim();
+    if (!freshMap[pid]) freshMap[pid] = [];
+    if (freshMap[pid].indexOf(sid) < 0) freshMap[pid].push(sid);
+  });
+  // 保存中のパターンは楽観的状態を保持、それ以外は新鮮なデータで上書き
+  Object.keys(freshMap).forEach(function(pid) {
+    if (!_ptSaving[pid]) _ptSubjectMap[pid] = freshMap[pid];
+  });
+  Object.keys(freshMap).forEach(function(pid) {
+    if (!_ptSubjectMap[pid]) _ptSubjectMap[pid] = freshMap[pid];
   });
 
-  // 学校名一覧（チェックリスト用）
-  const schoolNameSet = new Set();
+
+  // 学校名一覧
+  var schoolNameSet = {};
   schoolSettings.forEach(function(s) {
-    const sn = String(s.school_name || '').trim();
-    if (sn) schoolNameSet.add(sn);
+    var sn = String(s.school_name || '').trim();
+    if (sn) schoolNameSet[sn] = true;
   });
   patterns.forEach(function(p) {
-    const sn = String(p.school_name || '').trim();
-    if (sn) schoolNameSet.add(sn);
+    var sn = String(p.school_name || '').trim();
+    if (sn) schoolNameSet[sn] = true;
   });
-  const allSchoolNames = Array.from(schoolNameSet).sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  var allSchoolNames = Object.keys(schoolNameSet).sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+  _ptSchoolNames = _patGetSortedSchools(allSchoolNames, window.selectedCramId || '');
 
-  let html = '<h3>学校別教科名・教科パターン管理</h3>' +
-    '<p class="tab-desc">' +
-    '学校・コース・学年ごとの年間共通教科セットを管理します。<br>' +
-    '<span class="step">▶ <strong>教科を編集</strong> ： 年間を通して受験する教科を選択できます。学校別の表示名（例: 数学① → 数学ⅠA）も設定可能です。</span><br>' +
-    '<span class="step">▶ <strong>コース追加</strong> ： 学校・コースを選択して5パターン（高1・高2文理・高3文理）を自動生成します。' +
-    '<button onclick="_openAddCoursePanel()" style="margin-left:8px; padding:3px 10px; vertical-align:middle;">コースを追加する</button>' +
-    '</span></p>';
+  var html = '<h3>学校別教科名・教科パターン管理</h3>';
 
-  // コース追加パネル
-  if (_showAddCoursePanel) {
-    html += '<div class="add-course-panel">';
-    html += '<div class="add-course-panel-title">コース追加</div>';
-
-    // 学校名チェックリスト
-    html += '<div class="add-course-row">';
-    html += '<div class="add-course-label">学校名</div>';
-    html += '<div class="add-course-school-list">';
-    html += '<label class="add-course-school-item add-course-all-label">' +
-      '<input type="checkbox" id="pat-school-all" onchange="toggleAllSchools(this.checked)" />' +
-      '<span>全選択</span></label>';
-    allSchoolNames.forEach(function(sn) {
-      const snEsc = sn.replace(/"/g, '&quot;');
-      html += '<label class="add-course-school-item">' +
-        '<input type="checkbox" class="pat-school-cb" value="' + snEsc + '" />' +
-        '<span>' + sn + '</span></label>';
-    });
-    if (allSchoolNames.length === 0) {
-      html += '<span style="color:#aaa; font-size:0.85em;">学校名が登録されていません（生徒インポート後に表示されます）</span>';
-    }
-    html += '</div></div>';
-
-    // 科・コース入力
-    html += '<div class="add-course-row" style="margin-top:12px; align-items:center;">';
-    html += '<div class="add-course-label">科・コース</div>';
-    html += '<input type="text" id="pat-new-course" placeholder="例: 普通、理数、特進" class="admin-input" style="width:200px;" />';
-    html += '</div>';
-
-    // ボタン
-    html += '<div class="add-course-row" style="margin-top:14px; gap:8px;">';
-    html += '<button class="btn-save-admin" id="pat-add-course-btn" onclick="submitAddCourse()">追加する</button>';
-    html += '<button class="btn-cancel-admin" onclick="_closeAddCoursePanel()">キャンセル</button>';
-    html += '<span id="pat-add-progress" style="display:none; font-size:0.9em; color:#3a4f80; font-weight:600;"></span>';
-    html += '</div>';
-    html += '</div>'; // add-course-panel
-  }
-
-  if (patternGroups.length === 0 && !_showAddCoursePanel) {
-    html += '<p>登録された学校・コースがありません。生徒インポートを実行すると学校名が自動登録されます。</p>';
-    content.innerHTML = html;
-    return;
-  }
-  if (patternGroups.length === 0) {
-    content.innerHTML = html;
-    return;
-  }
-
-  // 階層構造を構築: school → course → grade → [sub_course groups]
-  const schoolOrder = [];
-  const hier = {};
-  patternGroups.forEach(function(g) {
-    const sn = g.school_name, sc = g.school_course, gr = g.grade;
-    if (!hier[sn]) {
-      schoolOrder.push(sn);
-      hier[sn] = { courseOrder: [], courses: {} };
-    }
-    if (!hier[sn].courses[sc]) {
-      hier[sn].courseOrder.push(sc);
-      hier[sn].courses[sc] = { gradeOrder: [], grades: {} };
-    }
-    const cd = hier[sn].courses[sc];
-    if (!cd.grades[gr]) {
-      cd.gradeOrder.push(gr);
-      cd.grades[gr] = [];
-    }
-    cd.grades[gr].push(g);
+  // ツールバー
+  html += '<div class="pt-toolbar">';
+  ['高1', '高2', '高3'].forEach(function(g) {
+    var cls = 'pt-grade-btn' + (_ptSelectedGrade === g ? ' pt-grade-active' : '');
+    html += '<button class="' + cls + '" onclick="_ptOnGradeChange(\'' + g + '\')">' + g + '</button>';
   });
+  html += '<button onclick="_openAddCoursePanel()" style="margin-left:auto; padding:5px 14px;">コースを追加する</button>';
+  html += '</div>';
 
-  // 初回レンダリング時はすべて閉じた状態にする
-  if (!_hierInitialized) {
-    _hierInitialized = true;
-    schoolOrder.forEach(function(sn) {
-      _collapseSchools.add(sn);
-      Object.keys(hier[sn].courses).forEach(function(sc) {
-        _collapseCourses.add(sn + '||' + sc);
-        Object.keys(hier[sn].courses[sc].grades).forEach(function(gr) {
-          _collapseGrades.add(sn + '||' + sc + '||' + gr);
-        });
-      });
-    });
-  }
+  if (_showAddCoursePanel) html += _ptRenderAddCoursePanel(allSchoolNames);
 
-  const cramIdForOrder   = window.selectedCramId || '';
-  const sortedSchoolOrder = _patGetSortedSchools(schoolOrder, cramIdForOrder);
-  _patDndStore = [];
+  html += '<div id="pt-table-area">' + _ptRenderCrossTable() + '</div>';
 
-  // ジャンプナビゲーション
-  if (sortedSchoolOrder.length >= 2) {
-    html += '<div class="st-jump-nav">';
-    sortedSchoolOrder.forEach(function(sn, i) {
-      html += '<a class="st-jump-chip" href="javascript:void(0)"' +
-        ' onclick="document.getElementById(\'pat-sg-' + i + '\').scrollIntoView({behavior:\'smooth\',block:\'start\'})">' +
-        sn + '</a>';
-    });
-    html += '</div>';
-  }
-
-  sortedSchoolOrder.forEach(function(schoolName) {
-    const dndIdx       = _patDndStore.push(schoolName) - 1;
-    const isSchoolOpen = !_collapseSchools.has(schoolName);
-    const schoolIdx    = _patPush({ schoolName });
-
-    html += '<div class="hier-school" id="pat-sg-' + dndIdx + '" data-dnd-idx="' + dndIdx + '"' +
-      ' ondragover="_patDragOver(event,' + dndIdx + ')"' +
-      ' ondrop="_patDragDrop(event,' + dndIdx + ')">';
-    html += '<div class="hier-school-header"' +
-      ' draggable="true"' +
-      ' ondragstart="_patDragStart(event,' + dndIdx + ')"' +
-      ' ondragend="_patDragEnd()"' +
-      ' onclick="toggleSchool(' + schoolIdx + ')">' +
-      '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span>' +
-      '<span class="hier-arrow">' + (isSchoolOpen ? '▼' : '▶') + '</span>' + schoolName +
-      '</div>';
-
-    if (isSchoolOpen) {
-      html += '<div class="hier-school-body">';
-
-      hier[schoolName].courseOrder.forEach(function(courseName) {
-        const courseKey    = schoolName + '||' + courseName;
-        const isCourseOpen = !_collapseCourses.has(courseKey);
-        const courseIdx    = _patPush({ courseKey });
-
-        html += '<div class="hier-course">';
-        html += '<div class="hier-course-header" onclick="toggleCourse(' + courseIdx + ')">' +
-          '<span class="hier-arrow">' + (isCourseOpen ? '▼' : '▶') + '</span>' + courseName +
-          '</div>';
-
-        if (isCourseOpen) {
-          html += '<div class="hier-course-body">';
-          const cd = hier[schoolName].courses[courseName];
-
-          cd.gradeOrder.forEach(function(grade) {
-            const gradeKey    = schoolName + '||' + courseName + '||' + grade;
-            const isGradeOpen = !_collapseGrades.has(gradeKey);
-            const gradeIdx    = _patPush({ gradeKey });
-
-            html += '<div class="hier-grade">';
-            html += '<div class="hier-grade-header" onclick="toggleGrade(' + gradeIdx + ')">' +
-              '<span class="hier-arrow">' + (isGradeOpen ? '▼' : '▶') + '</span>' + grade +
-              '</div>';
-
-            if (isGradeOpen) {
-              html += '<div class="hier-grade-body">';
-              const groups = cd.grades[grade];
-
-              if (grade === '高1') {
-                // 高1: 文理なし → 単一グループ
-                const g = groups.find(function(g) { return g.sub_course === ''; }) || groups[0];
-                if (g) html += _renderGroupPanel(g, subjects, genreNames);
-              } else {
-                // 高2/高3: 文系・理系をそれぞれ表示
-                groups.forEach(function(g) {
-                  html += '<div class="hier-subcourse">';
-                  html += '<div class="hier-subcourse-label">' + (g.sub_course || '(文理指定なし)') + '</div>';
-                  html += _renderGroupPanel(g, subjects, genreNames);
-                  html += '</div>';
-                });
-              }
-
-              html += '</div>';  // hier-grade-body
-            }
-
-            html += '</div>';  // hier-grade
-          });
-
-          html += '</div>';  // hier-course-body
-        }
-
-        html += '</div>';  // hier-course
-      });
-
-      html += '</div>';  // hier-school-body
-    }
-
-    html += '</div>';  // hier-school
-  });
+  html += '<div class="pt-pool-area" id="pt-pool-area"' +
+    ' ondragover="_ptPoolDragOver(event)" ondrop="_ptPoolDrop(event)">' +
+    '<div class="pt-pool-title">教科プール（ドラッグしてセルに追加 / セルから引き戻す）</div>' +
+    _ptRenderPool() + '</div>';
 
   content.innerHTML = html;
 }
 
-function _renderGroupPanel(group, subjects, genreNames) {
-  const sn = group.school_name, sc = group.school_course,
-        gr = group.grade, sub = group.sub_course,
-        subjectIds = group.subjectIds;
-  const groupKey = makeGroupKey(sn, sc, gr, sub);
-  const safeKey  = sanitizePat(groupKey);
-  const isEdit   = editingGroupKey === groupKey;
+/* ========== クロス表描画 ========== */
+function _ptRenderCrossTable() {
+  var grade = _ptSelectedGrade;
 
-  let html = '<div class="admin-genre-container">';
+  // ジャンル列は全教科から生成（学年フィルタなし）
+  var sortedGenres = _ptGenreOrder.slice();
 
-  if (isEdit) {
-    html += '<div class="shared-subjects-panel">';
-    html += '<p style="margin:0 0 10px; font-weight:bold;">年間共通教科を設定します</p>';
-    html += '<div class="subjects-grid">';
-    genreNames.forEach(function(genreName) {
-      const genreSubjects = subjects.filter(function(s) {
-        return (s.genre_name || 'その他') === genreName &&
-               String(s.grade || '').trim() === gr;
-      });
-      html += '<div class="genre-col">';
-      html += '<div class="genre-col-title">' + genreName + '</div>';
-      genreSubjects.forEach(function(s) {
-        const chk      = subjectIds.includes(s.subject_id) ? 'checked' : '';
-        const aliasVal = _getAliasValue(sn, s.subject_id);
-        const snAttr   = sn.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        html += '<div class="alias-subject-row">' +
-          '<label><input type="checkbox" name="group_subject_' + safeKey + '" value="' + s.subject_id + '" ' + chk + '></label>' +
-          '<span class="alias-canon-name" title="正式名">' + s.subject_name + '</span>' +
-          '<input type="text" class="alias-display-input admin-input"' +
-          ' placeholder="表示名（空欄=正式名）"' +
-          ' value="' + aliasVal.replace(/"/g,'&quot;') + '"' +
-          ' onblur="_patSaveAlias(\'' + snAttr + '\',\'' + s.subject_id + '\',this.value)" />' +
-          '</div>';
-      });
-      if (genreSubjects.length === 0) {
-        html += '<span style="color:#aaa; font-size:0.85em;">この学年の教科なし</span>';
-      }
-      html += '</div>';
-    });
-    html += '</div></div>';  // subjects-grid, shared-subjects-panel
+  // 行データを構築: schoolName → [{ school_course, sub_course, pattern }]
+  var subCourses = grade === '高1' ? [''] : ['文系', '理系'];
+  var rowMap = {};
 
-    const saveIdx = _patPush({ school_name: sn, school_course: sc, grade: gr, sub_course: sub, safeKey });
-    html += '<div class="pattern-actions">' +
-      '<button class="btn-save-admin" onclick="saveGroupSubjectsById(' + saveIdx + ')">保存</button>' +
-      '<button class="btn-cancel-admin" onclick="cancelGroupEdit()">キャンセル</button>' +
-      '</div>';
-  } else {
-    // 表示モード: 選択済み教科が存在するジャンルのみ列表示
-    const activeGenres = genreNames.filter(function(genreName) {
-      return subjectIds.some(function(id) {
-        const s = subjects.find(function(s) { return s.subject_id === id; });
-        return s && (s.genre_name || 'その他') === genreName;
-      });
-    });
-    if (activeGenres.length === 0) {
-      html += '<p style="color:#aaa; font-size:0.9em; padding:4px 0;">教科が設定されていません</p>';
-    } else {
-      html += '<table class="admin-table"><thead><tr>';
-      activeGenres.forEach(function(name) { html += '<th>' + name + '</th>'; });
-      html += '</tr></thead><tbody><tr>';
-      activeGenres.forEach(function(genreName) {
-        const names = subjectIds.map(function(id) {
-          const s = subjects.find(function(s) { return s.subject_id === id; });
-          if (!s || (s.genre_name || 'その他') !== genreName) return null;
-          return _getAliasValue(sn, id) || s.subject_name;
-        }).filter(Boolean);
-        html += '<td>' + names.join('<br>') + '</td>';
-      });
-      html += '</tr></tbody></table>';
+  _ptPatterns.forEach(function(p) {
+    if (String(p.grade || '').trim() !== grade) return;
+    var sn  = String(p.school_name   || '').trim();
+    var sc  = String(p.school_course || '').trim();
+    var sub = String(p.sub_course    || '').trim();
+    if (!sn || !sc) return;
+    if (grade === '高1' && sub !== '') return;
+    if (grade !== '高1' && sub !== '文系' && sub !== '理系') return;
+    if (!rowMap[sn]) rowMap[sn] = [];
+    var key = sc + '||' + sub;
+    if (!rowMap[sn].find(function(r) { return r.school_course + '||' + r.sub_course === key; })) {
+      rowMap[sn].push({ school_course: sc, sub_course: sub, pattern: p });
     }
+  });
 
-    const editIdx = _patPush({ school_name: sn, school_course: sc, grade: gr, sub_course: sub, groupKey });
-    html += '<div class="pattern-actions">' +
-      '<button onclick="startGroupEdit(' + editIdx + ')">教科を編集</button>' +
-      '</div>';
+  _ptSchoolSettings.forEach(function(s) {
+    var sn = String(s.school_name   || '').trim();
+    var sc = String(s.school_course || '').trim();
+    if (!sn || !sc) return;
+    if (!rowMap[sn]) rowMap[sn] = [];
+    subCourses.forEach(function(sub) {
+      var key = sc + '||' + sub;
+      if (!rowMap[sn].find(function(r) { return r.school_course + '||' + r.sub_course === key; })) {
+        rowMap[sn].push({ school_course: sc, sub_course: sub, pattern: null });
+      }
+    });
+  });
+
+  var schoolsWithRows = _ptSchoolNames.filter(function(sn) { return rowMap[sn] && rowMap[sn].length > 0; });
+
+  if (schoolsWithRows.length === 0) {
+    return '<p style="color:#888; padding:8px 0;">選択中の学年（' + grade + '）に対応するパターンがありません。<br>' +
+      'コースを追加するか、他の学年を選択してください。</p>';
   }
 
-  html += '</div>';  // admin-genre-container
+  var html = '<div class="pt-cross-table-wrap"><table class="pt-cross-table"><thead><tr>';
+  html += '<th class="pt-row-label-th">学校名</th>';
+  html += '<th class="pt-row-label-th">コース' + (grade !== '高1' ? '・文理' : '') + '</th>';
+  if (sortedGenres.length > 0) {
+    sortedGenres.forEach(function(g) { html += '<th class="pt-genre-th">' + g + '</th>'; });
+  } else {
+    html += '<th class="pt-genre-th" style="color:#aaa;">（教科未登録）</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  schoolsWithRows.forEach(function(sn) {
+    var rows = rowMap[sn] || [];
+    rows.sort(function(a, b) {
+      if (a.school_course !== b.school_course) return a.school_course.localeCompare(b.school_course, 'ja');
+      var order = { '': 0, '文系': 1, '理系': 2 };
+      return (order[a.sub_course] || 0) - (order[b.sub_course] || 0);
+    });
+
+    var snEsc    = _ptEscAttr(sn);
+    var rowCount = rows.length;
+
+    rows.forEach(function(row, rowIdx) {
+      var courseLabel = row.school_course + (row.sub_course ? ' ' + row.sub_course : '');
+      var pid         = row.pattern ? String(row.pattern.pattern_id).trim() : null;
+
+      html += '<tr class="pt-data-row">';
+
+      // 学校名セル: 最初の行だけ rowspan で描画（ドラッグハンドル付き）
+      if (rowIdx === 0) {
+        html += '<td class="pt-school-label" rowspan="' + rowCount + '"' +
+          ' draggable="true"' +
+          ' ondragstart="_ptSchoolDragStart(event,\'' + snEsc + '\')"' +
+          ' ondragend="_ptSchoolDragEnd()"' +
+          ' ondragover="_ptSchoolDragOver(event,\'' + snEsc + '\')"' +
+          ' ondrop="_ptSchoolDrop(event,\'' + snEsc + '\')">' +
+          '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span> ' + sn + '</td>';
+      }
+
+      html += '<td class="pt-row-label">' + courseLabel + '</td>';
+
+      if (sortedGenres.length === 0) {
+        html += '<td class="pt-cell' + (pid ? '' : ' pt-cell-nopattern') + '"></td>';
+      } else {
+        sortedGenres.forEach(function(genreName) {
+          html += _ptRenderCell(sn, genreName, pid);
+        });
+      }
+
+      html += '</tr>';
+    });
+  });
+
+  html += '</tbody></table></div>';
   return html;
 }
 
-// ---- 学校並び順（localStorage 連携・生徒一覧と同一キー） ----
+function _ptRenderCell(schoolName, genreName, patternId) {
+  // _ptSubjectGenreMap を使い String 比較で確実にジャンルを判定
+  var assignedIds = patternId ? (_ptSubjectMap[patternId] || []) : [];
+  var inGenre = assignedIds.filter(function(id) {
+    return _ptSubjectGenreMap[String(id).trim()] === genreName;
+  });
 
+  var cellCls   = 'pt-cell' + (patternId ? '' : ' pt-cell-nopattern');
+  var cellAttrs = patternId
+    ? ' ondragover="_ptCellDragOver(event)" ondrop="_ptCellDrop(event,\'' + patternId + '\')"'
+    : '';
+
+  var html = '<td class="' + cellCls + '"' + cellAttrs + '><div class="pt-cell-inner">';
+
+  inGenre.forEach(function(sid) {
+    var s = _ptSubjectInfoMap[String(sid).trim()];
+    if (!s) return;
+    var displayName = _getAliasValue(schoolName, sid) || s.subject_name;
+    var snEsc  = _ptEscAttr(schoolName);
+    var pidEsc = patternId || '';
+    html += '<span class="pt-chip"' +
+      ' draggable="true"' +
+      ' ondragstart="_ptChipDragStart(event,\'' + sid + '\',\'' + pidEsc + '\')"' +
+      ' ondragend="_ptChipDragEnd()"' +
+      ' ondblclick="_ptStartAliasEdit(this,\'' + snEsc + '\',\'' + sid + '\');event.stopPropagation();">' +
+      displayName +
+      '<button class="pt-chip-close" onclick="_ptRemoveSubject(\'' + pidEsc + '\',\'' + sid + '\');event.stopPropagation();">×</button>' +
+      '</span>';
+  });
+
+  html += '</div></td>';
+  return html;
+}
+
+/* ========== 教科プール描画 ========== */
+function _ptRenderPool() {
+  var grade = _ptSelectedGrade;
+  var gradeSubjects = _ptSubjects.filter(function(s) {
+    return String(s.grade || '').trim() === grade;
+  });
+  // 対象学年の教科がなければ全教科を表示（grade 列の値形式が異なる場合の fallback）
+  if (gradeSubjects.length === 0) gradeSubjects = _ptSubjects;
+
+  var genreGroups = {};
+  gradeSubjects.forEach(function(s) {
+    var g = String(s.genre_name || 'その他').trim();
+    if (!genreGroups[g]) genreGroups[g] = [];
+    genreGroups[g].push(s);
+  });
+
+  var html = '';
+  _ptGenreOrder.forEach(function(genreName) {
+    var subs = genreGroups[genreName];
+    if (!subs || subs.length === 0) return;
+    html += '<div class="pt-pool-genre-section">';
+    html += '<div class="pt-pool-genre-label">' + genreName + '</div>';
+    html += '<div class="pt-pool-chips">';
+    subs.forEach(function(s) {
+      html += '<span class="pt-chip pt-chip-pool"' +
+        ' draggable="true"' +
+        ' ondragstart="_ptChipDragStart(event,\'' + s.subject_id + '\',null)"' +
+        ' ondragend="_ptChipDragEnd()">' +
+        s.subject_name + '</span>';
+    });
+    html += '</div></div>';
+  });
+
+  if (!html) html = '<p style="color:#aaa; font-size:0.9em;">教科が登録されていません</p>';
+  return html;
+}
+
+/* ========== 学年切り替え ========== */
+function _ptOnGradeChange(grade) {
+  _ptSelectedGrade = grade;
+  renderPatternManager(window.masterData);
+}
+
+/* ========== 教科チップ DnD ========== */
+function _ptChipDragStart(event, subjectId, fromPatternId) {
+  _ptDragPayload = { subjectId: subjectId, fromPatternId: fromPatternId || null };
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', subjectId);
+  event.stopPropagation();
+  var chip = event.currentTarget;
+  setTimeout(function() { if (chip) chip.classList.add('pt-chip-dragging'); }, 0);
+}
+
+function _ptChipDragEnd() {
+  _ptDragPayload = null;
+  document.querySelectorAll('.pt-chip-dragging').forEach(function(el) { el.classList.remove('pt-chip-dragging'); });
+  document.querySelectorAll('.pt-cell-hover').forEach(function(el) { el.classList.remove('pt-cell-hover'); });
+}
+
+function _ptCellDragOver(event) {
+  if (!_ptDragPayload) return;
+  event.preventDefault();
+  event.stopPropagation();
+  document.querySelectorAll('.pt-cell-hover').forEach(function(el) { el.classList.remove('pt-cell-hover'); });
+  event.currentTarget.classList.add('pt-cell-hover');
+}
+
+function _ptCellDrop(event, patternId) {
+  event.preventDefault();
+  event.stopPropagation();
+  document.querySelectorAll('.pt-cell-hover').forEach(function(el) { el.classList.remove('pt-cell-hover'); });
+  if (!_ptDragPayload) return;
+  var subjectId     = _ptDragPayload.subjectId;
+  var fromPatternId = _ptDragPayload.fromPatternId;
+  _ptDragPayload = null;
+  if (fromPatternId === patternId) return;
+  _ptAddSubject(patternId, subjectId);
+  if (fromPatternId) _ptRemoveSubject(fromPatternId, subjectId);
+}
+
+function _ptPoolDragOver(event) {
+  if (!_ptDragPayload) return;
+  event.preventDefault();
+  event.stopPropagation();
+  document.querySelectorAll('.pt-cell-hover').forEach(function(el) { el.classList.remove('pt-cell-hover'); });
+  var pool = document.getElementById('pt-pool-area');
+  if (pool) pool.classList.add('pt-cell-hover');
+}
+
+function _ptPoolDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  var pool = document.getElementById('pt-pool-area');
+  if (pool) pool.classList.remove('pt-cell-hover');
+  if (!_ptDragPayload) return;
+  var fromPatternId = _ptDragPayload.fromPatternId;
+  var subjectId     = _ptDragPayload.subjectId;
+  _ptDragPayload = null;
+  if (fromPatternId) _ptRemoveSubject(fromPatternId, subjectId);
+}
+
+/* ========== 教科追加・削除 ========== */
+function _ptAddSubject(patternId, subjectId) {
+  if (!patternId) return;
+  var sid = String(subjectId).trim();
+  if (!_ptSubjectMap[patternId]) _ptSubjectMap[patternId] = [];
+  if (_ptSubjectMap[patternId].indexOf(sid) >= 0) return;
+  _ptSubjectMap[patternId] = _ptSubjectMap[patternId].concat([sid]);
+  _ptRerenderTableArea();
+  _ptSavePattern(patternId);
+}
+
+function _ptRemoveSubject(patternId, subjectId) {
+  if (!patternId || !_ptSubjectMap[patternId]) return;
+  var sid = String(subjectId).trim();
+  _ptSubjectMap[patternId] = _ptSubjectMap[patternId].filter(function(id) { return id !== sid; });
+  _ptRerenderTableArea();
+  _ptSavePattern(patternId);
+}
+
+function _ptRerenderTableArea() {
+  var area = document.getElementById('pt-table-area');
+  if (area) area.innerHTML = _ptRenderCrossTable();
+}
+
+function _ptSavePattern(patternId) {
+  if (_ptSaving[patternId]) return;
+  var pattern = _ptPatterns.find(function(p) { return String(p.pattern_id).trim() === patternId; });
+  if (!pattern) return;
+  _ptSaving[patternId] = true;
+
+  var selectedIds = (_ptSubjectMap[patternId] || []).slice();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _ptSaving[patternId] = false;
+      if (!res || !res.success) {
+        showMessage((res && res.error) || '保存に失敗しました', 'error');
+        refreshMasterData(function() { loadSection('patterns'); });
+      } else {
+        if (window.masterData && window.masterData.patternSubjects) {
+          window.masterData.patternSubjects = window.masterData.patternSubjects
+            .filter(function(ps) { return String(ps.pattern_id).trim() !== patternId; })
+            .concat(selectedIds.map(function(sid) { return { pattern_id: patternId, subject_id: sid }; }));
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      _ptSaving[patternId] = false;
+      showMessage('通信エラー: ' + ((err && err.message) || ''), 'error');
+      refreshMasterData(function() { loadSection('patterns'); });
+    })
+    .batchSetGroupSubjects(window.selectedCramId, {
+      school_name:          pattern.school_name,
+      school_course:        pattern.school_course,
+      grade:                pattern.grade,
+      sub_course:           pattern.sub_course || '',
+      selected_subject_ids: selectedIds
+    });
+}
+
+/* ========== インラインエイリアス編集 ========== */
+function _ptStartAliasEdit(chipEl, schoolName, subjectId) {
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'pt-alias-input';
+  inp.value = _getAliasValue(schoolName, subjectId) || '';
+  inp.placeholder = '表示名（空=正式名）';
+  inp.onclick = function(e) { e.stopPropagation(); };
+  inp.onkeydown = function(e) {
+    if (e.key === 'Enter')  { _ptCommitAliasEdit(inp, schoolName, subjectId); }
+    if (e.key === 'Escape') { renderPatternManager(window.masterData); }
+  };
+  inp.onblur = function() { _ptCommitAliasEdit(inp, schoolName, subjectId); };
+  chipEl.classList.add('pt-chip-editing');
+  while (chipEl.firstChild) chipEl.removeChild(chipEl.firstChild);
+  chipEl.appendChild(inp);
+  setTimeout(function() { inp.focus(); inp.select(); }, 0);
+}
+
+function _ptCommitAliasEdit(inp, schoolName, subjectId) {
+  if (inp._committed) return;
+  inp._committed = true;
+  _patSaveAlias(schoolName, subjectId, inp.value);
+  setTimeout(function() { renderPatternManager(window.masterData); }, 200);
+}
+
+/* ========== 学校名セル DnD（並び替え） ========== */
+function _ptSchoolDragStart(event, schoolName) {
+  if (_ptDragPayload) return; // チップDnD中は学校DnDを起動しない
+  _ptDragSrcSchool = schoolName;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', 'school:' + schoolName);
+  // chipDnDと区別するため stopPropagation しない
+}
+
+function _ptSchoolDragEnd() {
+  _ptDragSrcSchool = null;
+  document.querySelectorAll('.pt-school-label-over').forEach(function(el) { el.classList.remove('pt-school-label-over'); });
+}
+
+function _ptSchoolDragOver(event, targetSchool) {
+  if (!_ptDragSrcSchool || _ptDragSrcSchool === targetSchool || _ptDragPayload) return;
+  event.preventDefault();
+  event.stopPropagation();
+  document.querySelectorAll('.pt-school-label-over').forEach(function(el) { el.classList.remove('pt-school-label-over'); });
+  event.currentTarget.classList.add('pt-school-label-over');
+}
+
+function _ptSchoolDrop(event, targetSchool) {
+  event.preventDefault();
+  event.stopPropagation();
+  document.querySelectorAll('.pt-school-label-over').forEach(function(el) { el.classList.remove('pt-school-label-over'); });
+  if (!_ptDragSrcSchool || _ptDragSrcSchool === targetSchool) { _ptDragSrcSchool = null; return; }
+  var schools = _ptSchoolNames.slice();
+  var srcIdx  = schools.indexOf(_ptDragSrcSchool);
+  var tgtIdx  = schools.indexOf(targetSchool);
+  if (srcIdx < 0 || tgtIdx < 0) { _ptDragSrcSchool = null; return; }
+  schools.splice(srcIdx, 1);
+  schools.splice(tgtIdx, 0, _ptDragSrcSchool);
+  _ptSchoolNames = schools;
+  _patSaveSchoolOrder(window.selectedCramId || '', schools);
+  _ptDragSrcSchool = null;
+  renderPatternManager(window.masterData);
+}
+
+/* ========== 学校並び順（localStorage 連携） ========== */
 function _patGetSortedSchools(schools, cramId) {
   var saved = null;
   try {
     var raw = localStorage.getItem('st_school_order_' + cramId);
     if (raw) saved = JSON.parse(raw);
-  } catch {}
+  } catch (e) {}
   if (!saved || !Array.isArray(saved)) return schools;
   var existing = saved.filter(function(s) { return schools.indexOf(s) !== -1; });
   var newOnes  = schools.filter(function(s) { return existing.indexOf(s) === -1; });
@@ -397,165 +650,14 @@ function _patGetSortedSchools(schools, cramId) {
 }
 
 function _patSaveSchoolOrder(cramId, schools) {
-  try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch {}
+  try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch (e) {}
 }
 
-// ---- ドラッグ&ドロップ（FLIP アニメーション） ----
-
-function _patDragStart(event, idx) {
-  _patDragSrcIdx = idx;
-  _patDndSrcEl   = document.querySelector('.hier-school[data-dnd-idx="' + idx + '"]');
-  if (!_patDndSrcEl) return;
-
-  var cs = window.getComputedStyle(_patDndSrcEl);
-  _patDndPlaceholder = document.createElement('div');
-  _patDndPlaceholder.className          = 'dnd-placeholder';
-  _patDndPlaceholder.style.height       = _patDndSrcEl.offsetHeight + 'px';
-  _patDndPlaceholder.style.marginBottom = cs.marginBottom;
-  _patDndPlaceholder.addEventListener('dragover', function(e) { e.preventDefault(); });
-  _patDndPlaceholder.addEventListener('drop',     function(e) { _patCommitDrop(e); });
-  _patDndSrcEl.parentNode.insertBefore(_patDndPlaceholder, _patDndSrcEl.nextSibling);
-  _patDndLastInsert = null;
-
-  setTimeout(function() { if (_patDndSrcEl) _patDndSrcEl.classList.add('pat-dragging'); }, 0);
-}
-
-function _patDragOver(event, idx) {
-  event.preventDefault();
-  if (!_patDndPlaceholder || !_patDndSrcEl) return;
-
-  var target = document.querySelector('.hier-school[data-dnd-idx="' + idx + '"]');
-  if (!target || target === _patDndSrcEl) return;
-
-  var rect           = target.getBoundingClientRect();
-  var insertBeforeEl = event.clientY < rect.top + rect.height / 2
-    ? target : target.nextSibling;
-
-  if (insertBeforeEl === _patDndLastInsert || insertBeforeEl === _patDndPlaceholder) return;
-  _patDndLastInsert = insertBeforeEl;
-
-  var els  = Array.from(document.querySelectorAll('.hier-school'));
-  var prev = els.map(function(el) { return el.getBoundingClientRect().top; });
-  _patDndSrcEl.parentNode.insertBefore(_patDndPlaceholder, insertBeforeEl);
-  els.forEach(function(el, i) {
-    var delta = prev[i] - el.getBoundingClientRect().top;
-    if (Math.abs(delta) < 1) return;
-    el.style.transition = 'none';
-    el.style.transform  = 'translateY(' + delta + 'px)';
-    requestAnimationFrame(function() {
-      el.style.transition = 'transform 0.18s ease';
-      el.style.transform  = '';
-    });
-  });
-}
-
-function _patDragEnd() {
-  if (_patDndSrcEl) _patDndSrcEl.classList.remove('pat-dragging');
-  document.querySelectorAll('.hier-school').forEach(function(el) {
-    el.style.transition = '';
-    el.style.transform  = '';
-  });
-  if (_patDndPlaceholder && _patDndPlaceholder.parentNode) {
-    _patDndPlaceholder.parentNode.removeChild(_patDndPlaceholder);
-  }
-  _patDndSrcEl = _patDndPlaceholder = _patDndLastInsert = null;
-  _patDragSrcIdx = -1;
-}
-
-function _patCommitDrop(event) {
-  event.preventDefault();
-  if (_patDragSrcIdx < 0 || !_patDndPlaceholder || !_patDndPlaceholder.parentNode) {
-    _patDragEnd(); return;
-  }
-  var parent   = _patDndPlaceholder.parentNode;
-  var children = Array.from(parent.children).filter(function(el) {
-    return el.classList.contains('hier-school') || el === _patDndPlaceholder;
-  });
-  var srcName  = _patDndStore[_patDragSrcIdx];
-  var newOrder = [];
-  children.forEach(function(el) {
-    if (el === _patDndPlaceholder) {
-      newOrder.push(srcName);
-    } else if (el !== _patDndSrcEl) {
-      var i = parseInt(el.dataset.dndIdx, 10);
-      if (!isNaN(i) && _patDndStore[i]) newOrder.push(_patDndStore[i]);
-    }
-  });
-  if (newOrder.length > 0) _patSaveSchoolOrder(window.selectedCramId || '', newOrder);
-  _patDragEnd();
-  renderPatternManager(masterData);
-}
-
-function _patDragDrop(event, targetIdx) {
-  _patCommitDrop(event);
-}
-
-// ---- 階層トグル ----
-
-function toggleSchool(idx) {
-  const sn = _patStore[idx].schoolName;
-  if (_collapseSchools.has(sn)) _collapseSchools.delete(sn);
-  else _collapseSchools.add(sn);
-  renderPatternManager(masterData);
-}
-
-function toggleCourse(idx) {
-  const ck = _patStore[idx].courseKey;
-  if (_collapseCourses.has(ck)) _collapseCourses.delete(ck);
-  else _collapseCourses.add(ck);
-  renderPatternManager(masterData);
-}
-
-function toggleGrade(idx) {
-  const gk = _patStore[idx].gradeKey;
-  if (_collapseGrades.has(gk)) _collapseGrades.delete(gk);
-  else _collapseGrades.add(gk);
-  renderPatternManager(masterData);
-}
-
-// ---- グループ編集 ----
-
-function startGroupEdit(idx) {
-  editingGroupKey = _patStore[idx].groupKey;
-  renderPatternManager(masterData);
-}
-
-function cancelGroupEdit() {
-  editingGroupKey = null;
-  renderPatternManager(masterData);
-}
-
-function saveGroupSubjectsById(idx) {
-  const { school_name, school_course, grade, sub_course, safeKey } = _patStore[idx];
-  const selectedIds = Array.from(
-    document.querySelectorAll('input[name="group_subject_' + safeKey + '"]:checked')
-  ).map(function(cb) { return cb.value; });
-
-  setLoading(true, ['教科データを確認中...', '教科を登録中...', 'シートに書き込み中...']);
-  google.script.run
-    .withSuccessHandler(function(response) {
-      if (response && response.success) {
-        editingGroupKey = null;
-        showMessage('教科設定を保存しました', 'success');
-        refreshMasterData(function() { loadSection('patterns'); });
-      } else {
-        showMessage(response.error || '保存に失敗しました。', 'error');
-        setLoading(false);
-      }
-    })
-    .withFailureHandler(function() {
-      showMessage('通信エラーが発生しました。', 'error');
-      setLoading(false);
-    })
-    .batchSetGroupSubjects(window.selectedCramId, { school_name, school_course, grade, sub_course, selected_subject_ids: selectedIds });
-}
-
-// ---- 表示名エイリアス ----
-
+/* ========== 表示名エイリアス ========== */
 function _getAliasValue(schoolName, subjectId) {
-  const aliases = (window.masterData && window.masterData.schoolSubjectAliases) || [];
-  const hit = aliases.find(function(a) {
-    return a.school_name === schoolName && a.subject_id === subjectId;
+  var aliases = (window.masterData && window.masterData.schoolSubjectAliases) || [];
+  var hit = aliases.find(function(a) {
+    return a.school_name === schoolName && String(a.subject_id).trim() === String(subjectId).trim();
   });
   return hit ? (hit.display_name || '') : '';
 }
@@ -564,14 +666,14 @@ function _patSaveAlias(schoolName, subjectId, newValue) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.conflict) {
-        showMessage('別ユーザーにより変更がありました。表示名を更新します。', 'warning');
+        showMessage('別ユーザーにより変更がありました。更新します。', 'warning');
         refreshMasterData(function() {});
         return;
       }
       if (res && res.success) {
-        const aliases = window.masterData.schoolSubjectAliases || [];
-        const idx = aliases.findIndex(function(a) {
-          return a.school_name === schoolName && a.subject_id === subjectId;
+        var aliases = window.masterData.schoolSubjectAliases || [];
+        var idx = aliases.findIndex(function(a) {
+          return a.school_name === schoolName && String(a.subject_id).trim() === String(subjectId).trim();
         });
         if (String(newValue || '').trim()) {
           if (idx >= 0) aliases[idx].display_name = newValue;
@@ -590,16 +692,45 @@ function _patSaveAlias(schoolName, subjectId, newValue) {
     .upsertSubjectAlias(schoolName, subjectId, newValue, '');
 }
 
-// ---- コース追加パネル ----
+/* ========== コース追加パネル ========== */
+function _ptRenderAddCoursePanel(allSchoolNames) {
+  var html = '<div class="add-course-panel">';
+  html += '<div class="add-course-panel-title">コース追加</div>';
+  html += '<div class="add-course-row"><div class="add-course-label">学校名</div>';
+  html += '<div class="add-course-school-list">';
+  html += '<label class="add-course-school-item add-course-all-label">' +
+    '<input type="checkbox" id="pat-school-all" onchange="toggleAllSchools(this.checked)" />' +
+    '<span>全選択</span></label>';
+  allSchoolNames.forEach(function(sn) {
+    var snEsc = sn.replace(/"/g, '&quot;');
+    html += '<label class="add-course-school-item">' +
+      '<input type="checkbox" class="pat-school-cb" value="' + snEsc + '" />' +
+      '<span>' + sn + '</span></label>';
+  });
+  if (allSchoolNames.length === 0) {
+    html += '<span style="color:#aaa; font-size:0.85em;">学校名が登録されていません</span>';
+  }
+  html += '</div></div>';
+  html += '<div class="add-course-row" style="margin-top:12px; align-items:center;">';
+  html += '<div class="add-course-label">科・コース</div>';
+  html += '<input type="text" id="pat-new-course" placeholder="例: 普通、理数、特進" class="admin-input" style="width:200px;" />';
+  html += '</div>';
+  html += '<div class="add-course-row" style="margin-top:14px; gap:8px;">';
+  html += '<button class="btn-save-admin" id="pat-add-course-btn" onclick="submitAddCourse()">追加する</button>';
+  html += '<button class="btn-cancel-admin" onclick="_closeAddCoursePanel()">キャンセル</button>';
+  html += '<span id="pat-add-progress" style="display:none; font-size:0.9em; color:#3a4f80; font-weight:600;"></span>';
+  html += '</div></div>';
+  return html;
+}
 
 function _openAddCoursePanel() {
   _showAddCoursePanel = true;
-  renderPatternManager(masterData);
+  renderPatternManager(window.masterData);
 }
 
 function _closeAddCoursePanel() {
   _showAddCoursePanel = false;
-  renderPatternManager(masterData);
+  renderPatternManager(window.masterData);
 }
 
 function toggleAllSchools(checked) {
@@ -607,38 +738,31 @@ function toggleAllSchools(checked) {
 }
 
 function submitAddCourse() {
-  const cramId = window.selectedCramId || '';
+  var cramId = window.selectedCramId || '';
   if (!cramId) { showMessage('校舎を選択してください。', 'error'); return; }
-
-  const course = (document.getElementById('pat-new-course').value || '').trim();
+  var course = (document.getElementById('pat-new-course').value || '').trim();
   if (!course) { showMessage('科・コース名を入力してください。', 'error'); return; }
-
-  const checked = Array.from(document.querySelectorAll('.pat-school-cb:checked')).map(function(cb) { return cb.value; });
+  var checked = Array.from(document.querySelectorAll('.pat-school-cb:checked')).map(function(cb) { return cb.value; });
   if (checked.length === 0) { showMessage('学校名を1つ以上選択してください。', 'error'); return; }
 
-  const btn  = document.getElementById('pat-add-course-btn');
-  const prog = document.getElementById('pat-add-progress');
+  var btn  = document.getElementById('pat-add-course-btn');
+  var prog = document.getElementById('pat-add-progress');
   if (btn)  btn.disabled = true;
   if (prog) { prog.style.display = ''; prog.textContent = checked.length + '校中 0校完了'; }
 
-  let done = 0;
-  const total = checked.length;
-
+  var done = 0, total = checked.length;
   function processNext() {
     if (done >= total) {
-      if (prog) prog.textContent = total + '校中 ' + total + '校完了';
       showMessage(total + '校・' + course + ' のパターンを追加しました。', 'success');
       _showAddCoursePanel = false;
       refreshMasterData(function() { loadSection('patterns'); });
       return;
     }
     if (prog) prog.textContent = total + '校中 ' + done + '校完了';
-    const schoolName = checked[done];
+    var schoolName = checked[done];
     google.script.run
       .withSuccessHandler(function(res) {
-        if (res && !res.success && res.error) {
-          showMessage(schoolName + ': ' + res.error, 'error');
-        }
+        if (res && !res.success && res.error) showMessage(schoolName + ': ' + res.error, 'error');
         done++;
         processNext();
       })
@@ -652,20 +776,29 @@ function submitAddCourse() {
   processNext();
 }
 
-window.renderPatternManager  = renderPatternManager;
-window._patDragStart         = _patDragStart;
-window._patDragOver          = _patDragOver;
-window._patDragEnd           = _patDragEnd;
-window._patDragDrop          = _patDragDrop;
-window._patCommitDrop        = _patCommitDrop;
-window.toggleSchool          = toggleSchool;
-window.toggleCourse          = toggleCourse;
-window.toggleGrade           = toggleGrade;
-window.startGroupEdit        = startGroupEdit;
-window.cancelGroupEdit       = cancelGroupEdit;
-window.saveGroupSubjectsById = saveGroupSubjectsById;
-window._openAddCoursePanel   = _openAddCoursePanel;
-window._closeAddCoursePanel  = _closeAddCoursePanel;
-window.toggleAllSchools      = toggleAllSchools;
-window.submitAddCourse       = submitAddCourse;
+/* ========== ユーティリティ ========== */
+function _ptEscAttr(str) {
+  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+/* ========== グローバル公開 ========== */
+window.renderPatternManager = renderPatternManager;
+window._ptOnGradeChange     = _ptOnGradeChange;
+window._ptChipDragStart     = _ptChipDragStart;
+window._ptChipDragEnd       = _ptChipDragEnd;
+window._ptCellDragOver      = _ptCellDragOver;
+window._ptCellDrop          = _ptCellDrop;
+window._ptPoolDragOver      = _ptPoolDragOver;
+window._ptPoolDrop          = _ptPoolDrop;
+window._ptAddSubject        = _ptAddSubject;
+window._ptRemoveSubject     = _ptRemoveSubject;
+window._ptStartAliasEdit    = _ptStartAliasEdit;
+window._ptSchoolDragStart   = _ptSchoolDragStart;
+window._ptSchoolDragEnd     = _ptSchoolDragEnd;
+window._ptSchoolDragOver    = _ptSchoolDragOver;
+window._ptSchoolDrop        = _ptSchoolDrop;
+window._openAddCoursePanel  = _openAddCoursePanel;
+window._closeAddCoursePanel = _closeAddCoursePanel;
+window.toggleAllSchools     = toggleAllSchools;
+window.submitAddCourse      = submitAddCourse;
 </script>

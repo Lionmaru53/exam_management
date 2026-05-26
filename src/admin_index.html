@@ -94,9 +94,12 @@
         );
       }
       const nav = document.getElementById('admin-nav');
+      const ctx = window.adminContext;
+      const meLabel = (ctx.name ? ctx.name + '&nbsp;' : '') +
+        '<span style="opacity:0.7; font-size:0.9em;">(' + ctx.email + ')</span>';
       nav.innerHTML = tabs.map(t =>
         `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
-      ).join('');
+      ).join('') + `<span class="admin-me-info">${meLabel}</span>`;
       nav.style.display = 'flex';
       document.getElementById('admin-content').style.display = '';
     }
