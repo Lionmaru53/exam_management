@@ -232,11 +232,24 @@ function getInitialData(lineUserId) {
     const needsCourse = !course;
     const needsSub    = !needsCourse && (grade === '高2' || grade === '高3') && !subCourse;
 
+    // コース未設定時: 同校のコース一覧を渡してラジオ選択に使用
+    let availableCourses = [];
+    if (needsCourse) {
+      const scmSheet = ss.getSheetByName('school_course_master');
+      if (scmSheet) {
+        availableCourses = getRowsData(scmSheet)
+          .filter(r => String(r.school_name || '').trim() === String(student.school_name).trim())
+          .map(r => String(r.school_course || '').trim())
+          .filter(Boolean);
+      }
+    }
+
     return stringifyDates({
       student,
       lineUserId,
       needsCourse,
       needsSubCourse: needsSub,
+      availableCourses,
       currentExam,
       subjects: currentExam ? currentExam.subjects : [],
       scores:   currentExam ? currentExam.scores   : [],

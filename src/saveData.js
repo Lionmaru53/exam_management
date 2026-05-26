@@ -116,7 +116,7 @@ function saveAllScores(payload) {
  */
 function setStudentCourseAndSubCourse(lineUserId, schoolCourse, subCourse) {
   try {
-    const sc = String(schoolCourse || '').trim();
+    const sc = _normalizeCourseName(schoolCourse);
     if (!sc) return { error: 'コース名を入力してください' };
 
     const parentSS = SpreadsheetApp.getActiveSpreadsheet();

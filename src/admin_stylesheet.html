@@ -6,28 +6,146 @@
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   }
 
-  .admin-nav {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    background: #333;
-    padding: 10px;
-    border-radius: 5px;
+  /* ---- ページ最上部ヘッダー ---- */
+  #admin-top-bar {
     position: sticky;
     top: 0;
     z-index: 1000;
   }
 
-  /* 初期非表示（inline style の代替：GAS の document.write 処理との干渉を避けるため CSS で管理） */
-  #admin-nav     { display: none; }
-  #pattern-modal { display: none; }
-
-  .branch-selector-wrap {
-    display: none;
+  .admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1e2a3a;
     padding: 8px 16px;
-    background: #f5f5f5;
-    border-bottom: 1px solid #ddd;
-    gap: 8px;
+    min-height: 52px;
+  }
+
+  .admin-header-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .admin-header-home {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 4px 6px;
+    transition: background 0.15s;
+    margin: -4px -6px;
+  }
+
+  .admin-header-home:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .admin-header-title {
+    color: #e8edf2;
+    font-size: 1.05em;
+    font-weight: bold;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .admin-header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    line-height: 1.3;
+  }
+
+  .admin-header-name {
+    color: #fff;
+    font-size: 0.95em;
+    font-weight: bold;
+  }
+
+  .admin-header-email {
+    color: #aab4c4;
+    font-size: 0.78em;
+  }
+
+  .admin-header-logo {
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .admin-header-logo img {
+    height: 32px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  .admin-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-bottom: 20px;
+    background: #333;
+    border-radius: 0;
+  }
+
+  .admin-nav-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .admin-nav-row--sub {
+    background: #2a2a2a;
+    border-top: 1px solid #444;
+    padding: 5px 10px;
+  }
+
+  .admin-nav-row--sub button {
+    font-size: 0.85em;
+    padding: 3px 8px;
+    opacity: 0.85;
+  }
+
+  /* 初期非表示（inline style の代替：GAS の document.write 処理との干渉を避けるため CSS で管理） */
+  #admin-nav          { display: none; }
+  #admin-header       { display: none; }
+  #pattern-modal      { display: none; }
+
+  .branch-selector-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 10px;
+  }
+
+  .branch-selector-label {
+    color: #fff;
+    font-weight: bold;
+    font-size: 0.9em;
+    white-space: nowrap;
+  }
+
+  .branch-selector-select {
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid #666;
+    background: #f0f4f9;
+    font-size: 0.9em;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .branch-selector-select option {
+    background: #f0f4f9;
+  }
+
+  .branch-selector-select:focus {
+    outline: none;
+    border-color: #007bff;
   }
 
   .admin-nav button {
@@ -45,16 +163,6 @@
   .admin-nav button.active {
     background: #007bff;
     border-color: #007bff;
-  }
-
-  .admin-me-info {
-    margin-left: auto;
-    color: #ccc;
-    font-size: 0.82em;
-    padding: 0 12px;
-    white-space: nowrap;
-    align-self: center;
-    line-height: 1.3;
   }
 
   /* モーダルの背景 */
@@ -512,11 +620,60 @@
   .imp-url-input  { flex: 1; min-width: 0; }
 
   /* ---- ダッシュボード ---- */
-  .db-grid { display: flex; flex-direction: column; gap: 16px; }
-  .db-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; }
-  .db-card-title { font-size: 14px; font-weight: bold; margin: 0 0 12px; color: #333; }
+  .db-guide-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .db-guide-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    background: #fff;
+  }
+
+  .db-guide-card:hover {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    border-color: #007bff;
+  }
+
+  .db-guide-num {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: #007bff;
+    margin-bottom: 4px;
+  }
+
+  .db-guide-title {
+    font-size: 0.95em;
+    font-weight: bold;
+    color: #222;
+    margin-bottom: 6px;
+  }
+
+  .db-guide-desc {
+    font-size: 0.82em;
+    color: #666;
+    line-height: 1.55;
+  }
+
+  .db-section-label {
+    font-size: 0.85em;
+    font-weight: bold;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 20px 0 10px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+  }
+
   .db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .db-table th { background: #f5f5f5; padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; }
+  .db-table th { background: #f5f5f5; padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }
   .db-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
   .db-result-ok { color: #2e7d32; font-weight: bold; }
   .db-result-ng { color: #c62828; }

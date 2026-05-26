@@ -57,7 +57,7 @@ function addNewPattern(cramId, payload) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
-    const sc = String(payload.school_course || '').trim();
+    const sc = _normalizeCourseName(payload.school_course || '');
     if (!sc) return { success: false, error: 'コース名は必須です（空文字は不可）' };
 
     const ss    = _getTargetSS(cramId);

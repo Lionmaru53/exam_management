@@ -47,11 +47,11 @@
   min-width: 120px;
 }
 .pt-genre-th {
-  background: #e8edf7;
   font-weight: bold;
   text-align: center;
   white-space: nowrap;
   min-width: 90px;
+  color: #fff;
 }
 /* 学校名セル（rowspan, ドラッグ可） */
 .pt-school-label {
@@ -99,7 +99,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: #e8edf7;
+  /* background / border-color はジャンル色を inline style で設定 */
   border: 1px solid #b0bcdc;
   border-radius: 12px;
   padding: 2px 7px;
@@ -110,11 +110,6 @@
 }
 .pt-chip:active { cursor: grabbing; }
 .pt-chip-dragging { opacity: 0.4; }
-.pt-chip-pool {
-  background: #fff;
-  border-color: #ccc;
-  cursor: grab;
-}
 .pt-chip-editing {
   background: #fffbdd;
   border-color: #e6c800;
@@ -139,12 +134,21 @@
   padding: 1px 4px;
 }
 
+/* ---- 教科プール sticky ラッパー ---- */
+.pt-sticky-pool {
+  position: sticky;
+  z-index: 100;
+  background: #fff;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: 14px;
+}
+
 /* ---- 教科プール ---- */
 .pt-pool-area {
   border: 2px dashed #b0bcdc;
   border-radius: 8px;
-  padding: 12px 16px;
-  margin-top: 8px;
+  padding: 10px 14px 8px;
   min-height: 60px;
   background: #fafbff;
 }
@@ -152,28 +156,47 @@
   background: #dce8ff;
   border-color: #3a4f80;
 }
+.pt-page-hint {
+  font-size: 0.87rem;
+  color: #1e3a5f;
+  line-height: 1.65;
+  margin: -4px 0 14px;
+  padding: 8px 14px;
+  background: #e8f0fb;
+  border-left: 4px solid #3a6bc8;
+  border-radius: 0 4px 4px 0;
+}
 .pt-pool-title {
   font-weight: bold;
   color: #3a4f80;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-size: 0.9em;
 }
+.pt-pool-genres-row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+  align-items: flex-start;
+  padding-bottom: 2px;
+}
 .pt-pool-genre-section {
-  display: inline-block;
-  vertical-align: top;
-  margin-right: 20px;
-  margin-bottom: 8px;
+  flex-shrink: 0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 7px 10px;
 }
 .pt-pool-genre-label {
   font-size: 0.8em;
-  color: #666;
-  margin-bottom: 4px;
-  font-weight: 600;
+  margin-bottom: 5px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .pt-pool-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  max-width: 180px;
 }
 </style>
 
@@ -190,8 +213,26 @@ var _ptGenreOrder       = [];   // ジャンル名の表示順
 var _ptSchoolNames      = [];   // ソート済み学校名リスト
 var _ptSubjectInfoMap   = {};   // String(subject_id) → subject オブジェクト
 var _ptSubjectGenreMap  = {};   // String(subject_id) → genre_name
+var _ptGenreColorMap    = {};   // genreName → { header, border, chip }
 var _ptDragSrcSchool    = null;
 var _showAddCoursePanel = false;
+
+/* ジャンル名ベースの色定義（LIFF 画面の getGenreColor と統一） */
+var _PT_GENRE_COLOR_DEF = {
+  '数学': { header: '#1d4ed8', border: '#93c5fd', chip: '#dbeafe' },
+  '英語': { header: '#c2410c', border: '#fdba74', chip: '#fed7aa' },
+  '国語': { header: '#15803d', border: '#6ee7b7', chip: '#bbf7d0' },
+  '理科': { header: '#be185d', border: '#f9a8d4', chip: '#fbcfe8' },
+  '社会': { header: '#a16207', border: '#fcd34d', chip: '#fde68a' },
+  'その他': { header: '#475569', border: '#cbd5e1', chip: '#f8fafc' },
+};
+/* 上記以外のジャンル名への fallback パレット */
+var _PT_GENRE_PALETTE = [
+  { header: '#6A1B9A', border: '#ce93d8', chip: '#f3e5f5' },
+  { header: '#00695C', border: '#80cbc4', chip: '#e0f2f1' },
+  { header: '#283593', border: '#9fa8da', chip: '#e8eaf6' },
+  { header: '#4E342E', border: '#bcaaa4', chip: '#efebe9' },
+];
 
 /* ========== エントリーポイント ========== */
 function renderPatternManager(data) {
@@ -220,7 +261,19 @@ function renderPatternManager(data) {
     var g = String(s.genre_name || 'その他').trim();
     if (genreSet.indexOf(g) < 0) genreSet.push(g);
   });
-  _ptGenreOrder = genreSet;
+  _ptGenreOrder = genreSet.filter(function(g) { return g !== '未設定'; });
+
+  // ジャンルごとにカラーを割り当て（名前定義を優先、未定義は fallback パレット）
+  _ptGenreColorMap = {};
+  var _fallbackIdx = 0;
+  _ptGenreOrder.forEach(function(g) {
+    if (_PT_GENRE_COLOR_DEF[g]) {
+      _ptGenreColorMap[g] = _PT_GENRE_COLOR_DEF[g];
+    } else {
+      _ptGenreColorMap[g] = _PT_GENRE_PALETTE[_fallbackIdx % _PT_GENRE_PALETTE.length];
+      _fallbackIdx++;
+    }
+  });
 
   // patternSubjects から _ptSubjectMap を構築
   var freshMap = {};
@@ -252,7 +305,13 @@ function renderPatternManager(data) {
   var allSchoolNames = Object.keys(schoolNameSet).sort(function(a, b) { return a.localeCompare(b, 'ja'); });
   _ptSchoolNames = _patGetSortedSchools(allSchoolNames, window.selectedCramId || '');
 
+  var isMaster = window.adminContext && window.adminContext.role === 'master';
+
   var html = '<h3>学校別教科名・教科パターン管理</h3>';
+  html += '<p class="pt-page-hint">'
+    + '<b>学校に配置されたチップをダブルクリックすると、学校ごとの表示名（例：「英語」→「英I」）に変更できます。</b><br>'
+    + 'できるだけ各学校の実際の教科名に合わせて設定してください。'
+    + '</p>';
 
   // ツールバー
   html += '<div class="pt-toolbar">';
@@ -260,19 +319,31 @@ function renderPatternManager(data) {
     var cls = 'pt-grade-btn' + (_ptSelectedGrade === g ? ' pt-grade-active' : '');
     html += '<button class="' + cls + '" onclick="_ptOnGradeChange(\'' + g + '\')">' + g + '</button>';
   });
-  html += '<button onclick="_openAddCoursePanel()" style="margin-left:auto; padding:5px 14px;">コースを追加する</button>';
+  if (isMaster) {
+    html += '<button onclick="_openAddCoursePanel()" style="margin-left:auto; padding:5px 14px;">コースを追加する</button>';
+  }
   html += '</div>';
 
-  if (_showAddCoursePanel) html += _ptRenderAddCoursePanel(allSchoolNames);
+  if (_showAddCoursePanel && isMaster) html += _ptRenderAddCoursePanel(allSchoolNames);
+
+  // 教科プールを上部に配置（sticky 固定）
+  html += '<div class="pt-sticky-pool" id="pt-sticky-pool">';
+  html += '<div class="pt-pool-area" id="pt-pool-area"';
+  html += ' ondragover="_ptPoolDragOver(event)" ondrop="_ptPoolDrop(event)">';
+  html += '<div class="pt-pool-title">教科プール（ドラッグしてセルに追加 / セルから引き戻す）</div>';
+  html += _ptRenderPool();
+  html += '</div></div>';
 
   html += '<div id="pt-table-area">' + _ptRenderCrossTable() + '</div>';
 
-  html += '<div class="pt-pool-area" id="pt-pool-area"' +
-    ' ondragover="_ptPoolDragOver(event)" ondrop="_ptPoolDrop(event)">' +
-    '<div class="pt-pool-title">教科プール（ドラッグしてセルに追加 / セルから引き戻す）</div>' +
-    _ptRenderPool() + '</div>';
-
   content.innerHTML = html;
+
+  // sticky pool の top = admin-top-bar の高さ
+  setTimeout(function() {
+    var topBar = document.getElementById('admin-top-bar');
+    var pool   = document.getElementById('pt-sticky-pool');
+    if (topBar && pool) pool.style.top = topBar.offsetHeight + 'px';
+  }, 0);
 }
 
 /* ========== クロス表描画 ========== */
@@ -325,7 +396,11 @@ function _ptRenderCrossTable() {
   html += '<th class="pt-row-label-th">学校名</th>';
   html += '<th class="pt-row-label-th">コース' + (grade !== '高1' ? '・文理' : '') + '</th>';
   if (sortedGenres.length > 0) {
-    sortedGenres.forEach(function(g) { html += '<th class="pt-genre-th">' + g + '</th>'; });
+    sortedGenres.forEach(function(g) {
+      var col = _ptGenreColorMap[g] || {};
+      var bg  = col.header ? 'background:' + col.header + ';' : 'background:#555;';
+      html += '<th class="pt-genre-th" style="' + bg + '">' + g + '</th>';
+    });
   } else {
     html += '<th class="pt-genre-th" style="color:#aaa;">（教科未登録）</th>';
   }
@@ -395,9 +470,13 @@ function _ptRenderCell(schoolName, genreName, patternId) {
     var s = _ptSubjectInfoMap[String(sid).trim()];
     if (!s) return;
     var displayName = _getAliasValue(schoolName, sid) || s.subject_name;
-    var snEsc  = _ptEscAttr(schoolName);
-    var pidEsc = patternId || '';
-    html += '<span class="pt-chip"' +
+    var snEsc    = _ptEscAttr(schoolName);
+    var pidEsc   = patternId || '';
+    var col      = _ptGenreColorMap[genreName] || {};
+    var chipStyle = col.chip
+      ? 'background:' + col.chip + '; border-color:' + col.border + ';'
+      : 'background:#e8edf7;';
+    html += '<span class="pt-chip" style="' + chipStyle + '"' +
       ' draggable="true"' +
       ' ondragstart="_ptChipDragStart(event,\'' + sid + '\',\'' + pidEsc + '\')"' +
       ' ondragend="_ptChipDragEnd()"' +
@@ -427,24 +506,33 @@ function _ptRenderPool() {
     genreGroups[g].push(s);
   });
 
-  var html = '';
+  var sections = '';
   _ptGenreOrder.forEach(function(genreName) {
     var subs = genreGroups[genreName];
     if (!subs || subs.length === 0) return;
-    html += '<div class="pt-pool-genre-section">';
-    html += '<div class="pt-pool-genre-label">' + genreName + '</div>';
-    html += '<div class="pt-pool-chips">';
+    var col         = _ptGenreColorMap[genreName] || {};
+    var borderColor = col.border || '#ccc';
+    var bgColor     = col.chip   || '#fafbff';
+    var labelColor  = col.header || '#666';
+    var chipStyle   = col.chip
+      ? 'background:' + col.chip + '; border-color:' + col.border + ';'
+      : 'background:#e8edf7;';
+    sections += '<div class="pt-pool-genre-section" style="border-color:' + borderColor + '; background:' + bgColor + ';">';
+    sections += '<div class="pt-pool-genre-label" style="color:' + labelColor + ';">' + genreName + '</div>';
+    sections += '<div class="pt-pool-chips">';
     subs.forEach(function(s) {
-      html += '<span class="pt-chip pt-chip-pool"' +
+      sections += '<span class="pt-chip" style="' + chipStyle + '"' +
         ' draggable="true"' +
         ' ondragstart="_ptChipDragStart(event,\'' + s.subject_id + '\',null)"' +
         ' ondragend="_ptChipDragEnd()">' +
         s.subject_name + '</span>';
     });
-    html += '</div></div>';
+    sections += '</div></div>';
   });
 
-  if (!html) html = '<p style="color:#aaa; font-size:0.9em;">教科が登録されていません</p>';
+  var html = sections
+    ? '<div class="pt-pool-genres-row">' + sections + '</div>'
+    : '<p style="color:#aaa; font-size:0.9em;">教科が登録されていません</p>';
   return html;
 }
 

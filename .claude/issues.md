@@ -123,6 +123,25 @@
 - **対処**: `_ptRenderCell()` の `<td>` 内に `<div class="pt-cell-inner">` ラッパーを追加し、`display: flex` は `<td>` ではなく `<div>` に適用するよう変更。`<td>` 自体は `display: table-cell` のままになる。
 - **教訓**: `display: flex` を `<td>` / `<th>` など table 系要素に直接適用してはいけない。flex が必要な場合は td 内の div に適用する。→ memory/feedback_flex_on_td.md に保存済み。
 
+### [fixed] #018 `/exec` URL にアクセスするとdevモードページが表示される
+- **場所**: `src/main.js` → `doGet()`
+- **症状**: 本番 `/exec` URL にパラメータなしでアクセスすると、「LINEアプリからアクセスしてください」ではなく開発者モードページが表示される。
+- **原因**: `Session.getActiveUser().getEmail()` が `/exec` 実行時にもオーナーのメールアドレスを返すため、`devEmail` が truthy になり dev モード分岐に入っていた。
+- **対処**: `?mode=dev` パラメータが明示された場合のみ dev モードページを返すよう変更。開発者は `/dev?mode=dev` でアクセスする。
+
+### [fixed] #019 `updateStudentField` で `activeTermTests` が grades として誤渡し
+- **場所**: `src/admin_save_students.js` → `updateStudentField()` 内 `_autoCreateExamPatterns` 呼び出し
+- **症状**: 文理を設定しても exam_patterns が正しい学年（高2・高3）で生成されず、試験IDが grade 列に書き込まれる。
+- **原因**: `_autoCreateExamPatterns(ss, sn, sc, subCourse, activeTermTests, ['高2', '高3'])` と6引数で呼んでいたため、5番目の引数 `grades` に試験ID配列 `activeTermTests` が入っていた（6番目の `['高2', '高3']` は無視）。
+- **対処**: `_autoCreateExamPatterns(ss, sn, sc, subCourse, ['高2', '高3'])` に修正。`activeTermTests.length > 0` のガードは維持。
+
+### [fixed] #020 生徒一覧スライサークリックで `Uncaught SyntaxError: Unexpected end of input`
+- **場所**: `src/admin_logic_students.html` → `_stRerender()` 内スライサーボタン生成
+- **症状**: 学校・学年スライサーチップをクリックすると `Uncaught SyntaxError: Unexpected end of input` が発生し、フィルターが動作しない。
+- **原因**: `onclick="_stToggleSchoolFilter(' + JSON.stringify(s) + ')"` で生成した HTML が `onclick="_stToggleSchoolFilter("高校A")"` になり、ダブルクォートが onclick 属性を途中で閉じるため `_stToggleSchoolFilter(` だけが実行式として残っていた。
+- **対処**: 値を `data-school` / `data-grade` 属性に格納し、onclick では `this.dataset.school` / `this.dataset.grade` で読み取るよう変更。コース追加ボタンの同問題も合わせて修正。
+- **教訓**: HTML 属性内の onclick に文字列を直接埋め込む場合は `JSON.stringify` を使わず `data-*` 属性経由にする。
+
 ## open
 
 （現在 open の Issue はありません）

@@ -353,6 +353,50 @@
     box-shadow: 0 0 0 2px rgba(74,127,193,0.2);
   }
 
+  /* ---- ラジオボタン選択リスト ---- */
+  .course-radio-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    align-items: stretch;
+  }
+  .course-radio-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 18px;
+    border: 2px solid #dde4f0;
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .course-radio-item:hover {
+    border-color: #4a7fc1;
+    background: #f0f5ff;
+  }
+  .course-radio-item input[type="radio"] {
+    accent-color: #4a7fc1;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .course-other-input-wrap {
+    width: 100%;
+    max-width: 320px;
+    display: none;
+  }
+  .course-other-note {
+    font-size: 0.82rem;
+    color: #999;
+    margin: 5px 0 0;
+    text-align: left;
+  }
+
   /* ---- 文理選択画面 ---- */
   .sub-course-select-wrap {
     display: flex;

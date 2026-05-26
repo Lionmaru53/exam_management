@@ -15,12 +15,24 @@
     <div class="loading-label" id="loading-label">読み込み中...</div>
   </div>
 
-  <nav class="admin-nav" id="admin-nav"></nav>
-  <div id="branch-selector-wrap" class="branch-selector-wrap"></div>
+  <div id="admin-top-bar">
+    <div id="admin-header" class="admin-header">
+      <div class="admin-header-left admin-header-home" onclick="loadSection('dashboard')" title="ダッシュボードへ">
+        <div class="admin-header-logo" id="admin-header-logo">
+          <img src="https://www.wasedazemi.com/assets/img/logo-white.svg" alt="ロゴ">
+        </div>
+        <span class="admin-header-title">定期テスト回収システム</span>
+      </div>
+      <div class="admin-header-right">
+        <div id="admin-header-name" class="admin-header-name"></div>
+        <div id="admin-header-email" class="admin-header-email"></div>
+      </div>
+    </div>
+    <nav class="admin-nav" id="admin-nav"></nav>
+  </div>
 
   <div id="admin-content">
-    <h3>管理パネルへようこそ</h3>
-    <p>上のメニューから操作を選択してください。</p>
+    <h3>読み込み中...</h3>
   </div>
 
   <div id="pattern-modal" class="modal-backdrop" onclick="if (event.target === this) closeModal()">
@@ -80,33 +92,46 @@
     // ---- ナビゲーション ----
     function _renderNav(role) {
       const tabs = [
-        { section: 'dashboard',  label: 'ダッシュボード' },
-        { section: 'students',   label: '①生徒一覧' },
-        { section: 'import',     label: '①生徒インポート' },
-        { section: 'patterns',   label: '②学校別教科名・教科パターン管理' },
-        { section: 'exams',      label: '③試験日程管理' },
-        { section: 'scores',     label: '④得点一覧' }
+        { section: 'students', label: '①生徒一覧' },
+        { section: 'scores',   label: '②得点一覧' },
+        { section: 'patterns', label: '③試験管理' },
+        { section: 'exams',    label: '④日程管理' },
+        { section: 'import',   label: '⑤生徒インポート' }
       ];
+      const nav = document.getElementById('admin-nav');
+      let navHtml = '<div class="admin-nav-row">'
+        + '<div id="branch-selector-wrap" class="branch-selector-nav"></div>'
+        + tabs.map(t =>
+            `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
+          ).join('')
+        + '</div>';
       if (role === 'master') {
-        tabs.push(
+        const masterTabs = [
           { section: 'adminUsers', label: '管理者管理' },
           { section: 'branches',   label: '校舎管理' }
-        );
+        ];
+        navHtml += '<div class="admin-nav-row admin-nav-row--sub">'
+          + masterTabs.map(t =>
+              `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
+            ).join('')
+          + '</div>';
       }
-      const nav = document.getElementById('admin-nav');
-      const ctx = window.adminContext;
-      const meLabel = (ctx.name ? ctx.name + '&nbsp;' : '') +
-        '<span style="opacity:0.7; font-size:0.9em;">(' + ctx.email + ')</span>';
-      nav.innerHTML = tabs.map(t =>
-        `<button data-section="${t.section}" onclick="loadSection('${t.section}')">${t.label}</button>`
-      ).join('') + `<span class="admin-me-info">${meLabel}</span>`;
+      nav.innerHTML = navHtml;
       nav.style.display = 'flex';
       document.getElementById('admin-content').style.display = '';
+
+      // ヘッダーにログイン情報を反映
+      const ctx = window.adminContext;
+      const headerEl    = document.getElementById('admin-header');
+      const headerName  = document.getElementById('admin-header-name');
+      const headerEmail = document.getElementById('admin-header-email');
+      if (headerName)  headerName.textContent  = ctx.name  || '';
+      if (headerEmail) headerEmail.textContent = ctx.email || '';
+      if (headerEl)    headerEl.style.display  = 'flex';
     }
 
     // ---- データ取得 ----
     window.refreshMasterData = function (callback) {
-      setLoading(true, 'データを読み込み中...');
       google.script.run
         .withSuccessHandler(function (data) {
           if (data && !data.error) {
@@ -137,24 +162,22 @@
       const el   = document.getElementById('branch-selector-wrap');
       if (!el) return;
       const role = window.adminContext.role;
-      if (role !== 'master' && role !== 'branch_admin') { el.style.display = 'none'; return; }
+      if (role !== 'master' && role !== 'branch_admin') { el.innerHTML = ''; return; }
 
       const branches = Array.isArray(window.masterData.branches) ? window.masterData.branches : [];
       const activeBranches = branches.filter(b =>
         b.is_active === true || String(b.is_active) === '1' || String(b.is_active) === 'true'
       );
 
-      let html = '<label style="font-weight:bold; margin-right:8px;">校舎:</label>';
-      html += '<select id="branch-select" onchange="_onBranchChange()" style="padding:4px 8px; border-radius:4px; border:1px solid #ccc;">';
-      html += '<option value="">— 校舎を選択 —</option>';
+      let html = '<label class="branch-selector-label">校舎:</label>';
+      html += '<select id="branch-select" class="branch-selector-select" onchange="_onBranchChange()">';
+      html += '<option value="">— 選択 —</option>';
       activeBranches.forEach(b => {
         const selected = window.selectedCramId === b.cram_id ? 'selected' : '';
         html += `<option value="${b.cram_id}" ${selected}>${b.branch_name || b.cram_id}</option>`;
       });
       html += '</select>';
       el.innerHTML = html;
-      el.style.display = 'flex';
-      el.style.alignItems = 'center';
     }
 
     window._onBranchChange = function () {
@@ -165,8 +188,8 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['dashboard', 'patterns', 'exams', 'scores', 'students', 'import', 'adminUsers', 'branches'];
-      window.currentSection = valid.includes(section) ? section : 'dashboard';
+      const valid = ['students', 'scores', 'patterns', 'exams', 'import', 'adminUsers', 'branches', 'dashboard'];
+      window.currentSection = valid.includes(section) ? section : 'students';
 
       const overlay = document.getElementById('loading-overlay');
       const content = document.getElementById('admin-content');
@@ -197,7 +220,7 @@
         adminUsers: function () { window.renderAdminUserManager(); },
         branches:   function () { window.renderBranchManager(); }
       };
-      (renderers[section] || renderers.dashboard)();
+      (renderers[section] || renderers.students)();
     };
 
     // ---- 教科表示名ヘルパー ----

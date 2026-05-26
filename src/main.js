@@ -43,11 +43,13 @@ function doGet(e) {
   }
 
   // デフォルト（直接アクセス）
-  // /dev URL 経由の場合は Google ログインが必須のためメールが取得できる → 開発者モード
-  const devEmail = Session.getActiveUser().getEmail();
-  if (devEmail) {
-    return HtmlService.createHtmlOutput(_devInputPage(devEmail))
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  // ?mode=dev を明示指定した場合のみ開発者モードを表示（/exec での誤表示を防ぐ）
+  if (params.mode === 'dev') {
+    const devEmail = Session.getActiveUser().getEmail();
+    if (devEmail) {
+      return HtmlService.createHtmlOutput(_devInputPage(devEmail))
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
   }
 
   return HtmlService.createHtmlOutput(

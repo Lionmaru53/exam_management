@@ -1,57 +1,125 @@
 <script>
-var _dbData = null;
+var _dbLogData = null;
 
+// ---- エントリーポイント ----
 function renderDashboardManager() {
-  var content = document.getElementById('admin-content');
-  content.innerHTML = '<p class="db-empty">読み込み中...</p>';
+  _dbRenderGuide();
+  if (window.adminContext && window.adminContext.role === 'master') {
+    _dbLoadLogs();
+  }
+}
 
+// ---- ナビゲーション説明カード ----
+function _dbRenderGuide() {
+  var content = document.getElementById('admin-content');
+  var ctx = window.adminContext || {};
+  var greeting = ctx.name ? ctx.name + ' さん、ようこそ。' : 'ようこそ。';
+
+  var mainGuides = [
+    {
+      num: '①', section: 'students', title: '生徒一覧',
+      desc: '校舎に登録された生徒を一覧表示します。学年・科/コース・文理選択の確認・変更が可能です。'
+    },
+    {
+      num: '②', section: 'scores', title: '得点一覧',
+      desc: '試験ごとの得点データをクロス表で確認・編集します。得点の登録・修正をここで行います。'
+    },
+    {
+      num: '③', section: 'patterns', title: '試験管理',
+      desc: '学校・科/コース別の「教科パターン」を設定します。どのコースがどの教科を受験するかを管理します。学校別に表示名も変更できます。'
+    },
+    {
+      num: '④', section: 'exams', title: '日程管理',
+      desc: '定期テストの試験日程（期間・区分）を登録・管理します。日程をもとに得点収集の対象が決まります。'
+    },
+    {
+      num: '⑤', section: 'import', title: '生徒インポート',
+      desc: '「015_名簿作成」により作成したエクセルファイルを取り込みます。最新の情報に保つようにしてください。'
+    }
+  ];
+
+  var masterGuides = [
+    {
+      num: '', section: 'adminUsers', title: '管理者管理',
+      desc: '管理者アカウントの追加・ロール変更・無効化を行います。master と校舎管理者（branch_admin）の管理。'
+    },
+    {
+      num: '', section: 'branches', title: '校舎管理',
+      desc: '校舎の追加・スプレッドシートとの紐づけを管理します。新しい校舎を追加する際もここから行います。'
+    }
+  ];
+
+  var html = '<h3 style="margin-bottom:4px;">ダッシュボード</h3>';
+  html += '<p style="color:#666; margin-bottom:20px;">' + greeting + '機能の説明は各カードを参照してください。カードをクリックすると各ページに移動します。</p>';
+
+  html += '<div class="db-guide-grid">';
+  mainGuides.forEach(function(g) {
+    html += _dbGuideCard(g);
+  });
+  html += '</div>';
+
+  if (ctx.role === 'master') {
+    html += '<h4 class="db-section-label">マスター専用</h4>';
+    html += '<div class="db-guide-grid">';
+    masterGuides.forEach(function(g) {
+      html += _dbGuideCard(g);
+    });
+    html += '</div>';
+    html += '<div id="db-log-section"><p class="db-empty" style="margin-top:24px;">ログを読み込み中...</p></div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function _dbGuideCard(g) {
+  return '<div class="db-guide-card" onclick="loadSection(\'' + g.section + '\')">'
+    + (g.num ? '<div class="db-guide-num">' + g.num + '</div>' : '')
+    + '<div class="db-guide-title">' + g.title + '</div>'
+    + '<div class="db-guide-desc">' + g.desc + '</div>'
+    + '</div>';
+}
+
+// ---- ログ取得・表示（master のみ）----
+function _dbLoadLogs() {
   google.script.run
     .withSuccessHandler(function(res) {
+      var el = document.getElementById('db-log-section');
+      if (!el) return;
       if (res && res.success) {
-        _dbData = res;
-        _dbRerender();
+        _dbLogData = res.recentAccesses || [];
+        el.innerHTML = _dbRenderLogTable(_dbLogData);
       } else {
-        document.getElementById('admin-content').innerHTML =
-          '<p class="db-error">' + ((res && res.error) || 'エラーが発生しました') + '</p>';
+        el.innerHTML = '<p class="db-error">' + ((res && res.error) || 'ログの取得に失敗しました') + '</p>';
       }
     })
     .withFailureHandler(function() {
-      document.getElementById('admin-content').innerHTML =
-        '<p class="db-error">データの取得に失敗しました</p>';
+      var el = document.getElementById('db-log-section');
+      if (el) el.innerHTML = '<p class="db-error">ログの取得に失敗しました</p>';
     })
     .getDashboardData();
 }
 
-function _dbRerender() {
-  var content = document.getElementById('admin-content');
-  var html = '<div class="db-grid">';
-  html += _dbCardRecentAccess(_dbData ? _dbData.recentAccesses : []);
-  html += '</div>';
-  content.innerHTML = html;
-}
-
-function _dbCardRecentAccess(accesses) {
+function _dbRenderLogTable(accesses) {
   var branches = (window.masterData && window.masterData.branches) || [];
-  var html = '<div class="db-card">';
-  html += '<h3 class="db-card-title">新着情報 — 最近の LIFF アクセス</h3>';
+
+  var html = '<h4 class="db-section-label" style="margin-top:28px;">最新の LIFF アクセスログ（最新20件）</h4>';
 
   if (!accesses || accesses.length === 0) {
-    html += '<p class="db-empty">アクセス履歴がありません</p>';
-    html += '</div>';
-    return html;
+    return html + '<p class="db-empty">アクセス履歴がありません</p>';
   }
 
+  html += '<div style="overflow-x:auto;">';
   html += '<table class="db-table">';
   html += '<thead><tr>';
   html += '<th>日時</th><th>生徒名</th><th>校舎</th><th>結果</th>';
   html += '</tr></thead><tbody>';
 
   accesses.forEach(function(row) {
-    var branchHit = branches.find(function(b) { return b.cram_id === row.cram_id; });
+    var branchHit   = branches.find(function(b) { return b.cram_id === row.cram_id; });
     var branchLabel = branchHit ? (branchHit.branch_name || row.cram_id || '—') : (row.cram_id || '—');
-    var resClass = row.result === 'success' ? 'db-result-ok' : 'db-result-ng';
+    var resClass    = row.result === 'success' ? 'db-result-ok' : 'db-result-ng';
     html += '<tr>';
-    html += '<td>' + (row.timestamp || '') + '</td>';
+    html += '<td style="white-space:nowrap;">' + (row.timestamp || '') + '</td>';
     html += '<td>' + (row.student_name || '—') + '</td>';
     html += '<td>' + branchLabel + '</td>';
     html += '<td class="' + resClass + '">' + (row.result || '') + '</td>';
@@ -62,4 +130,6 @@ function _dbCardRecentAccess(accesses) {
   html += '</div>';
   return html;
 }
+
+window.renderDashboardManager = renderDashboardManager;
 </script>
