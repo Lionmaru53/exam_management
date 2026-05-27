@@ -57,13 +57,20 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
       }
     }
 
-    scores.push({
+    const entry = {
       subject_id: subId,
       score:      scoreVal,
       grade_rank: gradeRankVal,
       class_rank: classRankVal,
       not_taken:  false
-    });
+    };
+    if (subId === 'OTHER') {
+      const rnEl = panel.querySelector('#rn_' + displayKey + '_OTHER');
+      entry.raw_subject_name = rnEl ? rnEl.value : '';
+      const gnEl = panel.querySelector('#gn_' + displayKey + '_OTHER');
+      entry.genre_name = gnEl ? gnEl.value : '';
+    }
+    scores.push(entry);
   });
 
   if (validationError) {

@@ -141,29 +141,18 @@ function getInitialData(lineUserId) {
       return ranked.length > 0 ? ranked[0].p : null;
     }
 
-    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master / school_subject_aliases）
+    // 7. 教科情報（子 SS の pattern_subjects + 親 SS の subjects_master / genres_master）
     const allPatternSubjects = getRowsData(ss.getSheetByName('pattern_subjects'));
     const allSubjects        = getRowsData(parentSS.getSheetByName('subjects_master'));
     const allGenres          = getRowsData(parentSS.getSheetByName('genres_master'));
 
-    // 学校別表示名エイリアス: { "school_name||subject_id" → display_name }
-    const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
-    const aliasMap   = {};
-    if (aliasSheet) {
-      getRowsData(aliasSheet).forEach(a => {
-        const key = String(a.school_name || '').trim() + '||' + String(a.subject_id || '').trim();
-        if (a.display_name) aliasMap[key] = String(a.display_name).trim();
-      });
-    }
-
     const subjectMap = allSubjects.reduce((map, s) => {
       const gen = allGenres.find(g => g.genre_id === s.genre_id);
-      const aliasKey = String(student.school_name || '').trim() + '||' + String(s.subject_id || '').trim();
       map[s.subject_id] = {
         ...s,
         genre_id:     gen ? gen.genre_id   : null,
         genre_name:   gen ? gen.genre_name : 'その他',
-        display_name: aliasMap[aliasKey] || s.subject_name,
+        display_name: s.subject_name,
       };
       return map;
     }, {});
@@ -187,11 +176,48 @@ function getInitialData(lineUserId) {
       const year  = String(_d.getMonth() >= 3 ? _d.getFullYear() : _d.getFullYear() - 1);
       const period = _findPeriod(ttId, year);
 
-      const subjects = patternSubjectIds.map(sid => {
+      // パターン教科
+      const patternSubjects = patternSubjectIds.map(sid => {
         const sub = subjectMap[sid];
         if (!sub) return null;
         return { ...sub, excluded: false };
       }).filter(Boolean);
+
+      // スコア由来の追加教科（パターン外・生徒が自分で追加したもの）
+      const scoreSubjectIds = allScores
+        .filter(s => String(s.student_id  || '').trim() === String(student.student_id).trim()
+                  && String(s.term_test_id || '').trim() === ttId
+                  && String(s.subject_id  || '').trim() !== 'OTHER')
+        .map(s => String(s.subject_id).trim())
+        .filter(Boolean);
+      const uniqueScoreSids = [...new Set(scoreSubjectIds)];
+      const extraSubjects = uniqueScoreSids
+        .filter(sid => !patternSubjectIds.includes(sid))
+        .map(sid => {
+          const sub = subjectMap[sid];
+          return sub ? { ...sub, excluded: false, extra: true } : null;
+        })
+        .filter(Boolean);
+
+      // OTHERスコア由来の仮教科（raw_subject_name を表示名として使用）
+      const otherScores = allScores.filter(s =>
+        String(s.student_id  || '').trim() === String(student.student_id).trim() &&
+        String(s.term_test_id || '').trim() === ttId &&
+        String(s.subject_id  || '').trim() === 'OTHER' &&
+        String(s.raw_subject_name || '').trim()
+      );
+      const otherSubjects = otherScores.map(os => ({
+        subject_id:       'OTHER',
+        raw_subject_name: String(os.raw_subject_name).trim(),
+        subject_name:     String(os.raw_subject_name).trim(),
+        display_name:     String(os.raw_subject_name).trim(),
+        genre_id:         null,
+        genre_name:       String(os.genre_name || '').trim() || 'その他',
+        excluded:         false,
+        extra:            true
+      }));
+
+      const subjects = [...patternSubjects, ...extraSubjects, ...otherSubjects];
 
       const scores = allScores
         .filter(s => String(s.student_id  || '').trim() === String(student.student_id).trim()
@@ -244,12 +270,15 @@ function getInitialData(lineUserId) {
       }
     }
 
+    const availableSubjects = Object.values(subjectMap);
+
     return stringifyDates({
       student,
       lineUserId,
       needsCourse,
       needsSubCourse: needsSub,
       availableCourses,
+      availableSubjects,
       currentExam,
       subjects: currentExam ? currentExam.subjects : [],
       scores:   currentExam ? currentExam.scores   : [],

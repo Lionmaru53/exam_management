@@ -153,13 +153,16 @@ LIFF（生徒アプリ）へのアクセスログ。`_writeLiffLog()`（`getData
 
 | 列 | 列名 | 説明 |
 |----|------|------|
-| 1 | `subject_id` | 教科 ID |
+| 1 | `subject_id` | 教科 ID。通常は手動設定（例: `SUB101`）。仮教科の場合は `SUB{学年数字}{連番}` で自動生成（例: 高3の16番目→`SUB316`） |
 | 2 | `subject_name` | 教科名 |
 | 3 | `genre_id` | ジャンル ID（`genres_master` 参照） |
 | 4 | `grade` | 対象学年（例: `高1`, `高2`, `高3`） |
 | 5 | `default` | `TRUE` の教科のみ新パターン自動生成時の初期教科として `pattern_subjects` に登録される |
+| 6 | `is_temp` | 仮教科フラグ（`'1'` = 生徒が「その他」で入力した未解決教科。管理者が「新規登録」または「既存に統合」するまで保持） |
 
 **主キー**: `subject_id`
+
+**仮教科の命名ルール**: `SUB{学年数字}{通し番号}`。学年数字は `高3` → `3`。通し番号は `subjects_master` の全 `SUB{g}*` エントリの最大番号に +1。通し番号はパディングなし（`SUB316` = 高3の16番目）。
 
 ---
 
@@ -292,6 +295,8 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 | 10 | `term_test_id` | 試験区分 ID（`term_tests_master` 参照・親 SS） |
 | 11 | `grade` | 保存時点の学年（UPDATE 時は変更しない） |
 | 12 | `year`  | 学年暦年度（例: 2025 = 2025年4月〜2026年3月）。UPDATE 時は変更しない。LIFF の `examTab.year` から取得 |
+| 13 | `raw_subject_name` | **レガシー列**。旧方式（`subject_id='OTHER'`）で保存された場合の教科名入力値。新方式では仮教科を `subjects_master` に登録するため不使用。既存レコードの値は移行処理で空に変換される |
+| 14 | `genre_name` | ジャンル名（保存時点の値をコピー）。参照用キャッシュ |
 
 **主キー**: `score_id`  
 **upsert キー**: `(student_id, subject_id, term_test_id)`
@@ -355,7 +360,8 @@ scores_data
 | `【設定】学校・科`（子SS） | `school_course_master`（縦テーブル）に移行済み |
 | `students_branch`（子SS） | 用途が `students_master` と重複するため廃止 |
 | `students_master.line_user_id`（子SS） | LINE ID 解決は親 SS の `student_index` に一元化。コードから参照なし |
+| `scores_data.subject_id = 'OTHER'`（旧方式） | 「その他」教科を `OTHER` + `raw_subject_name` で表現する旧方式を廃止。新方式は `subjects_master` に `is_temp='1'` で仮登録し、固有の `SUB{学年}{連番}` ID を使用 |
 
 ---
 
-*更新: 2026-05-24*
+*更新: 2026-05-27*

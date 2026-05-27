@@ -1,4 +1,95 @@
 /**
+ * subjects_master を参照して次の仮 subject_id を採番する。
+ * 命名規則: SUB{学年数字}{通し番号}（例: SUB116 = 高1の16番目）
+ * 既存の SUB{g}NN を含む全 subject_id を参照して最大値+1 を返す。
+ */
+function _generateTempSubjectId(parentSS, grade) {
+  const gradeDigit = String(grade || '').replace(/[^0-9]/g, '').charAt(0) || '0';
+  const prefix     = 'SUB' + gradeDigit;
+  const re         = new RegExp('^' + prefix + '(\\d+)$');
+
+  const subSheet = parentSS.getSheetByName('subjects_master');
+  if (!subSheet) return prefix + '1';
+  const data = subSheet.getDataRange().getValues();
+  if (data.length < 2) return prefix + '1';
+  const sidCol = data[0].map(h => String(h).trim()).indexOf('subject_id');
+  if (sidCol < 0) return prefix + '1';
+
+  let maxNum = 0;
+  for (let i = 1; i < data.length; i++) {
+    const m = String(data[i][sidCol] || '').match(re);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+  return prefix + String(maxNum + 1);
+}
+
+/**
+ * 「その他」で入力された教科を subjects_master に仮登録し、割り当てた subject_id を返す。
+ * is_temp='1' かつ同名のエントリが既にある場合はそれを返す（重複防止）。
+ * is_temp 列に '1' を書き込み、未解決として管理画面に表示する。
+ */
+function _getOrCreateTempSubject(parentSS, rawName, genreName, grade) {
+  const subSheet = parentSS.getSheetByName('subjects_master');
+  if (!subSheet) throw new Error('subjects_master が見つかりません');
+
+  const data    = subSheet.getDataRange().getValues();
+  const headers = data[0].map(h => String(h).trim());
+  const sidCol  = headers.indexOf('subject_id');
+  const nameCol = headers.indexOf('subject_name');
+  if (sidCol < 0 || nameCol < 0) throw new Error('subjects_master の列定義が不正です');
+
+  const name       = String(rawName || '').trim();
+  const isTmpCheck = headers.indexOf('is_temp');
+
+  // is_temp='1' かつ同名のエントリがあれば返す（重複防止）
+  for (let i = 1; i < data.length; i++) {
+    const sid    = String(data[i][sidCol]  || '').trim();
+    const sname  = String(data[i][nameCol] || '').trim();
+    const isTmp  = isTmpCheck >= 0 ? String(data[i][isTmpCheck] || '').trim() : '';
+    if (isTmp === '1' && sname === name) return sid;
+  }
+
+  // genre_id を genres_master から解決
+  let genreId = '';
+  const genreSheet = parentSS.getSheetByName('genres_master');
+  if (genreSheet) {
+    const gd = genreSheet.getDataRange().getValues();
+    const gh = gd[0].map(h => String(h).trim());
+    const giCol = gh.indexOf('genre_id');
+    const gnCol = gh.indexOf('genre_name');
+    for (let i = 1; i < gd.length; i++) {
+      if (String(gd[i][gnCol] || '').trim() === String(genreName || '').trim()) {
+        genreId = String(gd[i][giCol] || '').trim();
+        break;
+      }
+    }
+  }
+
+  // is_temp 列がなければ自動追加
+  let isTempCol = headers.indexOf('is_temp');
+  if (isTempCol < 0) {
+    isTempCol = headers.length;
+    subSheet.getRange(1, isTempCol + 1).setValue('is_temp');
+    headers.push('is_temp');
+  }
+
+  const newId  = _generateTempSubjectId(parentSS, grade);
+  const newRow = headers.map(h => {
+    if (h === 'subject_id')   return newId;
+    if (h === 'subject_name') return name;
+    if (h === 'genre_id')     return genreId;
+    if (h === 'grade')        return String(grade || '').trim();
+    if (h === 'is_temp')      return '1';
+    return '';
+  });
+  subSheet.appendRow(newRow);
+  return newId;
+}
+
+/**
  * 生徒の得点を子 SS の scores_data に保存（upsert）
  *
  * ルーティング: 親 SS の student_index で student_id → cram_id を引き、
@@ -61,7 +152,49 @@ function saveAllScores(payload) {
     const yearCol  = headers.indexOf('year');
     if (sidCol < 0 || subjCol < 0) throw new Error('scores_data の列定義が不正です');
 
+    // raw_subject_name 列が存在しない場合は自動追加
+    let rawSubjCol = headers.indexOf('raw_subject_name');
+    if (rawSubjCol < 0) {
+      rawSubjCol = headers.length;
+      sheet.getRange(1, rawSubjCol + 1).setValue('raw_subject_name');
+      headers.push('raw_subject_name');
+    }
+
+    // genre_name 列が存在しない場合は自動追加
+    let genreNameCol = headers.indexOf('genre_name');
+    if (genreNameCol < 0) {
+      genreNameCol = headers.length;
+      sheet.getRange(1, genreNameCol + 1).setValue('genre_name');
+      headers.push('genre_name');
+    }
+
     payload.scores.forEach(newScore => {
+      // ①「その他」エントリを OTHER_NNN に変換し subjects_master に仮登録
+      if (newScore.subject_id === 'OTHER') {
+        const rawName   = String(newScore.raw_subject_name || '').trim();
+        if (!rawName) return;
+        const genreName = String(newScore.genre_name || 'その他').trim();
+        const tempId    = _getOrCreateTempSubject(parentSS, rawName, genreName, gradeAtSave);
+
+        // 旧 OTHER 行（raw_subject_name 付き）があれば subject_id を tempId に書き換えてマイグレーション
+        if (rawSubjCol >= 0 && ttCol >= 0) {
+          for (let i = 1; i < data.length; i++) {
+            if (String(data[i][sidCol]    || '').trim() === String(payload.student_id).trim() &&
+                String(data[i][subjCol]   || '').trim() === 'OTHER' &&
+                String(data[i][ttCol]     || '').trim() === termTestId &&
+                String(data[i][rawSubjCol]|| '').trim() === rawName) {
+              sheet.getRange(i + 1, subjCol    + 1).setValue(tempId);
+              sheet.getRange(i + 1, rawSubjCol + 1).setValue('');
+              data[i][subjCol]    = tempId;
+              data[i][rawSubjCol] = '';
+              break;
+            }
+          }
+        }
+
+        newScore = { ...newScore, subject_id: tempId };
+      }
+
       let rowIndex = -1;
       if (ttCol >= 0) {
         for (let i = 1; i < data.length; i++) {
@@ -80,6 +213,17 @@ function saveAllScores(payload) {
       const existingYear  = rowIndex > 0 && yearCol  >= 0
         ? (String(data[rowIndex - 1][yearCol]  || '').trim() || yearAtSave)  : yearAtSave;
 
+      const existingRawSubj = (rowIndex > 0 && data[rowIndex - 1].length > rawSubjCol)
+        ? String(data[rowIndex - 1][rawSubjCol] || '').trim()
+        : '';
+      const rawSubjName = newScore.subject_id === 'OTHER'
+        ? (String(newScore.raw_subject_name || '').trim() || existingRawSubj)
+        : '';
+
+      const genreName = newScore.subject_id === 'OTHER'
+        ? String(newScore.genre_name || '').trim()
+        : '';
+
       const rowValues = [
         rowIndex > 0 ? data[rowIndex - 1][0] : 'SC' + Utilities.getUuid(),
         '',                 // exam_id（レガシー列、空で保持）
@@ -93,6 +237,8 @@ function saveAllScores(payload) {
         termTestId,         // term_test_id
         existingGrade,      // grade（INSERT 時のみ記録、UPDATE は保持）
         existingYear,       // year（INSERT 時のみ記録、UPDATE は保持）
+        rawSubjName,        // raw_subject_name（OTHER のみ）
+        genreName,          // genre_name（OTHER のみ）
       ];
 
       if (rowIndex > 0) {
@@ -255,6 +401,124 @@ function submitBugReport(payload) {
     ]);
 
     return JSON.stringify({ success: true });
+  } catch (e) {
+    return JSON.stringify({ error: e.toString() });
+  }
+}
+
+/**
+ * 仮 subject_id または旧 raw_subject_name を実 subject_id に紐づける。
+ *   identifier が subjects_master に is_temp='1' で存在 → scores_data を一括更新 + 仮エントリを削除
+ *   それ以外 → 旧方式（subject_id='OTHER' かつ raw_subject_name=identifier の行を更新）
+ */
+function resolveOtherSubject(cramId, identifier, realSubjectId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const id = String(identifier || '').trim();
+
+    // subjects_master で is_temp='1' か確認
+    let isTempId = false;
+    const subSheetCheck = parentSS.getSheetByName('subjects_master');
+    if (subSheetCheck) {
+      const chkData    = subSheetCheck.getDataRange().getValues();
+      const chkHeaders = chkData[0].map(h => String(h).trim());
+      const chkSidCol  = chkHeaders.indexOf('subject_id');
+      const chkTmpCol  = chkHeaders.indexOf('is_temp');
+      if (chkSidCol >= 0 && chkTmpCol >= 0) {
+        for (let i = 1; i < chkData.length; i++) {
+          if (String(chkData[i][chkSidCol] || '').trim() === id &&
+              String(chkData[i][chkTmpCol]  || '').trim() === '1') {
+            isTempId = true;
+            break;
+          }
+        }
+      }
+    }
+    const ss    = getChildSS(cramId);
+    const sheet = ss.getSheetByName('scores_data');
+    if (!sheet) throw new Error('scores_data シートが見つかりません');
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const subjCol    = headers.indexOf('subject_id');
+    const rawSubjCol = headers.indexOf('raw_subject_name');
+    if (subjCol < 0) throw new Error('subject_id 列が見つかりません');
+
+    let updated = 0;
+
+    if (isTempId) {
+      // 新方式：tempId → realSubjectId に一括更新
+      const tempId = id;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][subjCol] || '').trim() === tempId) {
+          sheet.getRange(i + 1, subjCol + 1).setValue(realSubjectId);
+          updated++;
+        }
+      }
+      // subjects_master から仮エントリを削除
+      const subSheet = parentSS.getSheetByName('subjects_master');
+      if (subSheet) {
+        const subData    = subSheet.getDataRange().getValues();
+        const subHeaders = subData[0].map(h => String(h).trim());
+        const subSidCol  = subHeaders.indexOf('subject_id');
+        for (let i = subData.length - 1; i >= 1; i--) {
+          if (String(subData[i][subSidCol] || '').trim() === tempId) {
+            subSheet.deleteRow(i + 1);
+            break;
+          }
+        }
+      }
+    } else {
+      // 旧方式（後方互換）：subject_id='OTHER' かつ raw_subject_name=identifier の行を更新
+      if (rawSubjCol < 0) throw new Error('raw_subject_name 列が見つかりません');
+      const rawName = id;
+      for (let i = 1; i < data.length; i++) {
+        if (String(data[i][subjCol]    || '').trim() === 'OTHER' &&
+            String(data[i][rawSubjCol] || '').trim() === rawName) {
+          sheet.getRange(i + 1, subjCol    + 1).setValue(realSubjectId);
+          sheet.getRange(i + 1, rawSubjCol + 1).setValue('');
+          updated++;
+        }
+      }
+    }
+
+    return JSON.stringify({ success: true, updated });
+  } catch (e) {
+    return JSON.stringify({ error: e.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 仮登録教科を正式な科目として承認する（is_temp フラグを解除）。
+ * 管理者が「このまま新しい科目として登録」を選んだ際に呼ばれる。
+ */
+function approveNewSubject(tempSubjectId) {
+  try {
+    const id = String(tempSubjectId || '').trim();
+    if (!id) return JSON.stringify({ success: false, error: 'ID が指定されていません' });
+
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const subSheet = parentSS.getSheetByName('subjects_master');
+    if (!subSheet) return JSON.stringify({ success: false, error: 'subjects_master が見つかりません' });
+
+    const data      = subSheet.getDataRange().getValues();
+    const headers   = data[0].map(h => String(h).trim());
+    const sidCol    = headers.indexOf('subject_id');
+    const isTempCol = headers.indexOf('is_temp');
+    if (sidCol < 0) return JSON.stringify({ success: false, error: 'subject_id 列が見つかりません' });
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][sidCol] || '').trim() === id) {
+        if (isTempCol >= 0) subSheet.getRange(i + 1, isTempCol + 1).setValue('');
+        return JSON.stringify({ success: true });
+      }
+    }
+    return JSON.stringify({ success: false, error: '指定の ID が見つかりません' });
   } catch (e) {
     return JSON.stringify({ error: e.toString() });
   }

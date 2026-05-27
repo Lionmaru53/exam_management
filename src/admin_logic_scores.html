@@ -72,9 +72,11 @@ window.renderScoreManager = function () {
   toolbarHtml += '</div>';
 
   content.innerHTML = '<h3>④得点一覧</h3>' + toolbarHtml
-    + '<div id="sc-table-area"><p class="sc-empty-msg">読み込み中...</p></div>';
+    + '<div id="sc-table-area"><p class="sc-empty-msg">読み込み中...</p></div>'
+    + '<div id="sc-unresolved-area"></div>';
 
   _scFetchAndRender();
+  _scLoadUnresolved();
 };
 
 function _scOnTermTestChange(termTestId) {
@@ -204,25 +206,51 @@ function _scRerender() {
   var subjectById = {};
   subjects.forEach(function (s) { subjectById[s.subject_id] = s; });
 
+  // ── ジャンル順マップ（subjects_master の順序を使用）────────────────────
+  var genreOrderMap = {};
+  var _gOrdIdx = 0;
+  subjects.forEach(function(s) {
+    var gn = String(s.genre_name || 'その他').trim();
+    if (!(gn in genreOrderMap)) genreOrderMap[gn] = _gOrdIdx++;
+  });
+
+  // ── 未解決アイテムから補完教科情報を構築（ページロード後に作成された OTHER_NNN 対応）──
+  var tempSubjSupplement = {};
+  (_scAllUnresolvedItems || []).forEach(function(item) {
+    if (item.temp_subject_id) {
+      tempSubjSupplement[item.temp_subject_id] = {
+        subject_id:   item.temp_subject_id,
+        subject_name: item.display_name,
+        genre_name:   item.genre_name || 'その他'
+      };
+    }
+  });
+
   var sgSubjectList = {};
   Object.keys(sgSubjectMap).forEach(function (key) {
     var sn     = key.split('||')[0];
     var subMap = sgSubjectMap[key];
     var allIds = Object.keys(subMap);
     sgSubjectList[key] = allIds.map(function (sid) {
-      var s = subjectById[sid];
+      var s    = subjectById[sid];
+      var supp = !s ? (tempSubjSupplement[sid] || null) : null;
       return {
         subject_id:  sid,
-        displayName: s ? window._resolveDisplayName(sn, sid) : sid,
-        genre_name:  s ? (s.genre_name || 'その他') : 'その他',
+        displayName: s ? window._resolveDisplayName(sn, sid) : (supp ? supp.subject_name : sid),
+        genre_name:  s ? (s.genre_name || 'その他') : (supp ? (supp.genre_name || 'その他') : 'その他'),
         orphaned:    subMap[sid] === 'orphaned'
       };
     }).sort(function (a, b) {
+      // ① ジャンル順（subjects_master の出現順）
+      var ag = genreOrderMap[a.genre_name] !== undefined ? genreOrderMap[a.genre_name] : 9998;
+      var bg = genreOrderMap[b.genre_name] !== undefined ? genreOrderMap[b.genre_name] : 9998;
+      if (ag !== bg) return ag - bg;
+      // ② 同ジャンル内：パターン教科が先、孤立教科が後
+      if (a.orphaned !== b.orphaned) return a.orphaned ? 1 : -1;
+      // ③ 同種別：subjects_master の順序
       var ai = subjects.findIndex(function (s) { return s.subject_id === a.subject_id; });
       var bi = subjects.findIndex(function (s) { return s.subject_id === b.subject_id; });
-      var ao = ai < 0 ? 9999 : ai;
-      var bo = bi < 0 ? 9999 : bi;
-      return ao - bo;
+      return (ai < 0 ? 9999 : ai) - (bi < 0 ? 9999 : bi);
     });
   });
 
@@ -553,6 +581,198 @@ function _scEscAttr(str) {
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'");
 }
+
+// =====================================================================
+// 未解決教科（その他）セクション
+// =====================================================================
+var _scUnresolvedGrade    = '';   // 選択中の学年フィルター
+var _scAllUnresolvedItems = [];   // ロード済み全 items（フィルター再利用）
+
+function _scLoadUnresolved() {
+  var area = document.getElementById('sc-unresolved-area');
+  if (!area || !window.selectedCramId) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success || !res.items || res.items.length === 0) {
+        area.innerHTML = '';
+        _scAllUnresolvedItems = [];
+        if (_scScoreData) _scRerender();
+        return;
+      }
+      _scAllUnresolvedItems = res.items;
+      _scRenderUnresolvedList(res.items);
+      if (_scScoreData) _scRerender();
+    })
+    .withFailureHandler(function () {
+      area.innerHTML = '';
+      _scAllUnresolvedItems = [];
+    })
+    .getUnresolvedOtherSubjects(window.selectedCramId);
+}
+
+function _scRenderUnresolvedList(items) {
+  var area = document.getElementById('sc-unresolved-area');
+  if (!area) return;
+
+  // 学年一覧を items から収集
+  var gradeSet = {};
+  items.forEach(function(item) {
+    (item.grades || []).forEach(function(g) { if (g) gradeSet[g] = true; });
+  });
+  var allGrades = Object.keys(gradeSet).sort();
+
+  var grade = _scUnresolvedGrade;
+  var filtered = grade
+    ? items.filter(function(item) { return (item.grades || []).indexOf(grade) !== -1; })
+    : items;
+
+  if (filtered.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  var allSubjects = (window.masterData && window.masterData.subjects) || [];
+
+  var gradeSelHtml = '<select id="sc-unresolved-grade-sel" class="sc-sel" onchange="_scOnUnresolvedGradeChange(this.value)">'
+    + '<option value="">全学年</option>';
+  allGrades.forEach(function(g) {
+    gradeSelHtml += '<option value="' + _scEsc(g) + '"' + (grade === g ? ' selected' : '') + '>' + _scEsc(g) + '</option>';
+  });
+  gradeSelHtml += '</select>';
+
+  var html = '<div class="sc-unresolved-section">';
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">';
+  html += '<h4 class="sc-unresolved-title" style="margin:0;">未解決教科（その他）</h4>';
+  html += '<label class="sc-label">学年：</label>' + gradeSelHtml;
+  html += '</div>';
+  html += '<p class="sc-unresolved-desc">生徒が「その他」で入力した教科名です。下記の2つの方法で解決してください。</p>';
+  html += '<table class="sc-unresolved-table">';
+  html += '<thead><tr>'
+    + '<th>入力名</th>'
+    + '<th>件数</th>'
+    + '<th>生徒</th>'
+    + '<th class="sc-action-col sc-action-col-approve">① このまま新しい科目として登録</th>'
+    + '<th class="sc-action-col sc-action-col-merge">② 既存の科目に統合（スコア引き継ぎ）</th>'
+    + '</tr></thead>';
+  html += '<tbody>';
+
+  filtered.forEach(function(item, idx) {
+    var selectId = 'sc-unresolved-sel-' + idx;
+
+    // 生徒情報を「名前（学校・学年・コース）」形式でフォーマット
+    var studentTexts = (item.students || []).map(function(s) {
+      var detail = [s.school_name, s.grade, s.school_course].filter(Boolean).join('・');
+      return s.name + (detail ? '（' + detail + '）' : '');
+    });
+
+    // 教科ドロップダウン：仮教科（is_temp='1'）は選択肢から除外、grade と genre で絞り込む
+    var _tempSubjectIds = new Set((_scAllUnresolvedItems || []).map(function(i) { return i.temp_subject_id; }).filter(Boolean));
+    var itemGrades    = item.grades    || [];
+    var itemGenreName = item.genre_name || '';
+    var rowSubjects = allSubjects.filter(function(s) {
+      if (_tempSubjectIds.has(String(s.subject_id || '').trim())) return false;
+      var sg = String(s.grade      || '').trim();
+      var gn = String(s.genre_name || '').trim();
+      var gradeOk = itemGrades.length === 0 || !sg || itemGrades.some(function(g) { return g === sg; });
+      var genreOk = !itemGenreName || !gn || gn === itemGenreName;
+      return gradeOk && genreOk;
+    });
+
+    var resolveIdentifier = item.temp_subject_id || item.raw_subject_name || '';
+
+    html += '<tr>';
+
+    // 入力名・件数・生徒
+    html += '<td><strong>' + _scEsc(item.display_name || item.raw_subject_name || '') + '</strong>';
+    if (itemGenreName) html += '<br><small style="color:#888;">' + _scEsc(itemGenreName) + '</small>';
+    html += '</td>';
+    html += '<td style="text-align:center;">' + _scEsc(String(item.count)) + '</td>';
+    html += '<td style="font-size:0.85em;">' + studentTexts.map(_scEsc).join('<br>') + '</td>';
+
+    // ① 新規登録
+    var approveHtml = '';
+    if (item.temp_subject_id) {
+      approveHtml = '<div class="sc-action-box sc-action-box-approve">'
+        + '<p class="sc-action-desc">入力されたこの名称を<br>新しい科目として登録します</p>'
+        + '<button class="sc-btn-approve" onclick="_scApproveNewSubject(\'' + _scEscAttr(item.temp_subject_id) + '\')">このまま登録</button>'
+        + '</div>';
+    } else {
+      approveHtml = '<div class="sc-action-box sc-action-box-disabled"><p class="sc-action-desc">旧形式データのため<br>この操作は使用できません</p></div>';
+    }
+    html += '<td>' + approveHtml + '</td>';
+
+    // ② 既存科目に統合
+    var mergeHtml = '<div class="sc-action-box sc-action-box-merge">'
+      + '<p class="sc-action-desc">既存の科目を選択すると<br>スコアが引き継がれます</p>'
+      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
+      + '<select id="' + selectId + '" class="sc-sel">'
+      + '<option value="">-- 科目を選ぶ --</option>';
+    rowSubjects.forEach(function(s) {
+      mergeHtml += '<option value="' + _scEsc(s.subject_id) + '">' + _scEsc(s.subject_name) + '</option>';
+    });
+    mergeHtml += '</select>'
+      + '<button class="sc-btn-save" onclick="_scResolveOther(\'' + _scEscAttr(resolveIdentifier) + '\', \'' + _scEscAttr(selectId) + '\')">統合する</button>'
+      + '</div></div>';
+    html += '<td>' + mergeHtml + '</td>';
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
+}
+
+function _scOnUnresolvedGradeChange(grade) {
+  _scUnresolvedGrade = grade;
+  _scRenderUnresolvedList(_scAllUnresolvedItems);
+}
+
+function _scApproveNewSubject(tempSubjectId) {
+  setLoading(true, '登録中...');
+  google.script.run
+    .withSuccessHandler(function(resStr) {
+      setLoading(false);
+      var res = JSON.parse(resStr);
+      if (res.success) {
+        showMessage('新しい科目として登録しました。', 'success');
+        _scLoadUnresolved();
+        _scFetchAndRender();
+      } else {
+        showMessage(res.error || '失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    })
+    .approveNewSubject(tempSubjectId);
+}
+
+function _scResolveOther(rawName, selectId) {
+  var sel = document.getElementById(selectId);
+  if (!sel || !sel.value) { showMessage('紐づける教科を選んでください。', 'error'); return; }
+
+  var realSubjectId = sel.value;
+  setLoading(true, '教科を紐づけ中...');
+  google.script.run
+    .withSuccessHandler(function (resStr) {
+      setLoading(false);
+      var res = JSON.parse(resStr);
+      if (res.success) {
+        showMessage(res.updated + ' 件を紐づけました。', 'success');
+        _scLoadUnresolved();
+        _scFetchAndRender();
+      } else {
+        showMessage(res.error || '失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    })
+    .resolveOtherSubject(window.selectedCramId, rawName, realSubjectId);
+}
 </script>
 
 <style>
@@ -730,4 +950,69 @@ function _scEscAttr(str) {
   cursor: pointer;
 }
 .sc-btn-cancel:hover { background: #f5f5f5; }
+
+/* ── 未解決教科セクション ──────────────────────────────────── */
+.sc-unresolved-section {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 2px dashed #e0c060;
+}
+.sc-unresolved-title {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #b45309;
+  margin: 0 0 6px;
+}
+.sc-unresolved-desc {
+  font-size: 0.88rem;
+  color: #666;
+  margin: 0 0 14px;
+}
+.sc-unresolved-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.sc-unresolved-table th,
+.sc-unresolved-table td {
+  border: 1px solid #e0e4ea;
+  padding: 6px 10px;
+  font-size: 0.9em;
+  vertical-align: middle;
+}
+.sc-unresolved-table th { background: #fdf6e3; font-weight: 600; }
+
+/* ── 未解決教科：操作カラム ────────────────────────────────── */
+.sc-action-col {
+  min-width: 180px;
+  font-size: 0.85em;
+}
+.sc-action-col-approve { background: #f0f7ee !important; color: #276b20 !important; }
+.sc-action-col-merge   { background: #fff6ee !important; color: #8b4a00 !important; }
+
+.sc-action-box {
+  padding: 8px;
+  border-radius: 4px;
+}
+.sc-action-box-approve { background: #f0f7ee; }
+.sc-action-box-merge   { background: #fff6ee; }
+.sc-action-box-disabled { background: #f5f5f5; color: #aaa; }
+
+.sc-action-desc {
+  font-size: 0.82em;
+  color: #555;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.sc-action-box-disabled .sc-action-desc { color: #aaa; }
+
+.sc-btn-approve {
+  padding: 6px 14px;
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.sc-btn-approve:hover { background: #1b5e20; }
 </style>

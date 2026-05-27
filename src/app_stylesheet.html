@@ -86,6 +86,124 @@
     padding: 12px;
   }
 
+  /* ---- 教科編集 ミートボールメニュー ---- */
+
+  .subj-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .subj-menu-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    color: #555;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .subj-menu-btn:hover { background: #d1d5db; }
+
+  .subj-dropdown {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    z-index: 100;
+    min-width: 130px;
+    white-space: nowrap;
+  }
+
+  .subj-dropdown-item {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    color: #333;
+    box-sizing: border-box;
+  }
+  .subj-dropdown-item:hover { background: #f0f4ff; }
+
+  /* ---- 教科編集 インラインテーブル ---- */
+
+  .subj-edit-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .subj-edit-select {
+    flex: 1;
+    min-width: 120px;
+    padding: 5px 8px;
+    border: 1px solid #b0c4de;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    background: #fff;
+  }
+
+  .subj-edit-other-input {
+    flex: 1;
+    min-width: 110px;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    font-family: inherit;
+  }
+
+  .subj-edit-remove-btn {
+    background: none;
+    border: 1px solid #e0a0a0;
+    color: #c00;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .subj-edit-remove-btn:hover { background: #fff0f0; }
+
+
+  .subj-edit-footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  }
+
+  .subj-edit-cancel-btn {
+    padding: 12px 24px;
+    background: #fff;
+    border: 1px solid #aaa;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    color: #555;
+  }
+  .subj-edit-cancel-btn:hover { background: #f0f0f0; }
+
+  .subj-edit-save-btn {
+    padding: 12px 28px;
+    background: #4a7fc1;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  .subj-edit-save-btn:hover { background: #2c5fa0; }
+
   /* ---- ヘッダー・生徒情報 ---- */
 
   .exam-header-container {

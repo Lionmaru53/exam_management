@@ -469,8 +469,7 @@ function _ptRenderCell(schoolName, genreName, patternId) {
   inGenre.forEach(function(sid) {
     var s = _ptSubjectInfoMap[String(sid).trim()];
     if (!s) return;
-    var displayName = _getAliasValue(schoolName, sid) || s.subject_name;
-    var snEsc    = _ptEscAttr(schoolName);
+    var displayName = s.subject_name;
     var pidEsc   = patternId || '';
     var col      = _ptGenreColorMap[genreName] || {};
     var chipStyle = col.chip
@@ -479,8 +478,7 @@ function _ptRenderCell(schoolName, genreName, patternId) {
     html += '<span class="pt-chip" style="' + chipStyle + '"' +
       ' draggable="true"' +
       ' ondragstart="_ptChipDragStart(event,\'' + sid + '\',\'' + pidEsc + '\')"' +
-      ' ondragend="_ptChipDragEnd()"' +
-      ' ondblclick="_ptStartAliasEdit(this,\'' + snEsc + '\',\'' + sid + '\');event.stopPropagation();">' +
+      ' ondragend="_ptChipDragEnd()">' +
       displayName +
       '<button class="pt-chip-close" onclick="_ptRemoveSubject(\'' + pidEsc + '\',\'' + sid + '\');event.stopPropagation();">×</button>' +
       '</span>';
@@ -659,31 +657,6 @@ function _ptSavePattern(patternId) {
     });
 }
 
-/* ========== インラインエイリアス編集 ========== */
-function _ptStartAliasEdit(chipEl, schoolName, subjectId) {
-  var inp = document.createElement('input');
-  inp.type = 'text';
-  inp.className = 'pt-alias-input';
-  inp.value = _getAliasValue(schoolName, subjectId) || '';
-  inp.placeholder = '表示名（空=正式名）';
-  inp.onclick = function(e) { e.stopPropagation(); };
-  inp.onkeydown = function(e) {
-    if (e.key === 'Enter')  { _ptCommitAliasEdit(inp, schoolName, subjectId); }
-    if (e.key === 'Escape') { renderPatternManager(window.masterData); }
-  };
-  inp.onblur = function() { _ptCommitAliasEdit(inp, schoolName, subjectId); };
-  chipEl.classList.add('pt-chip-editing');
-  while (chipEl.firstChild) chipEl.removeChild(chipEl.firstChild);
-  chipEl.appendChild(inp);
-  setTimeout(function() { inp.focus(); inp.select(); }, 0);
-}
-
-function _ptCommitAliasEdit(inp, schoolName, subjectId) {
-  if (inp._committed) return;
-  inp._committed = true;
-  _patSaveAlias(schoolName, subjectId, inp.value);
-  setTimeout(function() { renderPatternManager(window.masterData); }, 200);
-}
 
 /* ========== 学校名セル DnD（並び替え） ========== */
 function _ptSchoolDragStart(event, schoolName) {
@@ -741,44 +714,6 @@ function _patSaveSchoolOrder(cramId, schools) {
   try { localStorage.setItem('st_school_order_' + cramId, JSON.stringify(schools)); } catch (e) {}
 }
 
-/* ========== 表示名エイリアス ========== */
-function _getAliasValue(schoolName, subjectId) {
-  var aliases = (window.masterData && window.masterData.schoolSubjectAliases) || [];
-  var hit = aliases.find(function(a) {
-    return a.school_name === schoolName && String(a.subject_id).trim() === String(subjectId).trim();
-  });
-  return hit ? (hit.display_name || '') : '';
-}
-
-function _patSaveAlias(schoolName, subjectId, newValue) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.conflict) {
-        showMessage('別ユーザーにより変更がありました。更新します。', 'warning');
-        refreshMasterData(function() {});
-        return;
-      }
-      if (res && res.success) {
-        var aliases = window.masterData.schoolSubjectAliases || [];
-        var idx = aliases.findIndex(function(a) {
-          return a.school_name === schoolName && String(a.subject_id).trim() === String(subjectId).trim();
-        });
-        if (String(newValue || '').trim()) {
-          if (idx >= 0) aliases[idx].display_name = newValue;
-          else aliases.push({ school_name: schoolName, subject_id: subjectId, display_name: newValue, updated_at: '' });
-        } else {
-          if (idx >= 0) aliases.splice(idx, 1);
-        }
-        window.masterData.schoolSubjectAliases = aliases;
-      } else if (res && res.error) {
-        showMessage('表示名保存失敗: ' + res.error, 'error');
-      }
-    })
-    .withFailureHandler(function(err) {
-      showMessage('表示名保存エラー: ' + ((err && err.message) || ''), 'error');
-    })
-    .upsertSubjectAlias(schoolName, subjectId, newValue, '');
-}
 
 /* ========== コース追加パネル ========== */
 function _ptRenderAddCoursePanel(allSchoolNames) {

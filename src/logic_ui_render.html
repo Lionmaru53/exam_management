@@ -7,6 +7,13 @@ var _currentStudent  = null;
 var _currentExamTabs = [];
 var _bugReportOpen   = false;
 var _bugConfirmData  = null;
+var _appData         = null;
+var _currentTabId    = null;
+var _currentAvailableSubjects = [];
+
+var _editMode  = false;
+var _editTabId = null;
+var _editRows  = [];  // [{subject_id, raw_subject_name}]
 
 function hexToRgba(hex, alpha = 0.1) {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -88,6 +95,8 @@ function renderApp(data) {
   const s = data.student;
   _currentStudent  = s;
   _currentExamTabs = data.examTabs || [];
+  _appData = data;
+  _currentAvailableSubjects = data.availableSubjects || [];
   const infoItems = [s.school_name, s.school_course_name, s.grade, s.sub_course].filter(Boolean);
   const infoText  = infoItems.join('　');
 
@@ -107,8 +116,7 @@ function renderApp(data) {
   }
 
   let listHtml = `
-    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「保存する」を押してください。(分かる部分だけでOK)</p>
-    <p class="usage-hint">※受けていない科目には「未受験」にチェックを入れてください。</p>
+    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「保存する」を押してください。(分かる部分だけでOK)<br>※受けていない科目には「未受験」にチェックを入れてください。</p>
     <div class="subject-tab-wrap">
       <div class="exam-select-wrap">
         <select class="exam-select" onchange="switchExamTab(this.value)">
@@ -124,94 +132,218 @@ function renderApp(data) {
   examTabs.forEach((exam, examIndex) => {
     const tabId      = exam.term_test_id;
     const displayKey = exam.exam_id || ('p_' + exam.pattern_id);
-    const groupedSubjects = (exam.subjects || []).reduce((acc, sub) => {
-      const genre = sub.genre_name || 'その他';
-      if (!acc[genre]) acc[genre] = [];
-      acc[genre].push(sub);
-      return acc;
-    }, {});
+    const isEditMode = _editMode && _editTabId === tabId;
 
     listHtml += `
       <div class="tab-panel" data-tab-id="${tabId}" style="display:${examIndex === 0 ? 'block' : 'none'};">
         <div class="subject-table-container">
           <table class="subject-table">
             <thead>
-              <tr><th colspan="6" class="test-name-header">${exam.test_name}</th></tr>
               <tr>
-                <th>教科</th><th>科目</th><th>点数</th><th>学年順位</th><th>クラス順位</th><th>未受験</th>
+                <th colspan="6" class="test-name-header">${exam.test_name}</th>
+              </tr>
+              <tr>
+                <th>教科</th>
+                <th>
+                  <div style="display:flex; align-items:center; gap:4px; white-space:nowrap;">
+                    科目
+                    ${isEditMode ? '' : `
+                    <div class="subj-menu-wrap">
+                      <button class="subj-menu-btn" onclick="toggleSubjectMenu(this)">⋮</button>
+                      <div class="subj-dropdown" style="display:none;">
+                        <button class="subj-dropdown-item" onclick="enterSubjectEditMode('${tabId}')">教科を編集</button>
+                      </div>
+                    </div>`}
+                  </div>
+                </th>
+                <th>点数</th><th>学年順位</th><th>クラス順位</th><th>${isEditMode ? '削除' : '未受験'}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody class="${isEditMode ? 'subj-edit-tbody' : ''}">
     `;
 
-    if (Object.keys(groupedSubjects).length === 0) {
-      listHtml += '<tr><td colspan="6" style="text-align:center; color:#aaa; padding:20px;">'
-        + (exam.hasExam ? '教科が未登録です' : '教科パターンが未登録です')
-        + '</td></tr>';
-    } else {
-      Object.keys(groupedSubjects).forEach(function(genreName) {
-        const rows = groupedSubjects[genreName];
-        const rowBackground = getGenreColor(genreName, 0.12);
-        rows.forEach(function(sub, index) {
-          const sc         = (exam.scores || []).find(function(x) { return x.subject_id === sub.subject_id; }) || {};
-          const isExcluded = !!sub.excluded;
-          const isNotTaken = !isExcluded && sc.not_taken === true;
-          const scoreVal   = (!isExcluded && !isNotTaken && sc.score      != null) ? sc.score      : '';
-          const grVal      = (!isExcluded && !isNotTaken && sc.grade_rank != null) ? sc.grade_rank : '';
-          const crVal      = (!isExcluded && !isNotTaken && sc.class_rank != null) ? sc.class_rank : '';
-          const sid        = sub.subject_id;
-          const dk         = displayKey;
-          const rowStyle   = 'background-color:' + rowBackground + ';' + (isExcluded ? ' opacity:0.55;' : '');
-          const disabledNT = isNotTaken ? ' disabled style="opacity:0.4;"' : '';
+    if (isEditMode) {
+      // ==== 編集モード ====
+      const filteredSubs = _getFilteredSubjectsForEdit(tabId);
 
-          listHtml += '<tr style="' + rowStyle + '">';
-          if (index === 0) {
-            listHtml += '<td class="genre-cell" rowspan="' + rows.length + '" style="background-color:' + rowBackground + ';">' + genreName + '</td>';
-          }
-          listHtml += '<td>' + (sub.display_name || sub.subject_name) + '</td>';
-
-          if (isExcluded) {
-            listHtml += '<td><input type="text" class="score-input" disabled placeholder="未実施" /></td>';
-            listHtml += '<td><input type="text" class="rank-input" disabled /></td>';
-            listHtml += '<td><input type="text" class="rank-input" disabled /></td>';
-            listHtml += '<td><span class="badge-excluded">未実施</span></td>';
-          } else {
-            listHtml += '<td><input type="text" inputmode="numeric" class="score-input"'
-              + ' id="s_' + dk + '_' + sid + '" value="' + scoreVal + '"'
-              + ' placeholder="点数" maxlength="3"'
-              + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
-              + disabledNT + ' /></td>';
-            listHtml += '<td><input type="text" inputmode="numeric" class="rank-input"'
-              + ' id="gr_' + dk + '_' + sid + '" value="' + grVal + '"'
-              + ' placeholder="順位" maxlength="4"'
-              + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
-              + disabledNT + ' /></td>';
-            listHtml += '<td><input type="text" inputmode="numeric" class="rank-input"'
-              + ' id="cr_' + dk + '_' + sid + '" value="' + crVal + '"'
-              + ' placeholder="順位" maxlength="4"'
-              + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
-              + disabledNT + ' /></td>';
-            listHtml += '<td><input type="checkbox" id="nt_' + dk + '_' + sid + '"'
-              + (isNotTaken ? ' checked' : '')
-              + ' onchange="toggleNotTaken(\'' + dk + '\', \'' + sid + '\', this.checked)"'
-              + ' /></td>';
-          }
-          listHtml += '</tr>';
-        });
+      // ジャンル別 optgroup を事前構築
+      const genreGroupsForSelect = {};
+      filteredSubs.forEach(function(sub) {
+        const g = sub.genre_name || 'その他';
+        if (!genreGroupsForSelect[g]) genreGroupsForSelect[g] = [];
+        genreGroupsForSelect[g].push(sub);
       });
-    }
+
+      function buildSelectHtml(selectedSid, rowIndex, rowGenre) {
+        var isEmptySelected = !selectedSid;
+        var sel = '<select class="subj-edit-select" onchange="onSubjectRowChange(' + rowIndex + ', this.value)">';
+        sel += '<option value="" disabled' + (isEmptySelected ? ' selected' : '') + '>-- 選択してください --</option>';
+        if (rowGenre) {
+          // ジャンルで絞り込み：optgroup なしでフラットに表示
+          var genreSubs = filteredSubs.filter(function(sub) { return (sub.genre_name || 'その他') === rowGenre; });
+          genreSubs.forEach(function(sub) {
+            var isSelected = sub.subject_id === selectedSid ? ' selected' : '';
+            sel += '<option value="' + sub.subject_id + '"' + isSelected + '>' + (sub.subject_name || sub.subject_id) + '</option>';
+          });
+        } else {
+          // 追加行：全ジャンルをoptgroupで表示
+          Object.keys(genreGroupsForSelect).forEach(function(g) {
+            sel += '<optgroup label="' + g + '">';
+            genreGroupsForSelect[g].forEach(function(sub) {
+              var isSelected = sub.subject_id === selectedSid ? ' selected' : '';
+              sel += '<option value="' + sub.subject_id + '"' + isSelected + '>' + (sub.subject_name || sub.subject_id) + '</option>';
+            });
+            sel += '</optgroup>';
+          });
+        }
+        var otherSel = selectedSid === 'OTHER' ? ' selected' : '';
+        sel += '<option value="OTHER"' + otherSel + '>その他（新しい名称）</option>';
+        sel += '</select>';
+        return sel;
+      }
+
+      _editRows.forEach(function(row, i) {
+        const isOther     = row.subject_id === 'OTHER';
+        const isAdded     = !!row.isAdded;
+        const isEditable  = row.isEditable !== false;
+        const rowGenre    = row.genre_name || '';
+        const sc = (exam.scores || []).find(function(x) { return x.subject_id === row.subject_id; }) || {};
+
+        // 合計点ジャンルは読み取り専用行として表示
+        if (!isEditable) {
+          listHtml += '<tr class="subj-edit-row" data-is-added="false" data-is-editable="false"'
+            + ' data-genre="' + _escHtml(rowGenre) + '"'
+            + ' data-subject-id="' + _escHtml(row.subject_id) + '"'
+            + ' data-subject-name="' + _escHtml(row.subject_name || '') + '">';
+          listHtml += '<td class="genre-cell" style="color:#888;">' + _escHtml(rowGenre) + '</td>';
+          listHtml += '<td style="color:#888;">' + _escHtml(row.subject_name || row.subject_id) + '</td>';
+          listHtml += '<td><input type="text" class="score-input" value="' + _escHtml(String(sc.score != null ? sc.score : '')) + '" disabled style="opacity:0.5;"></td>';
+          listHtml += '<td><input type="text" class="rank-input" value="' + _escHtml(String(sc.grade_rank != null ? sc.grade_rank : '')) + '" disabled style="opacity:0.5;"></td>';
+          listHtml += '<td><input type="text" class="rank-input" value="' + _escHtml(String(sc.class_rank != null ? sc.class_rank : '')) + '" disabled style="opacity:0.5;"></td>';
+          listHtml += '<td></td>';
+          listHtml += '</tr>';
+          return;
+        }
+
+        // isAdded（OTHER含む追加行）はジャンルフィルタなしで全教科を選択可能にする
+        const selectGenre = isAdded ? '' : rowGenre;
+        listHtml += '<tr class="subj-edit-row" data-is-added="' + isAdded + '" data-is-editable="true" data-genre="' + _escHtml(rowGenre) + '">';
+        listHtml += '<td class="genre-cell">' + _escHtml(rowGenre || 'その他') + '</td>';
+        listHtml += '<td><div class="subj-edit-cell">';
+        listHtml += buildSelectHtml(row.subject_id, i, selectGenre);
+        const otherDisp = isOther ? 'inline-block' : 'none';
+        listHtml += '<input type="text" id="subj-edit-other-' + i + '" class="subj-edit-other-input" value="' + _escHtml(row.raw_subject_name || '') + '" placeholder="教科名を入力" maxlength="30" style="display:' + otherDisp + ';">';
+        listHtml += '</div></td>';
+        listHtml += '<td><input type="text" class="score-input" value="' + _escHtml(String(sc.score != null ? sc.score : '')) + '" disabled style="opacity:0.5;"></td>';
+        listHtml += '<td><input type="text" class="rank-input" value="' + _escHtml(String(sc.grade_rank != null ? sc.grade_rank : '')) + '" disabled style="opacity:0.5;"></td>';
+        listHtml += '<td><input type="text" class="rank-input" value="' + _escHtml(String(sc.class_rank != null ? sc.class_rank : '')) + '" disabled style="opacity:0.5;"></td>';
+        // × ボタンは追加行のみ
+        if (isAdded) {
+          listHtml += '<td style="text-align:center;"><button class="subj-edit-remove-btn" onclick="removeSubjectEditRow(' + i + ')">×</button></td>';
+        } else {
+          listHtml += '<td></td>';
+        }
+        listHtml += '</tr>';
+      });
+
+
+    } else {
+      // ==== 通常モード ====
+      const groupedSubjects = (exam.subjects || []).reduce((acc, sub) => {
+        const genre = sub.genre_name || 'その他';
+        if (!acc[genre]) acc[genre] = [];
+        acc[genre].push(sub);
+        return acc;
+      }, {});
+
+      if (Object.keys(groupedSubjects).length === 0) {
+        listHtml += '<tr><td colspan="6" style="text-align:center; color:#aaa; padding:20px;">'
+          + (exam.hasExam ? '教科が未登録です' : '教科パターンが未登録です')
+          + '</td></tr>';
+      } else {
+        Object.keys(groupedSubjects).forEach(function(genreName) {
+          const rows = groupedSubjects[genreName];
+          const rowBackground = getGenreColor(genreName, 0.12);
+          rows.forEach(function(sub, index) {
+            const sc         = (exam.scores || []).find(function(x) { return x.subject_id === sub.subject_id; }) || {};
+            const isExcluded = !!sub.excluded;
+            const isNotTaken = !isExcluded && sc.not_taken === true;
+            const scoreVal   = (!isExcluded && !isNotTaken && sc.score      != null) ? sc.score      : '';
+            const grVal      = (!isExcluded && !isNotTaken && sc.grade_rank != null) ? sc.grade_rank : '';
+            const crVal      = (!isExcluded && !isNotTaken && sc.class_rank != null) ? sc.class_rank : '';
+            const sid        = sub.subject_id;
+            const dk         = displayKey;
+            const rowStyle   = 'background-color:' + rowBackground + ';' + (isExcluded ? ' opacity:0.55;' : '');
+            const disabledNT = isNotTaken ? ' disabled style="opacity:0.4;"' : '';
+
+            listHtml += '<tr style="' + rowStyle + '">';
+            if (index === 0) {
+              listHtml += '<td class="genre-cell" rowspan="' + rows.length + '" style="background-color:' + rowBackground + ';">' + genreName + '</td>';
+            }
+            const subDisplayName = sub.subject_id === 'OTHER'
+              ? _escHtml(sub.raw_subject_name || 'その他')
+              : (sub.display_name || sub.subject_name);
+            listHtml += '<td>' + subDisplayName;
+            if (sub.subject_id === 'OTHER') {
+              listHtml += '<input type="hidden" id="rn_' + dk + '_OTHER" value="' + _escHtml(sub.raw_subject_name || '') + '">';
+              listHtml += '<input type="hidden" id="gn_' + dk + '_OTHER" value="' + _escHtml(sub.genre_name || '') + '">';
+            }
+            listHtml += '</td>';
+
+            if (isExcluded) {
+              listHtml += '<td><input type="text" class="score-input" disabled placeholder="未実施" /></td>';
+              listHtml += '<td><input type="text" class="rank-input" disabled /></td>';
+              listHtml += '<td><input type="text" class="rank-input" disabled /></td>';
+              listHtml += '<td><span class="badge-excluded">未実施</span></td>';
+            } else {
+              listHtml += '<td><input type="text" inputmode="numeric" class="score-input"'
+                + ' id="s_' + dk + '_' + sid + '" value="' + scoreVal + '"'
+                + ' placeholder="点数" maxlength="3"'
+                + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
+                + disabledNT + ' /></td>';
+              listHtml += '<td><input type="text" inputmode="numeric" class="rank-input"'
+                + ' id="gr_' + dk + '_' + sid + '" value="' + grVal + '"'
+                + ' placeholder="順位" maxlength="4"'
+                + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
+                + disabledNT + ' /></td>';
+              listHtml += '<td><input type="text" inputmode="numeric" class="rank-input"'
+                + ' id="cr_' + dk + '_' + sid + '" value="' + crVal + '"'
+                + ' placeholder="順位" maxlength="4"'
+                + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\')"'
+                + disabledNT + ' /></td>';
+              listHtml += '<td><input type="checkbox" id="nt_' + dk + '_' + sid + '"'
+                + (isNotTaken ? ' checked' : '')
+                + ' onchange="toggleNotTaken(\'' + dk + '\', \'' + sid + '\', this.checked)"'
+                + ' /></td>';
+            }
+            listHtml += '</tr>';
+          });
+        });
+      }
+
+    }  // end else (通常モード)
 
     listHtml += `</tbody></table>`;
 
-    if (Object.keys(groupedSubjects).length > 0) {
+    // フッター
+    if (isEditMode) {
       listHtml += `
-        <div class="tab-footer">
-          <button type="button" class="btn-save"
-            onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${exam.year || ''}', '${displayKey}', this)">
-            保存する
-          </button>
+        <div class="tab-footer subj-edit-footer">
+          <button type="button" class="subj-edit-cancel-btn" onclick="cancelSubjectEdit()">キャンセル</button>
+          <button type="button" class="subj-edit-save-btn" onclick="saveSubjectEdit('${tabId}')">保存</button>
         </div>
       `;
+    } else {
+      if ((exam.subjects || []).length > 0 || (exam.scores || []).length > 0) {
+        listHtml += `
+          <div class="tab-footer">
+            <button type="button" class="btn-save"
+              onclick="handleSave('${s.student_id}', '${exam.exam_id || ''}', '${exam.pattern_id || ''}', '${exam.term_test_id || ''}', '${exam.year || ''}', '${displayKey}', this)">
+              保存する
+            </button>
+          </div>
+        `;
+      }
     }
 
     listHtml += `</div></div>`;
@@ -591,9 +723,157 @@ function toggleNotTaken(displayKey, subjectId, isChecked) {
 }
 
 function switchExamTab(tabId) {
+  _currentTabId = tabId;
   document.querySelectorAll('.exam-select').forEach(sel => { sel.value = tabId; });
   document.querySelectorAll('.tab-panel').forEach(panel => {
     panel.style.display = panel.dataset.tabId === tabId ? 'block' : 'none';
   });
+}
+
+// ---- 教科編集 ミートボールメニュー ----
+
+function toggleSubjectMenu(btn) {
+  var dropdown = btn.nextElementSibling;
+  if (!dropdown) return;
+  var isOpen = dropdown.style.display !== 'none';
+  document.querySelectorAll('.subj-dropdown').forEach(function(d) { d.style.display = 'none'; });
+  if (!isOpen) dropdown.style.display = 'block';
+}
+
+// ---- 教科編集（インラインテーブル） ----
+
+function _getFilteredSubjectsForEdit(tabId) {
+  var exam = (_appData && _appData.examTabs || []).find(function(t) { return t.term_test_id === tabId; });
+  var currentSids  = exam ? (exam.subjects || []).map(function(s) { return s.subject_id; }) : [];
+  var studentGrade = (_appData && _appData.student && _appData.student.grade) || '';
+  return (_currentAvailableSubjects || []).filter(function(sub) {
+    var subGrade = String(sub.grade || '').trim();
+    return !subGrade || subGrade === studentGrade || currentSids.indexOf(sub.subject_id) !== -1;
+  });
+}
+
+function _syncEditRowsFromDom() {
+  var tbody = document.querySelector('.subj-edit-tbody');
+  if (!tbody) return;
+  var trs = tbody.querySelectorAll('tr.subj-edit-row');
+  var newRows = [];
+  trs.forEach(function(tr) {
+    if (tr.dataset.isEditable === 'false') {
+      newRows.push({
+        subject_id:       tr.dataset.subjectId   || '',
+        subject_name:     tr.dataset.subjectName || '',
+        raw_subject_name: '',
+        isAdded:          false,
+        isEditable:       false,
+        genre_name:       tr.dataset.genre || ''
+      });
+      return;
+    }
+    var sel = tr.querySelector('.subj-edit-select');
+    var inp = tr.querySelector('.subj-edit-other-input');
+    newRows.push({
+      subject_id:       sel ? sel.value : '',
+      raw_subject_name: inp ? inp.value.trim() : '',
+      isAdded:          tr.dataset.isAdded === 'true',
+      isEditable:       true,
+      genre_name:       tr.dataset.genre   || ''
+    });
+  });
+  _editRows = newRows;
+}
+
+function enterSubjectEditMode(tabId) {
+  document.querySelectorAll('.subj-dropdown').forEach(function(d) { d.style.display = 'none'; });
+  var exam = (_appData && _appData.examTabs || []).find(function(t) { return t.term_test_id === tabId; });
+  if (!exam) return;
+
+  _editMode  = true;
+  _editTabId = tabId;
+  _editRows  = (exam.subjects || []).map(function(s) {
+    var isOther = s.subject_id === 'OTHER';
+    var isExtra = !!s.extra;
+    return {
+      subject_id:       s.subject_id,
+      raw_subject_name: s.raw_subject_name || '',
+      isAdded:          isOther || isExtra,  // OTHER行・追加教科は×ボタン表示
+      genre_name:       s.genre_name || 'その他',
+      subject_name:     s.subject_name || s.display_name || '',
+      isEditable:       (s.genre_name || 'その他') !== '合計点'
+    };
+  });
+
+  renderApp(_appData);
+  switchExamTab(tabId);
+}
+
+function cancelSubjectEdit() {
+  _editMode  = false;
+  _editTabId = null;
+  _editRows  = [];
+  var savedTabId = _currentTabId;
+  renderApp(_appData);
+  if (savedTabId) switchExamTab(savedTabId);
+}
+
+function onSubjectRowChange(index, value) {
+  if (_editRows[index]) _editRows[index].subject_id = value;
+  var inp = document.getElementById('subj-edit-other-' + index);
+  if (inp) inp.style.display = value === 'OTHER' ? 'inline-block' : 'none';
+}
+
+
+function removeSubjectEditRow(index) {
+  _syncEditRowsFromDom();
+  _editRows.splice(index, 1);
+  var savedTabId = _editTabId;
+  renderApp(_appData);
+  switchExamTab(savedTabId);
+}
+
+function saveSubjectEdit(tabId) {
+  _syncEditRowsFromDom();
+
+  var exam = (_appData && _appData.examTabs || []).find(function(t) { return t.term_test_id === tabId; });
+  if (!exam) { cancelSubjectEdit(); return; }
+
+  var newSubjects = [];
+
+  _editRows.forEach(function(row) {
+    var sid = row.subject_id;
+    if (!sid) return;
+    if (sid === 'OTHER') {
+      var rawName = row.raw_subject_name || '';
+      if (rawName) {
+        newSubjects.push({
+          subject_id:       'OTHER',
+          raw_subject_name: rawName,
+          subject_name:     rawName,
+          display_name:     rawName,
+          genre_id:         null,
+          genre_name:       row.genre_name || 'その他',
+          excluded:         false,
+          extra:            true
+        });
+      }
+      return;
+    }
+    var sub = (_currentAvailableSubjects || []).find(function(s) { return s.subject_id === sid; });
+    if (sub) newSubjects.push(sub);
+  });
+
+  exam.subjects = newSubjects;
+  delete exam._pendingOther;
+  delete exam._pendingOtherGenre;
+
+  if (_appData.currentExam && _appData.currentExam.term_test_id === tabId) {
+    _appData.currentExam.subjects = exam.subjects;
+  }
+
+  _editMode  = false;
+  _editTabId = null;
+  _editRows  = [];
+
+  renderApp(_appData);
+  switchExamTab(tabId);
 }
 </script>
