@@ -24,5 +24,4 @@ src_test/
 .claude/settings.local.json
 
 # Playwright MCP - ブラウザセッション（認証情報を含むため非公開）
-.playwright-mcp/storage.json
-.playwright-mcp/user-data/
+.playwright-mcp/
