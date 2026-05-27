@@ -33,9 +33,7 @@
 |------|---------|
 | 開発 GAS へ push | `clasp push --project .clasp.dev.json` |
 | 本番 GAS へ push | `clasp push` |
-| テストコード込み push | `.\push-test.ps1` |
 | Jest ユニットテスト（高速） | `npm test` |
 | 特定テストファイルのみ実行 | `npm test -- --testPathPattern=admin_import` |
-| GAS 統合テスト | `push-test.ps1` → GAS エディタで `runAllTests()` |
 
 > **push 後の必須手順**: GAS エディタ → デプロイを管理 → 鉛筆アイコン → 「新しいバージョン」を選択。`/exec` URL はデプロイ済みバージョンを実行するため push だけでは反映されない。開発中の動作確認は `/dev` URL を使う（常に HEAD を実行）。
