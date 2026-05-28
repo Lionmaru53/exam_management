@@ -20,6 +20,71 @@ function _getAdminSS() {
 }
 
 /**
+ * シートのスキーマを期待する列定義に合わせて reconcile する。
+ *
+ * 処理:
+ *   1. 未知列を後ろから削除（allowExtra:true のときはスキップ）
+ *   2. 不足列を末尾に追加
+ *   3. データ使用域より右の余剰列を削除してセル数を節約
+ *
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @param {string[]} expectedHeaders
+ * @param {{ allowExtra?: boolean }} [opts]
+ *   allowExtra:true のときは未知列を削除しない（admin_users の cram_id 動的列など）
+ * @returns {{ added: string[], removed: string[], trimmed: number }}
+ */
+function _reconcileSheetSchema(sheet, expectedHeaders, opts) {
+  const allowExtra = !!(opts && opts.allowExtra);
+  const report = { added: [], removed: [], trimmed: 0 };
+
+  const lastCol = sheet.getLastColumn();
+  const currentHeaders = lastCol > 0
+    ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h || '').trim(); })
+    : [];
+
+  // 1. 未知列を後ろから削除
+  if (!allowExtra) {
+    const expectedSet = new Set(expectedHeaders);
+    for (let i = currentHeaders.length - 1; i >= 0; i--) {
+      const h = currentHeaders[i];
+      if (h && !expectedSet.has(h)) {
+        sheet.deleteColumn(i + 1);
+        report.removed.push(h);
+        currentHeaders.splice(i, 1);
+      }
+    }
+  }
+
+  // 2. 不足列を末尾に追加
+  const existingSet = new Set(currentHeaders.filter(Boolean));
+  for (const h of expectedHeaders) {
+    if (!existingSet.has(h)) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(h);
+      report.added.push(h);
+    }
+  }
+
+  // 3. データ使用域より右の余剰列を削除（セル数節約）
+  const usedCols = sheet.getLastColumn();
+  const maxCols  = sheet.getMaxColumns();
+  if (usedCols > 0 && maxCols > usedCols) {
+    sheet.deleteColumns(usedCols + 1, maxCols - usedCols);
+    report.trimmed = maxCols - usedCols;
+  }
+
+  return report;
+}
+
+function _logReconcile(sheetName, report) {
+  if (report.added.length > 0)   Logger.log(sheetName + ': 列追加 → ' + report.added.join(', '));
+  if (report.removed.length > 0) Logger.log(sheetName + ': 列削除 → ' + report.removed.join(', '));
+  if (report.trimmed > 0)        Logger.log(sheetName + ': 余剰 ' + report.trimmed + ' 列を削除');
+  if (!report.added.length && !report.removed.length && !report.trimmed) {
+    Logger.log(sheetName + ': スキーマ変更なし');
+  }
+}
+
+/**
  * Session.getActiveUser() で認証済みユーザーを取得し、admin_users シートで照合する。
  * 固定列（admin_id / email / role / is_active）以外の列名を cram_id として扱い、
  * その列値が TRUE のものを担当校舎とみなす。master は全列を担当とみなす。
@@ -81,46 +146,52 @@ function writeAuditLog(adminContext, action, detail, result) {
 }
 
 /**
- * admin_users / audit_log シートをメインSSに作成する。
- * GAS エディタから一度だけ手動実行する。
+ * admin_users / audit_log / liff_access_log / branches シートを親 SS に準備する。
+ * 既存シートが存在する場合はスキーマを reconcile する（列の追加・削除・余剰列トリム）。
+ * GAS エディタから手動実行する。
  */
 function setupAdminSS() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+  // ── admin_users ──────────────────────────────────────────────────────────
+  // 固定列のみを reconcile。cram_id 動的列は allowExtra:true で保持する。
   let adminSheet = ss.getSheetByName(ADMIN_USERS_SHEET);
   if (!adminSheet) {
     adminSheet = ss.insertSheet(ADMIN_USERS_SHEET);
-    adminSheet.getRange(1, 1, 1, 5).setValues([[
-      'admin_id', 'email', 'name', 'role', 'is_active'
-    ]]);
     Logger.log('admin_users シートを作成しました。');
-  } else {
-    Logger.log('admin_users シートは既に存在します。');
   }
+  _logReconcile(ADMIN_USERS_SHEET,
+    _reconcileSheetSchema(adminSheet, ['admin_id', 'email', 'name', 'role', 'is_active'], { allowExtra: true })
+  );
 
-  if (!ss.getSheetByName(AUDIT_LOG_SHEET)) {
-    const auditSheet = ss.insertSheet(AUDIT_LOG_SHEET);
-    auditSheet.getRange(1, 1, 1, 6).setValues([[
-      'timestamp', 'email', 'cram_id', 'action', 'detail', 'result'
-    ]]);
+  // ── audit_log ────────────────────────────────────────────────────────────
+  let auditSheet = ss.getSheetByName(AUDIT_LOG_SHEET);
+  if (!auditSheet) {
+    auditSheet = ss.insertSheet(AUDIT_LOG_SHEET);
     Logger.log('audit_log シートを作成しました。');
   }
+  _logReconcile(AUDIT_LOG_SHEET,
+    _reconcileSheetSchema(auditSheet, ['timestamp', 'email', 'cram_id', 'action', 'detail', 'result'])
+  );
 
-  if (!ss.getSheetByName('liff_access_log')) {
-    const liffLogSheet = ss.insertSheet('liff_access_log');
-    liffLogSheet.getRange(1, 1, 1, 6).setValues([[
-      'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'
-    ]]);
+  // ── liff_access_log ──────────────────────────────────────────────────────
+  let liffSheet = ss.getSheetByName('liff_access_log');
+  if (!liffSheet) {
+    liffSheet = ss.insertSheet('liff_access_log');
     Logger.log('liff_access_log シートを作成しました。');
   }
+  _logReconcile('liff_access_log',
+    _reconcileSheetSchema(liffSheet, ['timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'])
+  );
 
+  // ── branches ─────────────────────────────────────────────────────────────
   _ensureBranchesSheet(ss);
 
-  // 実行者をマスター管理者として登録（未登録の場合のみ）
+  // ── 実行者をマスター管理者として登録（未登録の場合のみ）────────────────
   const myEmail = Session.getActiveUser().getEmail();
   if (myEmail) {
     const rows   = getRowsData(adminSheet);
-    const exists = rows.some(r => String(r.email || '').toLowerCase() === myEmail.toLowerCase());
+    const exists = rows.some(function(r) { return String(r.email || '').toLowerCase() === myEmail.toLowerCase(); });
     if (!exists) {
       const adminId = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
       adminSheet.appendRow([adminId, myEmail, '', 'master', true]);
@@ -236,4 +307,5 @@ if (typeof module !== 'undefined') Object.assign(global, {
   ADMIN_USERS_SHEET, AUDIT_LOG_SHEET,
   getAdminContext, writeAuditLog, setupAdminSS,
   getAdminUsers, addAdminUser, deactivateAdminUser, updateAdminUser,
+  _reconcileSheetSchema, _logReconcile,
 });

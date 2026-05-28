@@ -375,7 +375,8 @@ function _autoCreateAllPatterns(childSS, schoolName, schoolCourse) {
   });
   if (newRows.length > 0) {
     patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
-    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
+    const patternInfos = newRows.map(r => ({ pattern_id: r[0], grade: r[3] }));
+    _addTotalGenreSubjects(childSS, patternInfos);
   }
 }
 
@@ -404,6 +405,7 @@ function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, g
   if (newRows.length === 0) return;
 
   patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
+  _addTotalGenreSubjects(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
 
   // sub_course がある新規パターンは、sub_course なしの既存パターンから教科をコピーしてマージ
   // コピー元が存在しない場合はデフォルト教科にフォールバック
@@ -440,11 +442,6 @@ function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, g
     if (newPsRows.length > 0 && psSheet) {
       psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
     }
-    if (patternInfosForDefault.length > 0) {
-      _setDefaultSubjectsForPatterns(childSS, patternInfosForDefault);
-    }
-  } else {
-    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
   }
 }
 
@@ -488,6 +485,44 @@ function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
         existingSet.add(key);
       }
     });
+  });
+
+  if (newPsRows.length > 0)
+    psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
+}
+
+/**
+ * genre_id='to'（合計）に属する全科目を指定パターンの pattern_subjects に自動登録する。
+ * 重複はスキップ。subjects_master.grade が空 or パターンの grade と一致する科目のみ対象。
+ */
+function _addTotalGenreSubjects(childSS, patternInfos) {
+  if (!patternInfos || patternInfos.length === 0) return;
+  const psSheet = childSS.getSheetByName('pattern_subjects');
+  if (!psSheet) return;
+
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const subSheet  = parentSS.getSheetByName('subjects_master');
+  if (!subSheet) return;
+
+  const totalSubjects = getRowsData(subSheet).filter(s =>
+    String(s.genre_id || '').trim() === 'to'
+  );
+  if (totalSubjects.length === 0) return;
+
+  const existingSet = new Set(
+    getRowsData(psSheet).map(r => String(r.pattern_id) + '||' + String(r.subject_id))
+  );
+
+  const newPsRows = [];
+  patternInfos.forEach(({ pattern_id, grade }) => {
+    totalSubjects
+      .filter(s => { const sg = String(s.grade || '').trim(); return !sg || sg === grade; })
+      .forEach(s => {
+        const sid = String(s.subject_id || '').trim();
+        if (!sid) return;
+        const key = pattern_id + '||' + sid;
+        if (!existingSet.has(key)) { newPsRows.push([pattern_id, sid]); existingSet.add(key); }
+      });
   });
 
   if (newPsRows.length > 0)

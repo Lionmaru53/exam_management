@@ -1,5 +1,9 @@
 # 開発ロードマップ
 
+> **Notion に移行しました**
+> 詳細は Notion を参照してください。
+> https://www.notion.so/36df79283f7081a7b1eef58fe310e99e
+
 ## Phase 0 — 管理画面基盤（完了 2026-05-17）
 - [x] 管理者認証（メール照合・簡易版）
 - [x] 管理者管理タブ（admin_users CRUD）
@@ -142,6 +146,18 @@
 - [x] 仮教科の検出を `is_temp='1'` カラム基準に統一（命名形式に依存しない設計）
 - [x] 旧方式（`subject_id='OTHER'` + `raw_subject_name`）からの移行コードを `saveAllScores` に追加
 
+### 生徒向け科目編集 UI 改善（完了 2026-05-28・feature/score ブランチ）
+- [x] ✎ボタン押下時の GAS 呼び出しを廃止（ページロード済みデータで即座に編集モードへ）
+- [x] `replacePatternSubject` が `patternSubjectIds` を返し、保存後の `getInitialData` 再呼び出しを廃止
+- [x] 「タップして科目を追加」ボタンを全教科セクション末尾に常時表示（合計 genre は除外）
+- [x] ドロップダウンに「その他（名称を入力）」選択肢を追加・仮教科登録と連携
+- [x] genres_master の行順で教科表示をソート
+- [x] ✎ アイコンを SVG（四角＋鉛筆、class="icon-edit"）に刷新
+- [x] パターン初回作成時の subject_id 自動登録を廃止（`_setDefaultSubjectsForPatterns` の呼び出し削除）
+- [x] パターン初回作成時に genre_id='to'（合計）科目のみ自動登録（`_addTotalGenreSubjects` 新設）
+- [x] CSS 改善: `.subj-replace-select` をコンテンツ幅に縮小・ボタン高さ統一・余白縮小
+- [x] usage-hint に説明文を追記（✎ボタン説明・変更保持・不具合報告）
+
 ### 生徒向け教科編集モーダル（未実装）
 - [ ] 得点表右上の ⋮ ボタン → 教科を編集モーダル
 - [ ] ジャンル別チェックボックスで表示教科を変更
@@ -160,7 +176,7 @@
 - [x] ファイル階層化: GAS ソースを `src/`、Jest テストを `tests/unit/`、GAS テストを `tests/` に整理
 - [x] 環境分離: `.clasp.dev.json`（開発環境）/ `.clasp.json`（本番、git 管理外）
 - [x] テスト用 push スクリプト: `push-test.ps1`（`src/` + `tests/` を GAS テスト環境へ）
-- [x] Node.js + Jest ユニットテスト導入（`npm test`）: 42 テスト・5スイート、全 PASS
+- [x] Node.js + Jest ユニットテスト導入（`npm test`）: 85 テスト・8スイート、全 PASS（2026-05-28時点）
 - [x] **src/ ファイル整理**（2026-05-22）
   - `admin_saveData.js`（760行）を3分割: `admin_save_exams.js` / `admin_save_master.js` / `admin_save_students.js`
   - `common_stylesheet.html` を共通スタイルのみに絞り込み、生徒アプリ専用の `app_stylesheet.html` を新設

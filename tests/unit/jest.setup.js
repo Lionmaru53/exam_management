@@ -40,3 +40,5 @@ require(path.join(SRC, 'admin_auth.js'));     // getAdminContext, writeAuditLog 
 require(path.join(SRC, 'admin_branch.js'));   // getBranches, addBranch 等、getChildSS
 require(path.join(SRC, 'admin_import.js'));   // _mapRows, _upsertStudentsMaster 等
 require(path.join(SRC, 'admin_getData.js'));  // getAdminInitialData, getStudentList 等
+require(path.join(SRC, 'admin_save_students.js'));
+require(path.join(SRC, 'admin_save_exams.js'));

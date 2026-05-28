@@ -307,3 +307,7 @@ function addCourseToMaster(cramId, schoolName, newValue) {
     return { success: false, error: e.message };
   }
 }
+
+if (typeof module !== 'undefined') Object.assign(global, {
+  updateStudentField, deleteCourseFromMaster, addCourseToMaster, _deleteOrphanedCourses,
+});

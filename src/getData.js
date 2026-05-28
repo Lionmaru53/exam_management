@@ -76,8 +76,9 @@ function getInitialData(lineUserId) {
 
     const student = {
       ...studentRaw,
+      line_user_id:       lineUserId,
       school_course_name: studentRaw.school_course || studentRaw.school_course_name || '不明なコース',
-      sub_course: studentRaw.sub_course || ''
+      sub_course:         studentRaw.sub_course || ''
     };
 
     // 4-5. term_tests_master（親 SS）+ 学校別試験区分設定
@@ -315,4 +316,52 @@ function stringifyDates(obj) {
   return obj;
 }
 
-if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData });
+/**
+ * 科目編集モード用の軽量データ取得。
+ * getInitialData の全データ取得の代わりに、科目編集に必要な最小限のデータのみ返す:
+ *   - availableSubjects: subjects_master + genres_master から構築した全教科リスト
+ *   - patternSubjectIds: 指定 patternId の現在の教科 ID リスト
+ */
+function getSubjectsForEdit(studentId, patternId) {
+  try {
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+
+    const idxSheet = parentSS.getSheetByName('student_index');
+    if (!idxSheet) throw new Error('student_index シートが見つかりません');
+    const idxEntry = getRowsData(idxSheet).find(r =>
+      String(r.student_id || '').trim() === String(studentId || '').trim()
+    );
+    if (!idxEntry) throw new Error('生徒情報が見つかりません');
+
+    const cramId = String(idxEntry.cram_id || '').trim();
+    if (!cramId) throw new Error('校舎情報が未設定です');
+    const ss = getChildSS(cramId);
+
+    const allSubjects = getRowsData(parentSS.getSheetByName('subjects_master'));
+    const allGenres   = getRowsData(parentSS.getSheetByName('genres_master'));
+
+    const availableSubjects = allSubjects.map(s => {
+      const gen = allGenres.find(g => g.genre_id === s.genre_id);
+      return {
+        ...s,
+        genre_id:     gen ? gen.genre_id   : null,
+        genre_name:   gen ? gen.genre_name : 'その他',
+        display_name: s.subject_name,
+      };
+    });
+
+    const psSheet = ss.getSheetByName('pattern_subjects');
+    const patternSubjectIds = psSheet
+      ? getRowsData(psSheet)
+          .filter(ps => String(ps.pattern_id || '').trim() === String(patternId || '').trim())
+          .map(ps => String(ps.subject_id || '').trim())
+          .filter(Boolean)
+      : [];
+
+    return JSON.stringify({ availableSubjects, patternSubjectIds });
+  } catch (e) {
+    return JSON.stringify({ error: e.toString() });
+  }
+}
+
+if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData, getSubjectsForEdit });

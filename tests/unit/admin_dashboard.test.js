@@ -21,7 +21,7 @@ describe('getDashboardData', () => {
 
   // ---- 正常系 ----
 
-  test('ログが6件あるとき最新5件のみ返す', () => {
+  test('ログが6件あるとき6件すべて返す（上限20件）', () => {
     setupMockSS([
       { timestamp: '2024-01-01T10:00:00', result: 'success', student_name: '生徒1', cram_id: 'C001' },
       { timestamp: '2024-01-02T10:00:00', result: 'success', student_name: '生徒2', cram_id: 'C001' },
@@ -32,7 +32,20 @@ describe('getDashboardData', () => {
     ]);
     const res = getDashboardData();
     expect(res.success).toBe(true);
-    expect(res.recentAccesses).toHaveLength(5);
+    expect(res.recentAccesses).toHaveLength(6);
+  });
+
+  test('ログが25件あるとき上限の20件のみ返す', () => {
+    const entries = Array.from({ length: 25 }, (_, i) => ({
+      timestamp:    `2024-01-${String(i + 1).padStart(2, '0')}T10:00:00`,
+      result:       'success',
+      student_name: `生徒${i + 1}`,
+      cram_id:      'C001',
+    }));
+    setupMockSS(entries);
+    const res = getDashboardData();
+    expect(res.success).toBe(true);
+    expect(res.recentAccesses).toHaveLength(20);
   });
 
   test('ログが3件のみのとき3件すべて返す', () => {

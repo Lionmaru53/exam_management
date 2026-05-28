@@ -22,11 +22,15 @@ function makeFakeSheet(headers, dataRows) {
       setValue:  jest.fn(),
       setValues: jest.fn(),
     })),
-    getLastColumn: jest.fn(() => headers.length),
-    getLastRow:    jest.fn(() => dataRows.length + 1),
-    appendRow:     jest.fn(),
-    getName:       jest.fn(() => 'mock-sheet'),
-    setName:       jest.fn(),
+    getLastColumn:  jest.fn(() => headers.length),
+    getMaxColumns:  jest.fn(() => 26),   // GAS デフォルト 26 列を模倣
+    getLastRow:     jest.fn(() => dataRows.length + 1),
+    appendRow:      jest.fn(),
+    deleteRow:      jest.fn(),
+    deleteColumn:   jest.fn(),
+    deleteColumns:  jest.fn(),
+    getName:        jest.fn(() => 'mock-sheet'),
+    setName:        jest.fn(),
   };
 }
 

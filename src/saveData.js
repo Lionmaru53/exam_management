@@ -523,3 +523,191 @@ function approveNewSubject(tempSubjectId) {
     return JSON.stringify({ error: e.toString() });
   }
 }
+
+/**
+ * 特定の教科（genre）に属する科目を pattern_subjects に保存（差分更新）。
+ * その教科の既存エントリを削除してから新規行を追加する。
+ * LockService で排他制御し、同時編集によるデータ破損を防ぐ。
+ */
+function savePatternSubjectsForGenre(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const idxSheet = parentSS.getSheetByName('student_index');
+    if (!idxSheet) throw new Error('student_index シートが見つかりません');
+    const idxRows  = getRowsData(idxSheet);
+    const idxEntry = idxRows.find(r =>
+      String(r.student_id || '').trim() === String(payload.student_id).trim()
+    );
+    if (!idxEntry) throw new Error('生徒情報が見つかりません（student_id: ' + payload.student_id + '）');
+
+    const childSS = getChildSS(String(idxEntry.cram_id || '').trim());
+    const psSheet = childSS.getSheetByName('pattern_subjects');
+    if (!psSheet) throw new Error('pattern_subjects シートが見つかりません');
+
+    const patternId = String(payload.pattern_id || '').trim();
+    const genreName = String(payload.genre_name  || '').trim();
+    const newSids   = (payload.subject_ids || []).map(s => String(s).trim()).filter(Boolean);
+
+    // subjects_master × genres_master から genre に属する subject_id セットを作成
+    const subSheet   = parentSS.getSheetByName('subjects_master');
+    const genreSheet = parentSS.getSheetByName('genres_master');
+    const genreSubjectIds = new Set();
+    if (subSheet && genreSheet) {
+      const gRows      = getRowsData(genreSheet);
+      const genreEntry = gRows.find(r => String(r.genre_name || '').trim() === genreName);
+      if (genreEntry) {
+        const genreId = String(genreEntry.genre_id || '').trim();
+        getRowsData(subSheet).forEach(s => {
+          if (String(s.genre_id || '').trim() === genreId)
+            genreSubjectIds.add(String(s.subject_id || '').trim());
+        });
+      }
+    }
+
+    // 対象教科の既存行を後ろから削除
+    const psData    = psSheet.getDataRange().getValues();
+    const psHeaders = psData[0].map(h => String(h).trim());
+    const pPidCol   = psHeaders.indexOf('pattern_id');
+    const pSidCol   = psHeaders.indexOf('subject_id');
+
+    const toDelete = [];
+    for (let i = psData.length - 1; i >= 1; i--) {
+      const pid = String(psData[i][pPidCol] || '').trim();
+      const sid = String(psData[i][pSidCol] || '').trim();
+      if (pid === patternId && genreSubjectIds.has(sid)) toDelete.push(i + 1);
+    }
+    toDelete.forEach(rowNum => psSheet.deleteRow(rowNum));
+
+    // 新規行を追加
+    if (newSids.length > 0) {
+      const addRows = newSids.map(sid =>
+        psHeaders.map(h => h === 'pattern_id' ? patternId : h === 'subject_id' ? sid : '')
+      );
+      psSheet.getRange(psSheet.getLastRow() + 1, 1, addRows.length, psHeaders.length).setValues(addRows);
+    }
+
+    return JSON.stringify({ success: true });
+  } catch (e) {
+    return JSON.stringify({ success: false, error: e.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * pattern_subjects の特定の科目を別の科目に置き換える（1件単独編集用）。
+ * old_subject_id が空の場合は追加のみ行う。
+ * LockService で排他制御。
+ */
+function replacePatternSubject(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const idxSheet = parentSS.getSheetByName('student_index');
+    if (!idxSheet) throw new Error('student_index シートが見つかりません');
+    const idxRows  = getRowsData(idxSheet);
+    const idxEntry = idxRows.find(r =>
+      String(r.student_id || '').trim() === String(payload.student_id).trim()
+    );
+    if (!idxEntry) throw new Error('生徒情報が見つかりません');
+
+    const childSS = getChildSS(String(idxEntry.cram_id || '').trim());
+    const psSheet = childSS.getSheetByName('pattern_subjects');
+    if (!psSheet) throw new Error('pattern_subjects シートが見つかりません');
+
+    const patternId = String(payload.pattern_id    || '').trim();
+    const oldSid    = String(payload.old_subject_id || '').trim();
+    let   newSid    = String(payload.new_subject_id || '').trim();
+    if (!newSid) throw new Error('新しい科目IDが指定されていません');
+
+    let newSubjectForClient = null;
+    if (newSid === 'OTHER') {
+      const rawName   = String(payload.raw_subject_name || '').trim();
+      const genreName = String(payload.genre_name       || 'その他').trim();
+      if (!rawName) throw new Error('科目名を入力してください');
+
+      // 学年を students_master から取得
+      const stuSheet = childSS.getSheetByName('students_master');
+      let grade = '';
+      if (stuSheet) {
+        const stuData    = stuSheet.getDataRange().getValues();
+        const stuHeaders = stuData[0].map(h => String(h).trim());
+        const stuSidCol  = stuHeaders.indexOf('student_id');
+        const stuGrCol   = stuHeaders.indexOf('grade');
+        for (let i = 1; i < stuData.length; i++) {
+          if (String(stuData[i][stuSidCol] || '').trim() === String(payload.student_id).trim()) {
+            grade = String(stuData[i][stuGrCol] || '').trim();
+            break;
+          }
+        }
+      }
+
+      const tempId = _getOrCreateTempSubject(parentSS, rawName, genreName, grade);
+      newSid = tempId;
+
+      // クライアント側の availableSubjects 更新用データ
+      const allGenres = getRowsData(parentSS.getSheetByName('genres_master'));
+      const genreEntry = allGenres.find(g => String(g.genre_name || '').trim() === genreName);
+      newSubjectForClient = {
+        subject_id:   tempId,
+        subject_name: rawName,
+        display_name: rawName,
+        genre_id:     genreEntry ? genreEntry.genre_id : null,
+        genre_name:   genreName,
+        is_temp:      '1',
+        grade:        grade
+      };
+    }
+
+    const psData    = psSheet.getDataRange().getValues();
+    const psHeaders = psData[0].map(h => String(h).trim());
+    const pPidCol   = psHeaders.indexOf('pattern_id');
+    const pSidCol   = psHeaders.indexOf('subject_id');
+
+    // 古い科目を削除（後ろから検索して1件）
+    if (oldSid) {
+      for (let i = psData.length - 1; i >= 1; i--) {
+        if (String(psData[i][pPidCol] || '').trim() === patternId &&
+            String(psData[i][pSidCol] || '').trim() === oldSid) {
+          psSheet.deleteRow(i + 1);
+          break;
+        }
+      }
+    }
+
+    // 新しい科目を追加（重複チェック）
+    const remaining = psSheet.getDataRange().getValues();
+    const alreadyExists = remaining.slice(1).some(row =>
+      String(row[pPidCol] || '').trim() === patternId &&
+      String(row[pSidCol] || '').trim() === newSid
+    );
+
+    if (!alreadyExists) {
+      const newRow = psHeaders.map(h =>
+        h === 'pattern_id' ? patternId : h === 'subject_id' ? newSid : ''
+      );
+      psSheet.appendRow(newRow);
+    }
+
+    // 更新後の patternSubjectIds を返す（フロントが getInitialData を再呼び出しせずに済む）
+    const finalData = psSheet.getDataRange().getValues();
+    const finalHeaders = finalData[0].map(h => String(h).trim());
+    const fPidCol = finalHeaders.indexOf('pattern_id');
+    const fSidCol = finalHeaders.indexOf('subject_id');
+    const patternSubjectIds = finalData.slice(1)
+      .filter(row => String(row[fPidCol] || '').trim() === patternId)
+      .map(row => String(row[fSidCol] || '').trim())
+      .filter(Boolean);
+
+    return JSON.stringify({ success: true, patternSubjectIds, newSubject: newSubjectForClient });
+  } catch (e) {
+    return JSON.stringify({ success: false, error: e.toString() });
+  } finally {
+    lock.releaseLock();
+  }
+}
