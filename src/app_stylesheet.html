@@ -1,12 +1,35 @@
 <style>
+  /* ---- 全体レイアウト：ヘッダー固定・main のみスクロール ---- */
+  body {
+    padding: 0;
+  }
+
   #app {
-    will-change: transform;
-    padding-bottom: 80px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #app > header {
+    flex-shrink: 0;
+    padding: 16px 20px 0;
   }
 
   #subject-list {
-    display: block;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 20px 80px; /* 80px: LINE アプリ下部バーの高さ分 */
     width: 100%;
+    box-sizing: border-box;
+  }
+
+  #app > footer {
+    flex-shrink: 0;
+    padding: 0 20px 12px;
   }
 
   /* ---- 試験タブ ---- */
@@ -39,56 +62,189 @@
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
   }
 
-  .tab-panel {
+  .tab-panel-app {
     width: 100%;
   }
 
-  .tab-footer {
+  .tab-footer-app {
     margin-top: 14px;
   }
 
   /* ---- 教科テーブル ---- */
 
-  .subject-table-container {
+  .subject-table-container-app {
     width: 100%;
     overflow-x: auto;
   }
 
-  .subject-table {
+  .subject-table-app {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
     min-width: 300px;
   }
 
-  .subject-table th,
-  .subject-table td {
+  .subject-table-app th,
+  .subject-table-app td {
     border: 1px solid #dee2e6;
     padding: 10px 12px;
     text-align: left;
     vertical-align: middle;
   }
 
-  .subject-table th {
+  .subject-table-app th {
     background: #fdfeff;
     font-weight: 600;
     color: #343a40;
   }
 
-  .subject-table .genre-cell {
+  .subject-table-app .genre-cell {
     font-weight: 700;
   }
 
-  .test-name-header {
+  .test-name-header-app {
     background: #e9ecef;
     text-align: left;
     font-size: 1rem;
     padding: 12px;
   }
 
+  /* ---- 教科編集 ミートボールメニュー ---- */
+
+  .subj-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .subj-menu-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    color: #555;
+    border-radius: 4px;
+    line-height: 1;
+  }
+
+  .subj-menu-btn:hover {
+    background: #d1d5db;
+  }
+
+  .subj-dropdown {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 100;
+    min-width: 130px;
+    white-space: nowrap;
+  }
+
+  .subj-dropdown-item {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    color: #333;
+    box-sizing: border-box;
+  }
+
+  .subj-dropdown-item:hover {
+    background: #f0f4ff;
+  }
+
+  /* ---- 教科編集 インラインテーブル ---- */
+
+  .subj-edit-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .subj-edit-select {
+    flex: 1;
+    min-width: 120px;
+    padding: 5px 8px;
+    border: 1px solid #b0c4de;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    background: #fff;
+  }
+
+  .subj-edit-other-input {
+    flex: 1;
+    min-width: 110px;
+    padding: 5px 8px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    font-family: inherit;
+  }
+
+  .subj-edit-remove-btn {
+    background: none;
+    border: 1px solid #e0a0a0;
+    color: #c00;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+
+  .subj-edit-remove-btn:hover {
+    background: #fff0f0;
+  }
+
+
+  .subj-edit-footer {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+  }
+
+  .subj-edit-cancel-btn {
+    padding: 12px 24px;
+    background: #fff;
+    border: 1px solid #aaa;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    color: #555;
+  }
+
+  .subj-edit-cancel-btn:hover {
+    background: #f0f0f0;
+  }
+
+  .subj-edit-save-btn {
+    padding: 12px 28px;
+    background: #4a7fc1;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: bold;
+  }
+
+  .subj-edit-save-btn:hover {
+    background: #2c5fa0;
+  }
+
   /* ---- ヘッダー・生徒情報 ---- */
 
-  .exam-header-container {
+  .exam-header-container-app {
     margin-bottom: 20px;
     border-bottom: 2px solid #333;
     padding-bottom: 10px;
@@ -98,13 +254,13 @@
     margin: 0 0 4px;
   }
 
-  .student-name {
+  .student-name-app {
     font-size: 1.25rem;
     font-weight: bold;
     margin: 0;
   }
 
-  .student-info {
+  .student-info-app {
     font-size: 0.9rem;
     color: #555;
   }
@@ -131,8 +287,15 @@
 
   /* ---- 保存ボタン ---- */
 
-  .btn-save {
-    width: 100%;
+  .btn-save-app {
+    display: block;
+    /* ボタンをブロック要素にしてmarginを効かせる */
+    width: 33%;
+    margin-top: 15px;
+    margin-left: auto;
+    /* 左の余白を自動調整 */
+    margin-right: auto;
+    /* 右の余白を自動調整（これで中央配置になります） */
     padding: 15px;
     background: var(--primary-color);
     color: white;
@@ -140,10 +303,9 @@
     border-radius: 5px;
     font-size: 16px;
     cursor: pointer;
-    margin-top: 15px;
   }
 
-  .btn-save:disabled {
+  .btn-save-app:disabled {
     background: #ccc;
   }
 
@@ -165,7 +327,9 @@
     text-decoration: underline;
   }
 
-  .bug-report-toggle:hover { color: #6c757d; }
+  .bug-report-toggle:hover {
+    color: #6c757d;
+  }
 
   .bug-report-form {
     margin-top: 12px;
@@ -218,7 +382,9 @@
     cursor: pointer;
   }
 
-  .bug-report-submit:disabled { background: #ccc; }
+  .bug-report-submit:disabled {
+    background: #ccc;
+  }
 
   /* 補助入力ブロック */
   .bug-aux-row {
@@ -241,7 +407,9 @@
     font-family: inherit;
   }
 
-  .bug-aux-row input[type="text"] { width: 145px; }
+  .bug-aux-row input[type="text"] {
+    width: 145px;
+  }
 
   .bug-aux-sep {
     font-size: 0.9rem;
@@ -261,7 +429,7 @@
 
   /* ---- 未受験チェックボックス / 未実施バッジ ---- */
 
-  .subject-table td:last-child {
+  .subject-table-app td:last-child {
     text-align: center;
     padding: 6px;
     white-space: nowrap;
@@ -288,33 +456,40 @@
     border: 1px solid #f5c6cb;
     text-align: center;
   }
+
   .err-not-linked {
     background: #f0f4ff;
     border-color: #b8c8f0;
   }
+
   .err-title {
     font-size: 1.1rem;
     font-weight: bold;
     color: #c0392b;
     margin: 0 0 10px;
   }
+
   .err-not-linked .err-title {
     color: #2c4a7c;
   }
+
   .err-msg {
     font-size: 0.95rem;
     color: #555;
     margin: 0 0 10px;
   }
+
   .err-hint {
     font-size: 0.88rem;
     color: #444;
     margin: 10px 0 8px;
     line-height: 1.6;
   }
+
   .err-register-link {
     margin: 12px 0 8px;
   }
+
   .err-register-link a {
     display: inline-block;
     padding: 10px 28px;
@@ -325,9 +500,11 @@
     font-size: 0.95rem;
     text-decoration: none;
   }
+
   .err-register-link a:hover {
     background: #2c5fa0;
   }
+
   .err-contact {
     font-size: 0.82rem;
     color: #888;
@@ -339,6 +516,7 @@
     width: 100%;
     max-width: 320px;
   }
+
   .course-input-field {
     width: 100%;
     padding: 12px 14px;
@@ -347,10 +525,11 @@
     border-radius: 8px;
     box-sizing: border-box;
   }
+
   .course-input-field:focus {
     outline: none;
     border-color: #4a7fc1;
-    box-shadow: 0 0 0 2px rgba(74,127,193,0.2);
+    box-shadow: 0 0 0 2px rgba(74, 127, 193, 0.2);
   }
 
   /* ---- ラジオボタン選択リスト ---- */
@@ -362,6 +541,7 @@
     max-width: 320px;
     align-items: stretch;
   }
+
   .course-radio-item {
     display: flex;
     align-items: center;
@@ -374,10 +554,12 @@
     font-size: 1rem;
     transition: border-color 0.15s, background 0.15s;
   }
+
   .course-radio-item:hover {
     border-color: #4a7fc1;
     background: #f0f5ff;
   }
+
   .course-radio-item input[type="radio"] {
     accent-color: #4a7fc1;
     width: 20px;
@@ -385,11 +567,13 @@
     cursor: pointer;
     flex-shrink: 0;
   }
+
   .course-other-input-wrap {
     width: 100%;
     max-width: 320px;
     display: none;
   }
+
   .course-other-note {
     font-size: 0.82rem;
     color: #999;
@@ -406,12 +590,14 @@
     padding: 48px 24px;
     gap: 16px;
   }
+
   .sub-course-select-title {
     font-size: 1.2rem;
     font-weight: bold;
     color: #2c4a7c;
     margin: 0;
   }
+
   .sub-course-select-desc {
     font-size: 0.92rem;
     color: #555;
@@ -419,11 +605,13 @@
     text-align: center;
     line-height: 1.6;
   }
+
   .sub-course-select-btns {
     display: flex;
     gap: 20px;
     margin-top: 8px;
   }
+
   .sub-course-btn {
     width: 120px;
     padding: 18px 0;
@@ -436,21 +624,26 @@
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
   }
+
   .sub-course-btn:hover {
     background: #4a7fc1;
     color: #fff;
   }
+
   .sub-course-btn-confirm {
     background: #4a7fc1;
     color: #fff;
   }
+
   .sub-course-btn-confirm:hover {
     background: #2c5fa0;
   }
+
   .sub-course-btn-back {
     border-color: #aaa;
     color: #666;
   }
+
   .sub-course-btn-back:hover {
     background: #f0f0f0;
     color: #333;
@@ -478,7 +671,9 @@
     margin-top: 8px;
   }
 
-  .bug-confirm-dl dt:first-child { margin-top: 0; }
+  .bug-confirm-dl dt:first-child {
+    margin-top: 0;
+  }
 
   .bug-confirm-dl dd {
     font-size: 0.92rem;
@@ -502,5 +697,322 @@
     cursor: pointer;
   }
 
-  .bug-confirm-back:hover { background: #f0f0f0; }
+  .bug-confirm-back:hover {
+    background: #f0f0f0;
+  }
+
+  /* ---- iOS風 共通トークン ---- */
+  :root {
+    --ios-bg: #f2f2f7;
+    --ios-cell-bg: #ffffff;
+    --ios-separator: #c6c6c8;
+    --ios-label: #000000;
+    --ios-secondary: #252525;
+    --ios-tertiary: #8f8f8f;
+    --ios-tint: #007aff;
+    --ios-radius: 10px;
+  }
+
+  /* ---- セクションリスト ---- */
+  .ios-section-list {
+    background: var(--ios-bg);
+    padding: 8px 0 0;
+  }
+
+  .ios-section {
+    margin-bottom: 1px;
+  }
+
+  .ios-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 4px 4px;
+    border-bottom: 1px solid var(--ios-separator);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .ios-section-arrow {
+    font-size: .8rem;
+    color: #444;
+    width: 14px;
+    flex-shrink: 0;
+  }
+
+  .ios-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #2c3e50;
+    flex: 1;
+  }
+
+  .ios-editing-badge {
+    font-size: .72rem;
+    color: var(--ios-tint);
+    background: #e8f0fe;
+    border: 1px solid #b8d0f8;
+    border-radius: 4px;
+    padding: 1px 7px;
+  }
+
+  /* ---- セル（通常モード） ---- */
+  .ios-section-body {
+    background: var(--ios-cell-bg);
+    border-radius: var(--ios-radius);
+    overflow: hidden;
+  }
+
+  .ios-cell {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ios-separator);
+  }
+
+  .ios-cell:last-child {
+    border-bottom: none;
+  }
+
+  .ios-cell.excluded {
+    opacity: .5;
+  }
+
+  .ios-cell-label {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--ios-label);
+    margin-bottom: 8px;
+  }
+
+  .ios-cell-label-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .ios-cell-pencil-btn {
+    background: none;
+    border: none;
+    color: var(--ios-tertiary);
+    cursor: pointer;
+    padding: 2px;
+    line-height: 0;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 4px;
+    transition: color .15s, background .15s;
+  }
+  .pencil-btn-label {
+    line-height: normal;
+    font-size: .8rem;
+  }
+  .ios-cell-add-btn .ios-cell-empty-text {
+    line-height: normal;
+  }
+
+  .ios-cell-pencil-btn:hover {
+    color: var(--ios-tint);
+    background: rgba(0, 122, 255, .08);
+  }
+
+  .ios-cell-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+  }
+
+  .ios-input-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: .72rem;
+    color: var(--ios-secondary);
+  }
+
+  .ios-input-wrap input[type="text"] {
+    width: 100%;
+    padding: 7px 4px;
+    border: 1px solid var(--ios-separator);
+    border-radius: 6px;
+    font-size: 14px;
+    text-align: center;
+    box-sizing: border-box;
+    background: var(--ios-bg);
+  }
+
+  .ios-nt-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .85rem;
+    color: var(--ios-label);
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ---- 編集モード（ios-section内） ---- */
+  .ios-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--ios-separator);
+    background: var(--ios-cell-bg);
+  }
+
+  .ios-edit-row:last-of-type {
+    border-bottom: none;
+  }
+
+  .ios-add-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--ios-cell-bg);
+    border: none;
+    border-top: 1px solid var(--ios-separator);
+    color: var(--ios-tint);
+    font-size: .95rem;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .ios-edit-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--ios-bg);
+    border-top: 1px solid var(--ios-separator);
+    border-radius: 0 0 var(--ios-radius) var(--ios-radius);
+  }
+
+  /* タブレット以上: 中央寄せ */
+  @media (min-width: 640px) {
+    .ios-section-list {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+  }
+
+  /* 科目未設定セル */
+  .ios-cell-empty {
+    background: var(--ios-bg);
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .ios-cell-empty-text {
+    font-size: .82rem;
+    color: var(--ios-tertiary);
+  }
+
+  /* 科目変更スピナー */
+  .pencil-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(0, 0, 0, .15);
+    border-top-color: var(--ios-tint);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 科目1件編集セル */
+  .ios-subject-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 4px 0;
+  }
+
+  .subj-replace-select {
+    flex: none;
+    width: auto;
+    padding: 8px;
+    border: 1px solid var(--ios-separator);
+    border-radius: 6px;
+    font-size: .9rem;
+    background: var(--ios-bg);
+  }
+
+  .ios-subject-edit-row .subj-edit-save-btn {
+    padding: 7px 14px;
+    font-size: .9rem;
+    font-weight: normal;
+  }
+
+  .ios-subject-edit-row .subj-edit-cancel-btn {
+    padding: 7px 10px;
+    font-size: .9rem;
+  }
+
+  .subj-other-name-input {
+    flex: 1 1 100%;
+    padding: 8px;
+    border: 1px solid var(--ios-separator);
+    border-radius: 6px;
+    font-size: .9rem;
+    background: var(--ios-bg);
+    margin-top: 2px;
+  }
+
+  /* ---- 並び替えトグルボタン ---- */
+  .reorder-toggle-wrap {
+    text-align: right;
+    padding: 2px 0 8px;
+  }
+  .reorder-toggle-btn {
+    background: none;
+    border: 1px solid var(--ios-tint);
+    color: var(--ios-tint);
+    border-radius: 14px;
+    padding: 4px 14px;
+    font-size: .82rem;
+    cursor: pointer;
+  }
+
+  /* ---- ドラッグハンドル ---- */
+  .drag-handle {
+    padding: 4px 8px;
+    color: #bbb;
+    font-size: 1.1rem;
+    cursor: grab;
+    touch-action: none;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  /* ---- ドラッグ中ゴースト ---- */
+  .drag-ghost {
+    position: fixed;
+    z-index: 9999;
+    opacity: .85;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,.2);
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  /* ドラッグ元（薄く） */
+  .drag-origin { opacity: .3; }
+
+  /* ドロップターゲット枠線 */
+  .drag-target { outline: 2px solid var(--ios-tint); outline-offset: -2px; }
+
+  /* 移動完了フラッシュアニメーション */
+  @keyframes flash-moved {
+    0%   { background: rgba(0, 122, 255, .22); }
+    100% { background: transparent; }
+  }
+  .reorder-moved { animation: flash-moved .5s ease; }
 </style>

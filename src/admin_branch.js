@@ -191,10 +191,59 @@ function _createChildSheets(ss) {
     { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
     { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
   ];
-  defs.forEach(({ name, headers }) => {
+  defs.forEach(function({ name, headers }) {
     const sheet = ss.insertSheet(name);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    const maxCols = sheet.getMaxColumns();
+    if (maxCols > headers.length) {
+      sheet.deleteColumns(headers.length + 1, maxCols - headers.length);
+    }
   });
+}
+
+/**
+ * 既存の子 SS の全シートを期待スキーマに reconcile する。
+ * 不足列の追加・余計列の削除・余剰列のトリムを行う。
+ * master 権限が必要。GAS エディタから手動実行する。
+ * @param {string} cramId
+ */
+function reconcileChildSchemas(cramId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
+
+    const childSS = getChildSS(cramId);
+    const results = {};
+
+    const defs = [
+      { name: 'school_course_master',    headers: ['school_name', 'school_course'] },
+      { name: 'exam_patterns',           headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course'] },
+      { name: 'school_exam_periods',     headers: ['school_name', 'school_course', 'grade', 'sub_course', 'term_test_id', 'year', 'start_date', 'end_date'] },
+      { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
+      { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
+      { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
+    ];
+
+    defs.forEach(function({ name, headers }) {
+      let sheet = childSS.getSheetByName(name);
+      if (!sheet) {
+        sheet = childSS.insertSheet(name);
+        Logger.log(name + ': シートを新規作成しました');
+      }
+      const report = _reconcileSheetSchema(sheet, headers);
+      results[name] = report;
+      _logReconcile(name, report);
+    });
+
+    writeAuditLog(ctx, 'reconcile_child_schemas', { cram_id: cramId }, 'success');
+    return { success: true, results };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -433,15 +482,14 @@ function _getTargetSS(cramId) {
  * branches シートをメイン SS に作成する（setupAdminSS() から呼ぶ）。
  */
 function _ensureBranchesSheet(ss) {
-  if (!ss.getSheetByName(BRANCHES_SHEET)) {
-    const sheet = ss.insertSheet(BRANCHES_SHEET);
-    sheet.getRange(1, 1, 1, 5).setValues([[
-      'cram_id', 'branch_name', 'spreadsheet_id', 'is_active', 'created_at'
-    ]]);
+  let sheet = ss.getSheetByName(BRANCHES_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(BRANCHES_SHEET);
     Logger.log('branches シートを作成しました。');
-  } else {
-    Logger.log('branches シートは既に存在します。');
   }
+  _logReconcile(BRANCHES_SHEET,
+    _reconcileSheetSchema(sheet, ['cram_id', 'branch_name', 'spreadsheet_id', 'is_active', 'created_at'])
+  );
 }
 
 // Node.js（Jest）でテストできるよう関数を global に公開する
@@ -449,4 +497,5 @@ if (typeof module !== 'undefined') Object.assign(global, {
   BRANCHES_SHEET,
   getChildSS, getBranches, addBranch, updateBranch, setupBranchSS, shareBranchSS,
   _ensureBranchesSheet, _getTargetSS, _createChildSheets, migratePatternSchema,
+  reconcileChildSchemas,
 });

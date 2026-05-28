@@ -82,8 +82,8 @@ let _stSortField      = 'pronunciation';
 let _stSortAsc        = true;
 let _stEditMode       = false;
 let _stEditField      = 'school_course';
-let _stFilterSchools  = [];
-let _stFilterGrades   = [];
+let _stFilterSchoolCourses = [];   // 「学校名/コース名」または「学校名」の配列
+let _stFilterGradeSubs     = [];   // 「学年/文理」または「学年」の配列
 
 const _ST_GRADE_ORDER = ['中1','中2','中3','高1','高2','高3'];
 function _stGradeRank(g) {
@@ -96,8 +96,8 @@ function _stGradeRank(g) {
 function renderStudentManager() {
   _stShowInactive  = false;
   _stEditMode      = false;
-  _stFilterSchools = [];
-  _stFilterGrades  = [];
+  _stFilterSchoolCourses = [];
+  _stFilterGradeSubs     = [];
   const cramId = window.selectedCramId || '';
   if (_stCachedCramId === cramId) { _stRerender(); return; }
   _stFetchAndRender();
@@ -161,20 +161,30 @@ function _stSortIcon(field) {
 
 function _stGetFilteredStudents() {
   let s = _stShowInactive ? _stCachedStudents : _stCachedStudents.filter(function(s) { return s.is_active; });
-  if (_stFilterSchools.length > 0) s = s.filter(function(x) { return _stFilterSchools.indexOf(x.school_name || '') >= 0; });
-  if (_stFilterGrades.length  > 0) s = s.filter(function(x) { return _stFilterGrades.indexOf(x.grade || '')  >= 0; });
+  if (_stFilterSchoolCourses.length > 0) {
+    s = s.filter(function(x) {
+      var label = x.school_course ? (x.school_name + '/' + x.school_course) : (x.school_name || '');
+      return _stFilterSchoolCourses.indexOf(label) >= 0;
+    });
+  }
+  if (_stFilterGradeSubs.length > 0) {
+    s = s.filter(function(x) {
+      var gs = x.sub_course ? (x.grade + '/' + x.sub_course) : (x.grade || '');
+      return _stFilterGradeSubs.indexOf(gs) >= 0;
+    });
+  }
   return s;
 }
 
-function _stToggleSchoolFilter(school) {
-  const i = _stFilterSchools.indexOf(school);
-  if (i >= 0) _stFilterSchools.splice(i, 1); else _stFilterSchools.push(school);
+function _stToggleSchoolCourse(label) {
+  const i = _stFilterSchoolCourses.indexOf(label);
+  if (i >= 0) _stFilterSchoolCourses.splice(i, 1); else _stFilterSchoolCourses.push(label);
   _stRerender();
 }
 
-function _stToggleGradeFilter(grade) {
-  const i = _stFilterGrades.indexOf(grade);
-  if (i >= 0) _stFilterGrades.splice(i, 1); else _stFilterGrades.push(grade);
+function _stToggleGradeSub(gs) {
+  const i = _stFilterGradeSubs.indexOf(gs);
+  if (i >= 0) _stFilterGradeSubs.splice(i, 1); else _stFilterGradeSubs.push(gs);
   _stRerender();
 }
 
@@ -190,37 +200,69 @@ function _stRerender() {
   const allBase  = _stShowInactive ? _stCachedStudents : _stCachedStudents.filter(function(s) { return s.is_active; });
   const filtered = _stGetFilteredStudents();
 
-  // スライサー用ユニーク値
-  const allSchools = _stGetSortedSchoolList(allBase);
-  const allGrades  = _ST_GRADE_ORDER.filter(function(g) { return allBase.some(function(s) { return s.grade === g; }); });
-
   let html = '<h3>生徒一覧</h3>'
     + '<p class="tab-desc">'
     + '<span class="step">▶ <strong>コース・文理は必ず設定してください。</strong> 試験パターンの照合に使用するため、未設定の場合は試験・得点が表示されません。</span><br>'
     + '<span class="step">▶ <strong>コースを編集 / 文理を編集</strong>：チェックボックスで複数の生徒を選択し一括変更できます。</span>'
     + '</p>';
 
+  // 「学校/コース」チップ収集（あいうえお順）
+  const _stScLabelSet = {};
+  const _stScLabelList = [];
+  allBase.forEach(function(s) {
+    const sn = s.school_name  || '';
+    const sc = s.school_course || '';
+    const label = sc ? (sn + '/' + sc) : sn;
+    if (label && !_stScLabelSet[label]) {
+      _stScLabelSet[label] = true;
+      _stScLabelList.push(label);
+    }
+  });
+  _stScLabelList.sort(function(a, b) { return a.localeCompare(b, 'ja'); });
+
+  // 「学年/文理」チップ収集（指定優先順）
+  const _ST_GS_ORDER = ['高1', '高2/文系', '高2/理系', '高3/文系', '高3/理系', '高1/文系', '高1/理系', '中1', '中2', '中3'];
+  const _stGsLabelSet = {};
+  const _stGsLabelList = [];
+  allBase.forEach(function(s) {
+    const g  = s.grade      || '';
+    const sb = s.sub_course || '';
+    const gs = sb ? (g + '/' + sb) : g;
+    if (gs && !_stGsLabelSet[gs]) {
+      _stGsLabelSet[gs] = true;
+      _stGsLabelList.push(gs);
+    }
+  });
+  _stGsLabelList.sort(function(a, b) {
+    const ai = _ST_GS_ORDER.indexOf(a);
+    const bi = _ST_GS_ORDER.indexOf(b);
+    if (ai < 0 && bi < 0) return a.localeCompare(b, 'ja');
+    if (ai < 0) return 1;
+    if (bi < 0) return -1;
+    return ai - bi;
+  });
+
   // ---- スライサー ----
   html += '<div class="st-slicer-bar">';
 
-  if (allSchools.length >= 2) {
-    html += '<div class="st-slicer-group"><span class="st-slicer-label">学校</span>';
-    allSchools.forEach(function(s) {
-      const active = _stFilterSchools.indexOf(s) >= 0;
+  if (_stScLabelList.length >= 1) {
+    html += '<div class="st-slicer-group"><span class="st-slicer-label">学校/コース</span>';
+    _stScLabelList.forEach(function(label) {
+      const active = _stFilterSchoolCourses.indexOf(label) >= 0;
       html += '<button class="st-slicer-chip' + (active ? ' st-slicer-active' : '') + '"'
-            + ' data-school="' + _esc(s) + '"'
-            + ' onclick="_stToggleSchoolFilter(this.dataset.school)">' + _esc(s) + '</button>';
+            + ' data-sc="' + _esc(label) + '"'
+            + ' onclick="_stToggleSchoolCourse(this.dataset.sc)">' + _esc(label) + '</button>';
     });
     html += '</div>';
   }
 
-  if (allGrades.length >= 2) {
-    html += '<div class="st-slicer-group"><span class="st-slicer-label">学年</span>';
-    allGrades.forEach(function(g) {
-      const active = _stFilterGrades.indexOf(g) >= 0;
+  if (_stGsLabelList.length >= 1) {
+    html += '<div class="st-slicer-group"><span class="st-slicer-label">学年/文理</span>';
+    _stGsLabelList.forEach(function(gs) {
+      const active = _stFilterGradeSubs.indexOf(gs) >= 0;
       html += '<button class="st-slicer-chip' + (active ? ' st-slicer-active' : '') + '"'
-            + ' data-grade="' + _esc(g) + '"'
-            + ' onclick="_stToggleGradeFilter(this.dataset.grade)">' + _esc(g) + '</button>';
+            + ' data-gs="' + _esc(gs) + '"'
+            + ' onclick="_stToggleGradeSub(this.dataset.gs)">' + _esc(gs) + '</button>';
     });
     html += '</div>';
   }
@@ -246,7 +288,11 @@ function _stRerender() {
           + courseOpts
           + '</select>';
     if (_stEditField !== 'sub_course') {
-      const schoolForAdd = _stFilterSchools.length === 1 ? _stFilterSchools[0] : null;
+      const selSchoolNames = _stFilterSchoolCourses.map(function(label) {
+        return label.indexOf('/') >= 0 ? label.split('/')[0] : label;
+      });
+      const uniqueSchools = selSchoolNames.filter(function(sn, i) { return selSchoolNames.indexOf(sn) === i; });
+      const schoolForAdd = uniqueSchools.length === 1 ? uniqueSchools[0] : null;
       if (schoolForAdd) {
         // 既存コース一覧（削除チップ）
         const settings = (window.masterData && window.masterData.schoolSettings) || [];
@@ -360,8 +406,11 @@ function _stGetCourseOptionsForEdit() {
   }
   const settings = (window.masterData && window.masterData.schoolSettings) || [];
   let src = settings;
-  if (_stFilterSchools.length > 0) {
-    src = settings.filter(function(s) { return _stFilterSchools.indexOf(s.school_name) >= 0; });
+  if (_stFilterSchoolCourses.length > 0) {
+    const selSchools = _stFilterSchoolCourses.map(function(label) {
+      return label.indexOf('/') >= 0 ? label.split('/')[0] : label;
+    });
+    src = settings.filter(function(s) { return selSchools.indexOf(s.school_name) >= 0; });
   }
   const courses = [];
   src.forEach(function(s) {

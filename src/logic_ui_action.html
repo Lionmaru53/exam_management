@@ -10,7 +10,7 @@
  */
 function handleSave(studentId, examId, patternId, termTestId, year, displayKey, btn) {
   const button = btn || document.getElementById('submitBtn');
-  const panel  = button ? button.closest('.tab-panel') : document;
+  const panel  = button ? button.closest('.tab-panel-app') : document;
   const scores = [];
   const scorePrefix = 's_' + displayKey + '_';
 
@@ -57,13 +57,20 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
       }
     }
 
-    scores.push({
+    const entry = {
       subject_id: subId,
       score:      scoreVal,
       grade_rank: gradeRankVal,
       class_rank: classRankVal,
       not_taken:  false
-    });
+    };
+    if (subId === 'OTHER') {
+      const rnEl = panel.querySelector('#rn_' + displayKey + '_OTHER');
+      entry.raw_subject_name = rnEl ? rnEl.value : '';
+      const gnEl = panel.querySelector('#gn_' + displayKey + '_OTHER');
+      entry.genre_name = gnEl ? gnEl.value : '';
+    }
+    scores.push(entry);
   });
 
   if (validationError) {
@@ -192,6 +199,128 @@ function submitBugConfirm(btn) {
 }
 
 /**
+ * patternSubjectIds（サーバーから返された配列）で _appData を部分更新する。
+ * pattern subjects のみ差し替え、extra/other subjects（scores_data 由来）は保持。
+ */
+function _applyPatternSubjectIds(newPatternSubjectIds) {
+  if (!_appData || !_appData.examTabs) return;
+  var subjectMap = {};
+  (_appData.availableSubjects || []).forEach(function(s) { subjectMap[s.subject_id] = s; });
+
+  _appData.examTabs.forEach(function(tab) {
+    var patternSubjects = newPatternSubjectIds.map(function(sid) {
+      var s = subjectMap[sid];
+      return s ? Object.assign({}, s, { excluded: false }) : null;
+    }).filter(Boolean);
+
+    var extras = (tab.subjects || []).filter(function(s) {
+      return s.extra && newPatternSubjectIds.indexOf(s.subject_id) === -1;
+    });
+    tab.subjects = patternSubjects.concat(extras);
+  });
+
+  if (_appData.currentExam) {
+    var cur = _appData.examTabs.find(function(t) {
+      return t.term_test_id === _appData.currentExam.term_test_id;
+    });
+    if (cur) { _appData.currentExam = cur; _appData.subjects = cur.subjects; }
+  }
+}
+
+/**
+ * 科目選択ドロップダウンの変更時。「その他」選択時にテキスト入力を表示する。
+ */
+function onSubjSelectChange(selectEl) {
+  var row = selectEl.closest('.ios-subject-edit-row');
+  var inp = row ? row.querySelector('.subj-other-name-input') : null;
+  if (inp) inp.style.display = selectEl.value === 'OTHER' ? 'inline-block' : 'none';
+}
+
+var _inputCache = {};
+
+function _cacheInput(el) {
+  var id = el.id;
+  var type, prefixLen;
+  if (id.indexOf('s_') === 0)       { type = 'score';      prefixLen = 2; }
+  else if (id.indexOf('gr_') === 0) { type = 'grade_rank'; prefixLen = 3; }
+  else if (id.indexOf('cr_') === 0) { type = 'class_rank'; prefixLen = 3; }
+  else return;
+  var key = id.slice(prefixLen);
+  if (!_inputCache[key]) _inputCache[key] = {};
+  _inputCache[key][type] = el.value;
+}
+
+function _cacheCheckbox(dk, sid, checked) {
+  var key = dk + '_' + sid;
+  if (!_inputCache[key]) _inputCache[key] = {};
+  _inputCache[key].not_taken = checked;
+}
+
+function startSubjectEdit(btn) {
+  var tabId     = btn.dataset.tabid;
+  var genreName = btn.dataset.genre;
+  var subjectId = btn.dataset.subjectid !== undefined ? btn.dataset.subjectid : '';
+  _editSubjectInfo = { tabId: tabId, genreName: genreName, subjectId: subjectId };
+  renderApp(_appData);
+  switchExamTab(tabId);
+}
+
+/**
+ * 科目1件変更の保存。ドロップダウンの値を読み取ってGASに送信。
+ * replacePatternSubject の戻り値で _appData を部分更新し、getInitialData の再呼び出しを省略する。
+ */
+function saveSubjectEdit(tabId, genreName, oldSubjectId) {
+  var selectEl = document.querySelector('.subj-replace-select');
+  if (!selectEl) { showMessage('選択フォームが見つかりません', 'error'); return; }
+  var newSubjectId = selectEl.value;
+  if (!newSubjectId) { showMessage('科目を選択してください', 'error'); return; }
+
+  var rawSubjName = '';
+  if (newSubjectId === 'OTHER') {
+    var otherInp = document.querySelector('.subj-other-name-input');
+    rawSubjName = otherInp ? otherInp.value.trim() : '';
+    if (!rawSubjName) { showMessage('科目名を入力してください', 'error'); return; }
+  }
+
+  var exam = (_appData && _appData.examTabs || []).find(function(t) { return t.term_test_id === tabId; });
+  var patternId = exam ? exam.pattern_id : null;
+  if (!patternId) { showMessage('パターンIDが見つかりません', 'error'); return; }
+
+  _editSubjectInfo = null;
+  setLoading(true, '科目を保存中...');
+
+  google.script.run
+    .withSuccessHandler(function(responseString) {
+      var res = JSON.parse(responseString);
+      if (!res.success) {
+        setLoading(false);
+        showMessage('保存エラー: ' + (res.error || ''), 'error');
+        return;
+      }
+      if (res.newSubject) {
+        _appData.availableSubjects = (_appData.availableSubjects || []).concat([res.newSubject]);
+        _currentAvailableSubjects  = _appData.availableSubjects;
+      }
+      _applyPatternSubjectIds(res.patternSubjectIds);
+      setLoading(false);
+      renderApp(_appData);
+      switchExamTab(tabId);
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('通信エラー: ' + (err && err.message ? err.message : ''), 'error');
+    })
+    .replacePatternSubject({
+      student_id:       (_currentStudent && _currentStudent.student_id) || '',
+      pattern_id:       patternId,
+      old_subject_id:   oldSubjectId,
+      new_subject_id:   newSubjectId,
+      raw_subject_name: rawSubjName,
+      genre_name:       genreName
+    });
+}
+
+/**
  * コース・文理の初回設定フローで確定が押されたときの処理
  */
 function handleCourseSubmit(lineUserId, schoolCourse, subCourse) {
@@ -228,5 +357,150 @@ function handleSubCourseSelect(lineUserId, subCourse) {
       showMessage('エラー: ' + (err && err.message ? err.message : JSON.stringify(err)), 'error');
     })
     .setStudentSubCourse(lineUserId, subCourse);
+}
+
+// =====================================================
+// 並び替え機能（localStorage 永続化 + タッチドラッグ）
+// =====================================================
+
+function _loadOrderPrefs() {
+  if (!_appData || !_appData.student) return;
+  try {
+    var raw = localStorage.getItem('exam_pref_' + _appData.student.student_id);
+    if (raw) {
+      var p = JSON.parse(raw);
+      _genreOrder   = p.genreOrder   || null;
+      _subjectOrder = p.subjectOrder || {};
+    }
+  } catch(e) {}
+}
+
+function _saveOrderPrefs() {
+  if (!_appData || !_appData.student) return;
+  try {
+    localStorage.setItem('exam_pref_' + _appData.student.student_id,
+      JSON.stringify({ genreOrder: _genreOrder, subjectOrder: _subjectOrder }));
+  } catch(e) {}
+}
+
+function toggleReorderMode() {
+  _reorderMode = !_reorderMode;
+  if (_reorderMode && !_genreOrder) {
+    _genreOrder = (_appData && _appData.genres || []).map(function(g) { return g.genre_name; });
+    var exam = (_appData.examTabs || []).find(function(t) { return t.term_test_id === _currentTabId; });
+    if (exam) (exam.subjects || []).forEach(function(s) {
+      var gn = s.genre_name || 'その他';
+      if (_genreOrder.indexOf(gn) === -1) _genreOrder.push(gn);
+    });
+    _saveOrderPrefs();
+  }
+  renderApp(_appData);
+  if (_currentTabId) switchExamTab(_currentTabId);
+}
+
+function _moveGenreToPosition(fromGenre, toGenre) {
+  if (!_genreOrder || fromGenre === toGenre) return;
+  var fi = _genreOrder.indexOf(fromGenre), ti = _genreOrder.indexOf(toGenre);
+  if (fi === -1 || ti === -1) return;
+  _genreOrder.splice(fi, 1);
+  _genreOrder.splice(ti, 0, fromGenre);
+  _saveOrderPrefs();
+  renderApp(_appData);
+  if (_currentTabId) switchExamTab(_currentTabId);
+  setTimeout(function() { _flashReorderItem('.ios-section[data-genre="' + fromGenre + '"]'); }, 0);
+}
+
+function _moveSubjectToPosition(genreName, fromSid, toSid) {
+  if (fromSid === toSid) return;
+  if (!_subjectOrder[genreName]) {
+    var exam = (_appData.examTabs || []).find(function(t) { return t.term_test_id === _currentTabId; });
+    _subjectOrder[genreName] = exam
+      ? (exam.subjects || []).filter(function(s) { return (s.genre_name || 'その他') === genreName; }).map(function(s) { return s.subject_id; })
+      : [];
+  }
+  var order = _subjectOrder[genreName];
+  var fi = order.indexOf(fromSid), ti = order.indexOf(toSid);
+  if (fi === -1) { order.push(fromSid); fi = order.length - 1; }
+  if (ti === -1 || fi === ti) return;
+  order.splice(fi, 1); order.splice(ti, 0, fromSid);
+  _saveOrderPrefs();
+  renderApp(_appData);
+  if (_currentTabId) switchExamTab(_currentTabId);
+  setTimeout(function() { _flashReorderItem('.ios-cell[data-sid="' + fromSid + '"]'); }, 0);
+}
+
+function _flashReorderItem(selector) {
+  var el = document.querySelector(selector);
+  if (!el) return;
+  el.classList.add('reorder-moved');
+  setTimeout(function() { el.classList.remove('reorder-moved'); }, 600);
+}
+
+function onDragHandleTouch(event, el) {
+  event.preventDefault();
+  var touch  = event.touches[0];
+  var type   = el.dataset.dragType;
+  var genre  = el.dataset.dragGenre;
+  var sid    = el.dataset.dragSid || '';
+  var origin = type === 'genre' ? el.closest('.ios-section') : el.closest('.ios-cell');
+  if (!origin) return;
+
+  var rect  = origin.getBoundingClientRect();
+  var ghost = origin.cloneNode(true);
+  ghost.className += ' drag-ghost';
+  ghost.style.width  = rect.width  + 'px';
+  ghost.style.height = rect.height + 'px';
+  ghost.style.top    = rect.top    + 'px';
+  ghost.style.left   = rect.left   + 'px';
+  document.body.appendChild(ghost);
+  origin.classList.add('drag-origin');
+
+  _dragState = { type: type, genre: genre, sid: sid, ghost: ghost, origin: origin };
+  document.addEventListener('touchmove', _onDragMove, { passive: false });
+  document.addEventListener('touchend',  _onDragEnd,  { passive: false });
+}
+
+function _onDragMove(event) {
+  event.preventDefault();
+  var touch = event.touches[0];
+  var g = _dragState.ghost;
+  g.style.top = (touch.clientY - g.offsetHeight / 2) + 'px';
+
+  g.style.visibility = 'hidden';
+  var under = document.elementFromPoint(touch.clientX, touch.clientY);
+  g.style.visibility = '';
+  var target = _dragState.type === 'genre'
+    ? (under && under.closest('.ios-section'))
+    : (under && under.closest('.ios-cell:not(.ios-cell-empty)'));
+
+  document.querySelectorAll('.drag-target').forEach(function(e) { e.classList.remove('drag-target'); });
+  if (target && target !== _dragState.origin) target.classList.add('drag-target');
+}
+
+function _onDragEnd(event) {
+  event.preventDefault();
+  document.removeEventListener('touchmove', _onDragMove);
+  document.removeEventListener('touchend',  _onDragEnd);
+
+  var touch = event.changedTouches[0];
+  var g = _dragState.ghost;
+  g.style.visibility = 'hidden';
+  var under = document.elementFromPoint(touch.clientX, touch.clientY);
+  g.remove();
+  _dragState.origin.classList.remove('drag-origin');
+  document.querySelectorAll('.drag-target').forEach(function(e) { e.classList.remove('drag-target'); });
+
+  var target = _dragState.type === 'genre'
+    ? (under && under.closest('.ios-section'))
+    : (under && under.closest('.ios-cell:not(.ios-cell-empty)'));
+
+  if (target && target !== _dragState.origin) {
+    if (_dragState.type === 'genre') {
+      _moveGenreToPosition(_dragState.genre, target.dataset.genre);
+    } else if (target.dataset.genre === _dragState.genre) {
+      _moveSubjectToPosition(_dragState.genre, _dragState.sid, target.dataset.sid);
+    }
+  }
+  _dragState = null;
 }
 </script>

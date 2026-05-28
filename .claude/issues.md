@@ -144,7 +144,20 @@
 
 ## open
 
-（現在 open の Issue はありません）
+### [open] #021 ユーザー入力画面の科目・教科の並び替え（ドラッグ）が動作しない
+- **場所**: `src/logic_ui_action.html` → `_onDragStart` / `_onDragMove` / `_onDragEnd`
+- **症状**: 並び替えモードをONにしてドラッグハンドルを操作しても、科目・教科の順序が変わらない。
+- **推定原因（未調査）**: `_onDragMove` が `document.elementFromPoint(touch.clientX, touch.clientY)` でドロップ先要素を特定しているが、`#subject-list` が `overflow-y: auto` のスクロールコンテナになった際に hit-test が正しく機能しない可能性がある。または、ゴースト要素（`drag-ghost`）の `position: fixed` がスクロールコンテナのスタッキングコンテキストと干渉している可能性がある。
+- **関連**: フレックスレイアウト導入（2026-05-29）以前から不具合が存在していた可能性もある。再現手順・ブラウザ確認が先決。
+- **対処**: 未実施（調査待ち）
+
+---
+
+## 技術的負債・将来対応メモ（Issue 化候補）
+
+- `getData.js` の `getSubjectsForEdit` 関数は UI から未使用（削除候補）
+- `_autoCreateExamPatterns` 内の `patternInfosForDefault` は `_setDefaultSubjectsForPatterns` 廃止後のデッドコード（削除候補）
+- 合計 genre（genre_id='to'）への「タップして科目を追加」は非表示だが、✎ボタン（置換）は表示される。将来的に合計科目の追加を管理者のみに制限することを検討
 
 ---
 

@@ -5,9 +5,13 @@
 // 状態変数（プレフィックス _sc_ で他タブと衝突回避）
 var _scSelectedTermTestId = '';
 var _scSelectedYear       = '';     // 選択中の年度（空=全年度）
-var _scSelectedSchool     = '';     // 選択中の学校名（空=最初の学校）
+var _scFilterSchoolCourses = [];    // 選択中の「学校/コース」ラベルの配列
+var _scFilterGradeSubs     = [];    // 選択中の「学年/文理」の配列
+var _scSortField           = 'name'; // 'name' | 'score_<subject_id>'
+var _scSortAsc             = true;
 var _scDisplayMode        = 'score'; // 'score' | 'class_rank' | 'grade_rank'
 var _scScoreData          = null;   // { scores, students }
+var _scLastCramId         = null;   // キャッシュ有効性チェック用
 var _scCellStore          = [];     // [{scoreId,studentName,...}] クリック参照用
 var _scCurrentDetailIdx   = -1;     // モーダル用（XSS回避のため HTML 非埋め込み）
 
@@ -26,6 +30,17 @@ window.renderScoreManager = function () {
 
   if (!_scSelectedTermTestId) {
     _scSelectedTermTestId = String(termTests[0].term_test_id || '').trim();
+  }
+
+  // 校舎が変わった場合のみフィルター・ソート・キャッシュをリセット
+  var _cramId = window.selectedCramId || '';
+  if (_scLastCramId !== _cramId) {
+    _scFilterSchoolCourses = [];
+    _scFilterGradeSubs     = [];
+    _scSortField           = 'name';
+    _scSortAsc             = true;
+    _scLastCramId          = _cramId;
+    _scScoreData           = null;
   }
 
   // 年度リストを examPeriods から構築（新しい年度を先頭に）
@@ -72,9 +87,16 @@ window.renderScoreManager = function () {
   toolbarHtml += '</div>';
 
   content.innerHTML = '<h3>④得点一覧</h3>' + toolbarHtml
-    + '<div id="sc-table-area"><p class="sc-empty-msg">読み込み中...</p></div>';
+    + '<div id="sc-table-area">'
+    + (_scScoreData ? '' : '<p class="sc-empty-msg">読み込み中...</p>')
+    + '</div>'
+    + '<div id="sc-unresolved-area"></div>';
 
-  _scFetchAndRender();
+  if (_scScoreData) {
+    _scRerender();  // キャッシュがあれば即時描画
+  }
+  _scFetchAndRender();  // 常にバックグラウンドで最新取得
+  _scLoadUnresolved();
 };
 
 function _scOnTermTestChange(termTestId) {
@@ -92,17 +114,12 @@ function _scOnDisplayModeChange(mode) {
   _scRerender();
 }
 
-function _scOnSchoolChange(school) {
-  _scSelectedSchool = school;
-  _scRerender();
-}
-
 // =====================================================================
 // データ取得
 // =====================================================================
 function _scFetchAndRender() {
   var area = document.getElementById('sc-table-area');
-  if (area) area.innerHTML = '<p class="sc-empty-msg">読み込み中...</p>';
+  if (area && !_scScoreData) area.innerHTML = '<p class="sc-empty-msg">読み込み中...</p>';
 
   google.script.run
     .withSuccessHandler(function (res) {
@@ -111,18 +128,6 @@ function _scFetchAndRender() {
         return;
       }
       _scScoreData = res;
-
-      // 学校タブ選択の調整：前回選択校がデータに存在しない場合は先頭にリセット
-      var schoolsInData = [];
-      var _snSet = {};
-      (res.students || []).forEach(function (s) {
-        var sn = s.school_name || '（学校名未設定）';
-        if (!_snSet[sn]) { _snSet[sn] = true; schoolsInData.push(sn); }
-      });
-      var sortedForCheck = _scGetSortedSchools(schoolsInData);
-      if (!_scSelectedSchool || sortedForCheck.indexOf(_scSelectedSchool) < 0) {
-        _scSelectedSchool = sortedForCheck[0] || '';
-      }
 
       _scRerender();
     })
@@ -133,7 +138,7 @@ function _scFetchAndRender() {
 }
 
 // =====================================================================
-// クロス表の描画
+// フラットテーブルの描画（スライサー付き）
 // =====================================================================
 function _scRerender() {
   var area = document.getElementById('sc-table-area');
@@ -204,149 +209,324 @@ function _scRerender() {
   var subjectById = {};
   subjects.forEach(function (s) { subjectById[s.subject_id] = s; });
 
-  var sgSubjectList = {};
-  Object.keys(sgSubjectMap).forEach(function (key) {
-    var sn     = key.split('||')[0];
-    var subMap = sgSubjectMap[key];
-    var allIds = Object.keys(subMap);
-    sgSubjectList[key] = allIds.map(function (sid) {
-      var s = subjectById[sid];
-      return {
-        subject_id:  sid,
-        displayName: s ? window._resolveDisplayName(sn, sid) : sid,
-        genre_name:  s ? (s.genre_name || 'その他') : 'その他',
-        orphaned:    subMap[sid] === 'orphaned'
+  // ── ジャンル順マップ（subjects_master の順序を使用）────────────────────
+  var genreOrderMap = {};
+  var _gOrdIdx = 0;
+  subjects.forEach(function(s) {
+    var gn = String(s.genre_name || 'その他').trim();
+    if (!(gn in genreOrderMap)) genreOrderMap[gn] = _gOrdIdx++;
+  });
+
+  // ── 未解決アイテムから補完教科情報を構築（ページロード後に作成された OTHER_NNN 対応）──
+  var tempSubjSupplement = {};
+  (_scAllUnresolvedItems || []).forEach(function(item) {
+    if (item.temp_subject_id) {
+      tempSubjSupplement[item.temp_subject_id] = {
+        subject_id:   item.temp_subject_id,
+        subject_name: item.display_name,
+        genre_name:   item.genre_name || 'その他'
       };
-    }).sort(function (a, b) {
-      var ai = subjects.findIndex(function (s) { return s.subject_id === a.subject_id; });
-      var bi = subjects.findIndex(function (s) { return s.subject_id === b.subject_id; });
-      var ao = ai < 0 ? 9999 : ai;
-      var bo = bi < 0 ? 9999 : bi;
-      return ao - bo;
+    }
+  });
+
+  // ── A. スライサー HTML 生成 ───────────────────────────────────
+
+  // 「学校/コース」チップ収集
+  var scLabelSet = {};
+  var scLabelList = [];
+  students.forEach(function (s) {
+    var sn = s.school_name  || '';
+    var sc = s.school_course || '';
+    var label = sc ? (sn + '/' + sc) : sn;
+    if (label && !scLabelSet[label]) {
+      scLabelSet[label] = true;
+      scLabelList.push(label);
+    }
+  });
+  scLabelList.sort(function (a, b) { return a.localeCompare(b, 'ja'); });
+
+  // 「学年/文理」チップ収集
+  var gsLabelSet = {};
+  var gsLabelList = [];
+  students.forEach(function (s) {
+    var grade = s.grade      || '';
+    var sub   = s.sub_course || '';
+    var gs    = sub ? (grade + '/' + sub) : grade;
+    if (gs && !gsLabelSet[gs]) {
+      gsLabelSet[gs] = true;
+      gsLabelList.push(gs);
+    }
+  });
+  var _gsOrder = ['高1', '高2/文系', '高2/理系', '高3/文系', '高3/理系', '高1/文系', '高1/理系', '中1', '中2', '中3'];
+  gsLabelList.sort(function (a, b) {
+    var ai = _gsOrder.indexOf(a);
+    var bi = _gsOrder.indexOf(b);
+    if (ai < 0 && bi < 0) return a.localeCompare(b, 'ja');
+    if (ai < 0) return 1;
+    if (bi < 0) return -1;
+    return ai - bi;
+  });
+
+  var slicerHtml = '<div class="sc-slicer-bar">';
+
+  // 学校/コース行
+  slicerHtml += '<div class="sc-slicer-group">';
+  slicerHtml += '<span class="sc-slicer-label">学校/コース：</span>';
+  scLabelList.forEach(function (label) {
+    var active = _scFilterSchoolCourses.indexOf(label) >= 0 ? ' sc-slicer-active' : '';
+    slicerHtml += '<button class="sc-slicer-chip' + active + '"'
+      + ' onclick="_scToggleSchoolCourse(\'' + _scEscAttr(label) + '\')">'
+      + _scEsc(label) + '</button>';
+  });
+  slicerHtml += '</div>';
+
+  // 学年/文理行
+  slicerHtml += '<div class="sc-slicer-group">';
+  slicerHtml += '<span class="sc-slicer-label">学年/文理：</span>';
+  gsLabelList.forEach(function (gs) {
+    var active = _scFilterGradeSubs.indexOf(gs) >= 0 ? ' sc-slicer-active' : '';
+    slicerHtml += '<button class="sc-slicer-chip' + active + '"'
+      + ' onclick="_scToggleGradeSub(\'' + _scEscAttr(gs) + '\')">'
+      + _scEsc(gs) + '</button>';
+  });
+  slicerHtml += '</div>';
+
+  slicerHtml += '</div>'; // sc-slicer-bar
+
+  // ── B. フィルタリング ──────────────────────────────────────────
+  var filteredStudents = students.filter(function (s) {
+    if (_scFilterSchoolCourses.length > 0) {
+      var sn    = s.school_name  || '';
+      var sc    = s.school_course || '';
+      var label = sc ? (sn + '/' + sc) : sn;
+      if (_scFilterSchoolCourses.indexOf(label) < 0) return false;
+    }
+    if (_scFilterGradeSubs.length > 0) {
+      var grade = s.grade      || '';
+      var sub   = s.sub_course || '';
+      var gs    = sub ? (grade + '/' + sub) : grade;
+      if (_scFilterGradeSubs.indexOf(gs) < 0) return false;
+    }
+    return true;
+  });
+
+  // 件数表示
+  var countHtml = '<p class="sc-count-msg">全 ' + students.length + ' 名中 ' + filteredStudents.length + ' 名表示</p>';
+
+  // ── C. 科目列の決定（フィルタ後生徒の (school_name, grade) ペアの union）──
+  // フィルタ後の (school_name, grade) ペアを収集
+  var filteredSgPairSet = {};
+  filteredStudents.forEach(function (s) {
+    var sn  = s.school_name || '（学校名未設定）';
+    var gr  = s.grade       || '（学年未設定）';
+    var key = sn + '||' + gr;
+    filteredSgPairSet[key] = true;
+  });
+
+  // フィルタ後ペアに対応する科目を union で収集
+  var unionSubjectMap = {};
+  Object.keys(filteredSgPairSet).forEach(function (key) {
+    var subMap = sgSubjectMap[key] || {};
+    Object.keys(subMap).forEach(function (sid) {
+      if (!unionSubjectMap[sid] || unionSubjectMap[sid] === 'orphaned') {
+        unionSubjectMap[sid] = subMap[sid];
+      }
     });
   });
 
-  // ── 学校 → 学年 → 生徒 の2段階グループ化 ──────────────────────
-  var schoolMap = {};
-  students.forEach(function (s) {
-    var sn = s.school_name || '（学校名未設定）';
-    var gr = s.grade       || '（学年未設定）';
-    if (!schoolMap[sn])     schoolMap[sn]     = {};
-    if (!schoolMap[sn][gr]) schoolMap[sn][gr] = [];
-    schoolMap[sn][gr].push(s);
+  // フィルタ後生徒のスコアも孤立教科として追加
+  filteredStudents.forEach(function (s) {
+    var sn  = s.school_name || '（学校名未設定）';
+    var gr  = s.grade       || '（学年未設定）';
+    scores.forEach(function (sc) {
+      if (sc.student_id !== s.student_id) return;
+      if (!unionSubjectMap[sc.subject_id]) {
+        unionSubjectMap[sc.subject_id] = 'orphaned';
+      }
+    });
   });
 
-  var sortedSchools = _scGetSortedSchools(Object.keys(schoolMap));
+  var unionSubjectList = Object.keys(unionSubjectMap).map(function (sid) {
+    var s    = subjectById[sid];
+    var supp = !s ? (tempSubjSupplement[sid] || null) : null;
+    return {
+      subject_id:  sid,
+      displayName: s ? s.subject_name : (supp ? supp.subject_name : sid),
+      genre_name:  s ? (s.genre_name || 'その他') : (supp ? (supp.genre_name || 'その他') : 'その他'),
+      orphaned:    unionSubjectMap[sid] === 'orphaned'
+    };
+  }).sort(function (a, b) {
+    var ag = genreOrderMap[a.genre_name] !== undefined ? genreOrderMap[a.genre_name] : 9998;
+    var bg = genreOrderMap[b.genre_name] !== undefined ? genreOrderMap[b.genre_name] : 9998;
+    if (ag !== bg) return ag - bg;
+    if (a.orphaned !== b.orphaned) return a.orphaned ? 1 : -1;
+    var ai = subjects.findIndex(function (s) { return s.subject_id === a.subject_id; });
+    var bi = subjects.findIndex(function (s) { return s.subject_id === b.subject_id; });
+    return (ai < 0 ? 9999 : ai) - (bi < 0 ? 9999 : bi);
+  });
+
+  // ── D. ソート ─────────────────────────────────────────────────
+  var sortedStudents = _scSortStudents(filteredStudents, scoreMap);
 
   // ── セルストアをリセット ───────────────────────────────────────
   _scCellStore = [];
 
-  var html = '';
+  // ── E. テーブル描画（フラット形式） ──────────────────────────────
+  var html = slicerHtml + countHtml;
 
-  // ── 学校タブセレクター ────────────────────────────────────────
-  if (sortedSchools.length > 0) {
-    html += '<div class="sc-school-tabs">';
-    sortedSchools.forEach(function (sn) {
-      var active = sn === _scSelectedSchool ? ' sc-school-tab-active' : '';
-      html += '<button class="sc-school-tab' + active + '"'
-            + ' onclick="_scOnSchoolChange(\'' + _scEscAttr(sn) + '\')">'
-            + _scEsc(sn) + '</button>';
-    });
-    html += '</div>';
-  }
-
-  // ── 選択中の学校のみ描画 ──────────────────────────────────────
-  var targetSchool = _scSelectedSchool || sortedSchools[0] || '';
-  var gradeMap     = schoolMap[targetSchool] || {};
-  var sortedGrades = _scSortGrades(Object.keys(gradeMap));
-
-  if (sortedGrades.length === 0) {
-    html += '<p class="sc-empty-msg">この学校の生徒データがありません。</p>';
+  if (sortedStudents.length === 0) {
+    html += '<p class="sc-empty-msg">条件に一致する生徒がいません。</p>';
     area.innerHTML = html;
     return;
   }
 
-  html += '<div class="sc-school-block">';
+  html += '<div class="sc-table-wrap"><table class="sc-table">';
 
-  sortedGrades.forEach(function (grade) {
-    var gradeStudents = (gradeMap[grade] || []).slice().sort(function (a, b) {
-      return (a.pronunciation || a.name || '').localeCompare(b.pronunciation || b.name || '', 'ja');
-    });
-    var sgKey       = targetSchool + '||' + grade;
-    var subjectList = sgSubjectList[sgKey] || [];
-
-    html += '<div class="sc-grade-block">';
-    html += '<div class="sc-grade-header">' + _scEsc(grade) + '</div>';
-
-    if (subjectList.length === 0) {
-      html += '<p class="sc-empty-msg" style="padding:6px 12px;">教科パターンが設定されていません。</p>';
-      html += '</div>';
-      return;
-    }
-
-    html += '<div class="sc-table-wrap"><table class="sc-table">';
-
-    // thead
-    html += '<thead><tr>';
-    html += '<th class="sc-th-name">氏名</th>';
-    subjectList.forEach(function (subj) {
-      var headerBg    = _scGetGenreHeaderColor(subj.genre_name);
-      var orphanClass = subj.orphaned ? ' sc-th-orphaned' : '';
-      html += '<th class="' + orphanClass.trim() + '" style="background-color:' + headerBg + '; color:#fff;">'
-            + _scEsc(subj.displayName) + '</th>';
-    });
-    html += '</tr></thead>';
-
-    // tbody
-    html += '<tbody>';
-    gradeStudents.forEach(function (student) {
-      html += '<tr>';
-      html += '<td class="sc-td-name">' + _scEsc(student.name || '') + '</td>';
-
-      var hasScore = !!studentHasAnyScore[student.student_id];
-
-      subjectList.forEach(function (subj) {
-        var key      = student.student_id + '||' + subj.subject_id;
-        var scoreObj = scoreMap[key] || null;
-        var cellBg   = _scGetGenreColor(subj.genre_name);
-
-        var cellVal = _scGetCellValue(scoreObj, _scDisplayMode);
-
-        if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
-          // スコアあり（クリック可）
-          var idx = _scCellStore.length;
-          _scCellStore.push(_scMakeCellEntry(scoreObj, student, subj));
-          if (scoreObj.not_taken) {
-            html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
-                  + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
-                  + '<span class="sc-badge-absent">欠</span></td>';
-          } else {
-            html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
-                  + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
-                  + _scEsc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
-                  + '</td>';
-          }
-        } else if (hasScore) {
-          // スコアなし・編集可（同じ生徒に別教科のスコアあり）
-          var idx = _scCellStore.length;
-          _scCellStore.push(_scMakeCellEntry(null, student, subj));
-          html += '<td class="sc-cell sc-cell-editable" style="background-color:' + cellBg + '"'
-                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックして登録">—</td>';
-        } else {
-          // スコアなし・編集不可
-          html += '<td class="sc-cell sc-cell-empty" style="background-color:' + cellBg + '">—</td>';
-        }
-      });
-
-      html += '</tr>';
-    });
-    html += '</tbody></table></div>';
-    html += '</div>'; // sc-grade-block
+  // thead
+  html += '<thead><tr>';
+  html += '<th class="sc-th-fixed">学校名</th>';
+  html += '<th class="sc-th-fixed">コース</th>';
+  html += '<th class="sc-th-fixed">学年</th>';
+  html += '<th class="sc-th-fixed">文理</th>';
+  html += '<th class="sc-th-name sc-th-sort" onclick="_scSetSort(\'name\')">'
+        + '氏名' + _scSortIcon('name') + '</th>';
+  unionSubjectList.forEach(function (subj) {
+    var headerBg    = _scGetGenreHeaderColor(subj.genre_name);
+    var orphanClass = subj.orphaned ? ' sc-th-orphaned' : '';
+    var sortKey     = 'score_' + subj.subject_id;
+    html += '<th class="sc-th-sort' + orphanClass + '"'
+          + ' style="background-color:' + headerBg + '; color:#fff;"'
+          + ' onclick="_scSetSort(\'' + _scEscAttr(sortKey) + '\')">'
+          + _scEsc(subj.displayName) + _scSortIcon(sortKey) + '</th>';
   });
+  html += '</tr></thead>';
 
-  html += '</div>'; // sc-school-block
+  // tbody
+  html += '<tbody>';
+  sortedStudents.forEach(function (student) {
+    html += '<tr>';
+    html += '<td class="sc-td-fixed">' + _scEsc(student.school_name  || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _scEsc(student.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _scEsc(student.grade        || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _scEsc(student.sub_course   || '') + '</td>';
+    html += '<td class="sc-td-name">'  + _scEsc(student.name         || '') + '</td>';
+
+    var hasScore = !!studentHasAnyScore[student.student_id];
+
+    unionSubjectList.forEach(function (subj) {
+      var key      = student.student_id + '||' + subj.subject_id;
+      var scoreObj = scoreMap[key] || null;
+      var cellBg   = _scGetGenreColor(subj.genre_name);
+      var cellVal  = _scGetCellValue(scoreObj, _scDisplayMode);
+
+      if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
+        var idx = _scCellStore.length;
+        _scCellStore.push(_scMakeCellEntry(scoreObj, student, subj));
+        if (scoreObj.not_taken) {
+          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+                + '<span class="sc-badge-absent">欠</span></td>';
+        } else {
+          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
+                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+                + _scEsc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
+                + '</td>';
+        }
+      } else if (hasScore) {
+        var idx = _scCellStore.length;
+        _scCellStore.push(_scMakeCellEntry(null, student, subj));
+        html += '<td class="sc-cell sc-cell-editable" style="background-color:' + cellBg + '"'
+              + ' onclick="_scOpenDetail(' + idx + ')" title="クリックして登録">—</td>';
+      } else {
+        html += '<td class="sc-cell sc-cell-empty" style="background-color:' + cellBg + '">—</td>';
+      }
+    });
+
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
 
   area.innerHTML = html;
+}
+
+// =====================================================================
+// スライサー・ソート補助関数
+// =====================================================================
+
+/**
+ * 「学校/コース」チップのトグル
+ * @param {string} label - 「学校名/コース名」または「学校名」
+ */
+function _scToggleSchoolCourse(label) {
+  var i = _scFilterSchoolCourses.indexOf(label);
+  if (i >= 0) _scFilterSchoolCourses.splice(i, 1);
+  else _scFilterSchoolCourses.push(label);
+  _scRerender();
+}
+
+/**
+ * 「学年/文理」チップのトグル
+ * @param {string} gs - 「学年/文理」または「学年」
+ */
+function _scToggleGradeSub(gs) {
+  var i = _scFilterGradeSubs.indexOf(gs);
+  if (i >= 0) _scFilterGradeSubs.splice(i, 1);
+  else _scFilterGradeSubs.push(gs);
+  _scRerender();
+}
+
+/**
+ * ソートフィールドの設定（同じフィールドなら昇降切替）
+ * @param {string} field - 'name' | 'score_<subject_id>'
+ */
+function _scSetSort(field) {
+  if (_scSortField === field) { _scSortAsc = !_scSortAsc; }
+  else { _scSortField = field; _scSortAsc = true; }
+  _scRerender();
+}
+
+/**
+ * ソートアイコン HTML を返す
+ * @param {string} field - 'name' | 'score_<subject_id>'
+ * @returns {string} HTML文字列
+ */
+function _scSortIcon(field) {
+  if (_scSortField !== field) return '<span class="sc-sort-icon">⇅</span>';
+  return _scSortAsc
+    ? '<span class="sc-sort-icon sc-sort-active">▲</span>'
+    : '<span class="sc-sort-icon sc-sort-active">▼</span>';
+}
+
+/**
+ * 生徒配列をソートして返す
+ * @param {Array} arr - 生徒オブジェクト配列
+ * @param {Object} scoreMap - キー "studentId||subjectId" のスコアマップ
+ * @returns {Array} ソート済み配列
+ */
+function _scSortStudents(arr, scoreMap) {
+  return arr.slice().sort(function (a, b) {
+    var cmp;
+    if (_scSortField === 'name') {
+      var va = a.pronunciation || a.name || '';
+      var vb = b.pronunciation || b.name || '';
+      cmp = va.localeCompare(vb, 'ja');
+    } else if (_scSortField && _scSortField.indexOf('score_') === 0) {
+      var sid = _scSortField.slice(6);
+      var sa  = scoreMap[a.student_id + '||' + sid];
+      var sb  = scoreMap[b.student_id + '||' + sid];
+      var _va = sa ? _scGetCellValue(sa, _scDisplayMode) : null;
+      var _vb = sb ? _scGetCellValue(sb, _scDisplayMode) : null;
+      var va  = (_va === null || _va === 'absent') ? null : _va;
+      var vb  = (_vb === null || _vb === 'absent') ? null : _vb;
+      if (va === null && vb === null) cmp = 0;
+      else if (va === null)           cmp = 1;
+      else if (vb === null)           cmp = -1;
+      else                            cmp = Number(va) - Number(vb);
+    } else {
+      cmp = 0;
+    }
+    return _scSortAsc ? cmp : -cmp;
+  });
 }
 
 // セルストアエントリ生成ヘルパー
@@ -375,36 +555,6 @@ function _scGetCellValue(scoreObj, mode) {
   if (mode === 'class_rank') return scoreObj.class_rank;
   if (mode === 'grade_rank') return scoreObj.grade_rank;
   return scoreObj.score;
-}
-
-// =====================================================================
-// 補助：学年を高1→高2→高3 順にソート
-// =====================================================================
-function _scSortGrades(grades) {
-  var order = { '高1': 1, '高2': 2, '高3': 3 };
-  return grades.slice().sort(function (a, b) {
-    var ao = order[a] !== undefined ? order[a] : 99;
-    var bo = order[b] !== undefined ? order[b] : 99;
-    if (ao !== bo) return ao - bo;
-    return a.localeCompare(b, 'ja');
-  });
-}
-
-// =====================================================================
-// 補助：学校の並び順（生徒一覧と共用の localStorage キー）
-// =====================================================================
-function _scGetSortedSchools(schools) {
-  try {
-    var key       = 'st_school_order_' + (window.selectedCramId || '');
-    var savedJson = localStorage.getItem(key);
-    if (savedJson) {
-      var saved   = JSON.parse(savedJson);
-      var ordered = saved.filter(function (s) { return schools.indexOf(s) >= 0; });
-      schools.forEach(function (s) { if (ordered.indexOf(s) < 0) ordered.push(s); });
-      return ordered;
-    }
-  } catch (e) { /* localStorage 利用不可の場合は無視 */ }
-  return schools.slice().sort(function (a, b) { return a.localeCompare(b, 'ja'); });
 }
 
 // =====================================================================
@@ -515,6 +665,8 @@ var _scGenrePalette = {
   '国語': '#bbf7d0',
   '理科': '#fbcfe8',
   '社会': '#fde68a',
+  '副教科': '#f3f4f6',
+  '合計': '#ede9fe',
   'その他': '#f8fafc'
 };
 var _scGenreHeaderPalette = {
@@ -523,6 +675,8 @@ var _scGenreHeaderPalette = {
   '国語': '#15803d',
   '理科': '#be185d',
   '社会': '#a16207',
+  '副教科': '#374151',
+  '合計': '#5b21b6',
   'その他': '#475569'
 };
 function _scGetGenreColor(genreName) {
@@ -553,6 +707,198 @@ function _scEscAttr(str) {
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'");
 }
+
+// =====================================================================
+// 未解決教科（その他）セクション
+// =====================================================================
+var _scUnresolvedGrade    = '';   // 選択中の学年フィルター
+var _scAllUnresolvedItems = [];   // ロード済み全 items（フィルター再利用）
+
+function _scLoadUnresolved() {
+  var area = document.getElementById('sc-unresolved-area');
+  if (!area || !window.selectedCramId) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success || !res.items || res.items.length === 0) {
+        area.innerHTML = '';
+        _scAllUnresolvedItems = [];
+        if (_scScoreData) _scRerender();
+        return;
+      }
+      _scAllUnresolvedItems = res.items;
+      _scRenderUnresolvedList(res.items);
+      if (_scScoreData) _scRerender();
+    })
+    .withFailureHandler(function () {
+      area.innerHTML = '';
+      _scAllUnresolvedItems = [];
+    })
+    .getUnresolvedOtherSubjects(window.selectedCramId);
+}
+
+function _scRenderUnresolvedList(items) {
+  var area = document.getElementById('sc-unresolved-area');
+  if (!area) return;
+
+  // 学年一覧を items から収集
+  var gradeSet = {};
+  items.forEach(function(item) {
+    (item.grades || []).forEach(function(g) { if (g) gradeSet[g] = true; });
+  });
+  var allGrades = Object.keys(gradeSet).sort();
+
+  var grade = _scUnresolvedGrade;
+  var filtered = grade
+    ? items.filter(function(item) { return (item.grades || []).indexOf(grade) !== -1; })
+    : items;
+
+  if (filtered.length === 0) {
+    area.innerHTML = '';
+    return;
+  }
+
+  var allSubjects = (window.masterData && window.masterData.subjects) || [];
+
+  var gradeSelHtml = '<select id="sc-unresolved-grade-sel" class="sc-sel" onchange="_scOnUnresolvedGradeChange(this.value)">'
+    + '<option value="">全学年</option>';
+  allGrades.forEach(function(g) {
+    gradeSelHtml += '<option value="' + _scEsc(g) + '"' + (grade === g ? ' selected' : '') + '>' + _scEsc(g) + '</option>';
+  });
+  gradeSelHtml += '</select>';
+
+  var html = '<div class="sc-unresolved-section">';
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">';
+  html += '<h4 class="sc-unresolved-title" style="margin:0;">未解決教科（その他）</h4>';
+  html += '<label class="sc-label">学年：</label>' + gradeSelHtml;
+  html += '</div>';
+  html += '<p class="sc-unresolved-desc">生徒が「その他」で入力した教科名です。下記の2つの方法で解決してください。</p>';
+  html += '<table class="sc-unresolved-table">';
+  html += '<thead><tr>'
+    + '<th>入力名</th>'
+    + '<th>件数</th>'
+    + '<th>生徒</th>'
+    + '<th class="sc-action-col sc-action-col-approve">① このまま新しい科目として登録</th>'
+    + '<th class="sc-action-col sc-action-col-merge">② 既存の科目に統合（スコア引き継ぎ）</th>'
+    + '</tr></thead>';
+  html += '<tbody>';
+
+  filtered.forEach(function(item, idx) {
+    var selectId = 'sc-unresolved-sel-' + idx;
+
+    // 生徒情報を「名前（学校・学年・コース）」形式でフォーマット
+    var studentTexts = (item.students || []).map(function(s) {
+      var detail = [s.school_name, s.grade, s.school_course].filter(Boolean).join('・');
+      return s.name + (detail ? '（' + detail + '）' : '');
+    });
+
+    // 教科ドロップダウン：仮教科（is_temp='1'）は選択肢から除外、grade と genre で絞り込む
+    var _tempSubjectIds = new Set((_scAllUnresolvedItems || []).map(function(i) { return i.temp_subject_id; }).filter(Boolean));
+    var itemGrades    = item.grades    || [];
+    var itemGenreName = item.genre_name || '';
+    var rowSubjects = allSubjects.filter(function(s) {
+      if (_tempSubjectIds.has(String(s.subject_id || '').trim())) return false;
+      var sg = String(s.grade      || '').trim();
+      var gn = String(s.genre_name || '').trim();
+      var gradeOk = itemGrades.length === 0 || !sg || itemGrades.some(function(g) { return g === sg; });
+      var genreOk = !itemGenreName || !gn || gn === itemGenreName;
+      return gradeOk && genreOk;
+    });
+
+    var resolveIdentifier = item.temp_subject_id || item.raw_subject_name || '';
+
+    html += '<tr>';
+
+    // 入力名・件数・生徒
+    html += '<td><strong>' + _scEsc(item.display_name || item.raw_subject_name || '') + '</strong>';
+    if (itemGenreName) html += '<br><small style="color:#888;">' + _scEsc(itemGenreName) + '</small>';
+    html += '</td>';
+    html += '<td style="text-align:center;">' + _scEsc(String(item.count)) + '</td>';
+    html += '<td style="font-size:0.85em;">' + studentTexts.map(_scEsc).join('<br>') + '</td>';
+
+    // ① 新規登録
+    var approveHtml = '';
+    if (item.temp_subject_id) {
+      approveHtml = '<div class="sc-action-box sc-action-box-approve">'
+        + '<p class="sc-action-desc">入力されたこの名称を<br>新しい科目として登録します</p>'
+        + '<button class="sc-btn-approve" onclick="_scApproveNewSubject(\'' + _scEscAttr(item.temp_subject_id) + '\')">このまま登録</button>'
+        + '</div>';
+    } else {
+      approveHtml = '<div class="sc-action-box sc-action-box-disabled"><p class="sc-action-desc">旧形式データのため<br>この操作は使用できません</p></div>';
+    }
+    html += '<td>' + approveHtml + '</td>';
+
+    // ② 既存科目に統合
+    var mergeHtml = '<div class="sc-action-box sc-action-box-merge">'
+      + '<p class="sc-action-desc">既存の科目を選択すると<br>スコアが引き継がれます</p>'
+      + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
+      + '<select id="' + selectId + '" class="sc-sel">'
+      + '<option value="">-- 科目を選ぶ --</option>';
+    rowSubjects.forEach(function(s) {
+      mergeHtml += '<option value="' + _scEsc(s.subject_id) + '">' + _scEsc(s.subject_name) + '</option>';
+    });
+    mergeHtml += '</select>'
+      + '<button class="sc-btn-save" onclick="_scResolveOther(\'' + _scEscAttr(resolveIdentifier) + '\', \'' + _scEscAttr(selectId) + '\')">統合する</button>'
+      + '</div></div>';
+    html += '<td>' + mergeHtml + '</td>';
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
+}
+
+function _scOnUnresolvedGradeChange(grade) {
+  _scUnresolvedGrade = grade;
+  _scRenderUnresolvedList(_scAllUnresolvedItems);
+}
+
+function _scApproveNewSubject(tempSubjectId) {
+  setLoading(true, '登録中...');
+  google.script.run
+    .withSuccessHandler(function(resStr) {
+      setLoading(false);
+      var res = JSON.parse(resStr);
+      if (res.success) {
+        showMessage('新しい科目として登録しました。', 'success');
+        _scLoadUnresolved();
+        _scFetchAndRender();
+      } else {
+        showMessage(res.error || '失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    })
+    .approveNewSubject(tempSubjectId);
+}
+
+function _scResolveOther(rawName, selectId) {
+  var sel = document.getElementById(selectId);
+  if (!sel || !sel.value) { showMessage('紐づける教科を選んでください。', 'error'); return; }
+
+  var realSubjectId = sel.value;
+  setLoading(true, '教科を紐づけ中...');
+  google.script.run
+    .withSuccessHandler(function (resStr) {
+      setLoading(false);
+      var res = JSON.parse(resStr);
+      if (res.success) {
+        showMessage(res.updated + ' 件を紐づけました。', 'success');
+        _scLoadUnresolved();
+        _scFetchAndRender();
+      } else {
+        showMessage(res.error || '失敗しました。', 'error');
+      }
+    })
+    .withFailureHandler(function (err) {
+      setLoading(false);
+      showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+    })
+    .resolveOtherSubject(window.selectedCramId, rawName, realSubjectId);
+}
 </script>
 
 <style>
@@ -575,48 +921,75 @@ function _scEscAttr(str) {
   font-size: 0.95em;
 }
 
-/* ── 学校タブセレクター ─────────────────────────────────── */
-.sc-school-tabs {
+/* ── スライサー ─────────────────────────────────────────── */
+.sc-slicer-bar {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.sc-slicer-group {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 5px;
 }
-.sc-school-tab {
-  padding: 5px 16px;
-  border: 1px solid #a8bcdf;
-  border-radius: 20px;
-  background: #f4f7fc;
-  color: #3a5d9c;
-  font-size: 0.9em;
+.sc-slicer-label {
+  font-size: 0.82em;
+  font-weight: bold;
+  color: #555;
+  min-width: 72px;
+  flex-shrink: 0;
+}
+.sc-slicer-chip {
+  padding: 3px 12px;
+  border: 1px solid #b0c4de;
+  border-radius: 14px;
+  background: #fff;
+  color: #334;
+  font-size: 0.85em;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.12s, color 0.12s;
 }
-.sc-school-tab:hover { background: #e2eaf5; }
-.sc-school-tab-active {
-  background: #3b6fc4;
+.sc-slicer-chip:hover { background: #e8edf7; }
+.sc-slicer-active {
+  background: #3a4f80;
   color: #fff;
-  border-color: #3b6fc4;
+  border-color: #3a4f80;
+}
+
+/* ── ソートアイコン ─────────────────────────────────────── */
+.sc-sort-icon {
+  font-size: 0.75em;
+  margin-left: 3px;
+  opacity: 0.5;
+}
+.sc-sort-active { opacity: 1; }
+.sc-th-sort { cursor: pointer; }
+.sc-th-sort:hover { opacity: 0.85; }
+
+/* ── 固定情報列（学校名/コース/学年/文理） ──────────────── */
+.sc-th-fixed {
+  background: #f0f4f9;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sc-td-fixed {
+  white-space: nowrap;
+  font-size: 0.88em;
+  text-align: center;
+}
+
+/* ── 件数表示 ────────────────────────────────────────────── */
+.sc-count-msg {
+  font-size: 0.85em;
+  color: #666;
+  margin: 0 0 8px;
 }
 
 /* ── メッセージ ──────────────────────────────────────────── */
 .sc-empty-msg { color: #888; padding: 16px 0; }
 .sc-error-msg { color: #c00; padding: 16px 0; }
-
-/* ── 学校グループ ────────────────────────────────────────── */
-.sc-school-block { margin-bottom: 36px; }
-
-/* ── 学年サブヘッダー ────────────────────────────────────── */
-.sc-grade-block { margin-bottom: 20px; }
-.sc-grade-header {
-  padding: 4px 12px 4px 24px;
-  margin-bottom: 6px;
-  font-weight: 600;
-  font-size: 0.95em;
-  color: #3a5d9c;
-  border-left: 3px solid #a8bcdf;
-  background: #f4f7fc;
-}
 
 /* ── テーブルラッパー（横スクロール対応）────────────────── */
 .sc-table-wrap {
@@ -730,4 +1103,69 @@ function _scEscAttr(str) {
   cursor: pointer;
 }
 .sc-btn-cancel:hover { background: #f5f5f5; }
+
+/* ── 未解決教科セクション ──────────────────────────────────── */
+.sc-unresolved-section {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 2px dashed #e0c060;
+}
+.sc-unresolved-title {
+  font-size: 1rem;
+  font-weight: bold;
+  color: #b45309;
+  margin: 0 0 6px;
+}
+.sc-unresolved-desc {
+  font-size: 0.88rem;
+  color: #666;
+  margin: 0 0 14px;
+}
+.sc-unresolved-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.sc-unresolved-table th,
+.sc-unresolved-table td {
+  border: 1px solid #e0e4ea;
+  padding: 6px 10px;
+  font-size: 0.9em;
+  vertical-align: middle;
+}
+.sc-unresolved-table th { background: #fdf6e3; font-weight: 600; }
+
+/* ── 未解決教科：操作カラム ────────────────────────────────── */
+.sc-action-col {
+  min-width: 180px;
+  font-size: 0.85em;
+}
+.sc-action-col-approve { background: #f0f7ee !important; color: #276b20 !important; }
+.sc-action-col-merge   { background: #fff6ee !important; color: #8b4a00 !important; }
+
+.sc-action-box {
+  padding: 8px;
+  border-radius: 4px;
+}
+.sc-action-box-approve { background: #f0f7ee; }
+.sc-action-box-merge   { background: #fff6ee; }
+.sc-action-box-disabled { background: #f5f5f5; color: #aaa; }
+
+.sc-action-desc {
+  font-size: 0.82em;
+  color: #555;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+.sc-action-box-disabled .sc-action-desc { color: #aaa; }
+
+.sc-btn-approve {
+  padding: 6px 14px;
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.sc-btn-approve:hover { background: #1b5e20; }
 </style>

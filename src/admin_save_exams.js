@@ -155,7 +155,10 @@ function addNewSubject(patternId, newSubjectName, genreName, grade) {
   }
 }
 
-globalThis.addNewSubject = addNewSubject;
+if (typeof module !== 'undefined') Object.assign(global, {
+  generateUniqueId, saveSchoolExamPeriod, addNewPattern, updatePatternSubjects,
+  addNewSubject, initializeDefaultPatterns, batchSetGroupSubjects,
+});
 
 /**
  * デフォルト初期化: 5組み合わせ（高1/''/高2-3/文系・理系）のパターンを確保し

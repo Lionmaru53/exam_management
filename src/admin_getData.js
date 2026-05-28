@@ -37,9 +37,8 @@ function getAdminInitialData(targetCramId) {
       return { ...s, genre_name: g ? g.genre_name : '未設定' };
     });
 
-    // 学校別教科表示名エイリアス
-    const aliasSheet = parentSS.getSheetByName('school_subject_aliases');
-    results.schoolSubjectAliases = aliasSheet ? stringifyDates(getRowsData(aliasSheet)) : [];
+    // school_subject_aliases は廃止（フロント後方互換のため空配列を返す）
+    results.schoolSubjectAliases = [];
 
     // 校舎一覧を返す（master は全件、branch_admin は担当校舎のみ）
     if (adminContext.role === 'master' || adminContext.role === 'branch_admin') {
@@ -119,6 +118,151 @@ function getStudentList(targetCramId) {
       .filter(s => s.student_id);
 
     return { success: true, students, cramId };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * 仮教科（OTHER_NNN）および旧 subject_id='OTHER' のスコアを集計して返す。
+ * @returns {{ success: boolean, items?: object[], error?: string }}
+ *   items: [{
+ *     temp_subject_id: string|null,   // 新方式: OTHER_NNN / 旧方式: null
+ *     raw_subject_name: string|null,  // 旧方式: 生徒入力名 / 新方式: null
+ *     display_name: string,           // 表示用（どちらの方式でも同じ）
+ *     count: number,
+ *     grades: string[],
+ *     genre_name: string,
+ *     students: [{name, school_name, grade, school_course}]
+ *   }]
+ */
+function getUnresolvedOtherSubjects(cramId) {
+  try {
+    if (!cramId) return { success: false, error: '校舎を選択してください' };
+
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const ss    = getChildSS(cramId);
+    const sheet = ss.getSheetByName('scores_data');
+    if (!sheet) return { success: true, items: [] };
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0].map(h => String(h).trim());
+    const subjCol  = headers.indexOf('subject_id');
+    const rawCol   = headers.indexOf('raw_subject_name');
+    const sidCol   = headers.indexOf('student_id');
+    const gradeCol = headers.indexOf('grade');
+    const genreCol = headers.indexOf('genre_name');
+    if (subjCol < 0) return { success: true, items: [] };
+
+    // subjects_master から is_temp='1' の仮教科を解決（命名形式に依存しない）
+    const tempSubjectMap = {};
+    const genreNameMap   = {};  // genre_id → genre_name
+    const genreSheet = parentSS.getSheetByName('genres_master');
+    if (genreSheet) {
+      const gd = genreSheet.getDataRange().getValues();
+      const gh = gd[0].map(h => String(h).trim());
+      const giCol = gh.indexOf('genre_id');
+      const gnCol = gh.indexOf('genre_name');
+      for (let i = 1; i < gd.length; i++) {
+        const gid = String(gd[i][giCol] || '').trim();
+        if (gid) genreNameMap[gid] = String(gd[i][gnCol] || '').trim();
+      }
+    }
+    const subSheet = parentSS.getSheetByName('subjects_master');
+    if (subSheet) {
+      const sd = subSheet.getDataRange().getValues();
+      const sh = sd[0].map(h => String(h).trim());
+      const sIdCol    = sh.indexOf('subject_id');
+      const sNmCol    = sh.indexOf('subject_name');
+      const sGiCol    = sh.indexOf('genre_id');
+      const sIsTmpCol = sh.indexOf('is_temp');
+      if (sIdCol >= 0 && sIsTmpCol >= 0) {
+        for (let i = 1; i < sd.length; i++) {
+          // is_temp='1' のエントリのみ仮教科として登録
+          if (String(sd[i][sIsTmpCol] || '').trim() !== '1') continue;
+          const sid = String(sd[i][sIdCol] || '').trim();
+          if (!sid) continue;
+          const gid = String(sd[i][sGiCol] || '').trim();
+          tempSubjectMap[sid] = {
+            subject_name: String(sd[i][sNmCol] || '').trim(),
+            genre_name:   gid ? (genreNameMap[gid] || '') : ''
+          };
+        }
+      }
+    }
+
+    // 生徒情報マップ
+    const stuSheet = ss.getSheetByName('students_master');
+    const stuMap   = {};
+    if (stuSheet) {
+      getRowsData(stuSheet).forEach(s => {
+        if (s.student_id) stuMap[String(s.student_id).trim()] = {
+          name:          String(s.name          || '').trim(),
+          school_name:   String(s.school_name   || '').trim(),
+          grade:         String(s.grade         || '').trim(),
+          school_course: String(s.school_course || '').trim(),
+        };
+      });
+    }
+
+    // mapKey → 集計オブジェクト
+    const map = {};
+
+    for (let i = 1; i < data.length; i++) {
+      const subjectId = String(data[i][subjCol] || '').trim();
+      let mapKey, displayName, tempId, rawSubjName, gnVal;
+
+      if (tempSubjectMap[subjectId]) {
+        // 新方式：is_temp='1' の仮教科
+        mapKey      = subjectId;
+        tempId      = subjectId;
+        rawSubjName = null;
+        const info  = tempSubjectMap[subjectId];
+        displayName = info.subject_name || subjectId;
+        gnVal       = info.genre_name   || '';
+      } else if (subjectId === 'OTHER' && rawCol >= 0) {
+        // 旧方式
+        const raw = String(data[i][rawCol] || '').trim();
+        if (!raw) continue;
+        mapKey      = 'LEGACY:' + raw;
+        tempId      = null;
+        rawSubjName = raw;
+        displayName = raw;
+        gnVal       = genreCol >= 0 ? String(data[i][genreCol] || '').trim() : '';
+      } else {
+        continue;
+      }
+
+      if (!map[mapKey]) map[mapKey] = {
+        temp_subject_id:  tempId,
+        raw_subject_name: rawSubjName,
+        display_name:     displayName,
+        count:       0,
+        student_ids: new Set(),
+        grades:      new Set(),
+        genre_name:  gnVal
+      };
+      map[mapKey].count++;
+      if (sidCol   >= 0) map[mapKey].student_ids.add(String(data[i][sidCol]   || '').trim());
+      if (gradeCol >= 0) map[mapKey].grades.add(     String(data[i][gradeCol] || '').trim());
+      if (!map[mapKey].genre_name && gnVal) map[mapKey].genre_name = gnVal;
+    }
+
+    const items = Object.values(map).map(item => {
+      const students = [...item.student_ids].map(id => stuMap[id] || { name: id, school_name: '', grade: '', school_course: '' });
+      return {
+        temp_subject_id:  item.temp_subject_id,
+        raw_subject_name: item.raw_subject_name,
+        display_name:     item.display_name,
+        count:            item.count,
+        grades:           [...item.grades].filter(Boolean),
+        genre_name:       item.genre_name,
+        students,
+      };
+    });
+    items.sort((a, b) => b.count - a.count);
+
+    return { success: true, items };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -231,7 +375,8 @@ function _autoCreateAllPatterns(childSS, schoolName, schoolCourse) {
   });
   if (newRows.length > 0) {
     patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
-    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
+    const patternInfos = newRows.map(r => ({ pattern_id: r[0], grade: r[3] }));
+    _addTotalGenreSubjects(childSS, patternInfos);
   }
 }
 
@@ -260,6 +405,7 @@ function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, g
   if (newRows.length === 0) return;
 
   patSheet.getRange(patSheet.getLastRow() + 1, 1, newRows.length, 5).setValues(newRows);
+  _addTotalGenreSubjects(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
 
   // sub_course がある新規パターンは、sub_course なしの既存パターンから教科をコピーしてマージ
   // コピー元が存在しない場合はデフォルト教科にフォールバック
@@ -296,11 +442,6 @@ function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, g
     if (newPsRows.length > 0 && psSheet) {
       psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
     }
-    if (patternInfosForDefault.length > 0) {
-      _setDefaultSubjectsForPatterns(childSS, patternInfosForDefault);
-    }
-  } else {
-    _setDefaultSubjectsForPatterns(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
   }
 }
 
@@ -344,6 +485,44 @@ function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
         existingSet.add(key);
       }
     });
+  });
+
+  if (newPsRows.length > 0)
+    psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
+}
+
+/**
+ * genre_id='to'（合計）に属する全科目を指定パターンの pattern_subjects に自動登録する。
+ * 重複はスキップ。subjects_master.grade が空 or パターンの grade と一致する科目のみ対象。
+ */
+function _addTotalGenreSubjects(childSS, patternInfos) {
+  if (!patternInfos || patternInfos.length === 0) return;
+  const psSheet = childSS.getSheetByName('pattern_subjects');
+  if (!psSheet) return;
+
+  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+  const subSheet  = parentSS.getSheetByName('subjects_master');
+  if (!subSheet) return;
+
+  const totalSubjects = getRowsData(subSheet).filter(s =>
+    String(s.genre_id || '').trim() === 'to'
+  );
+  if (totalSubjects.length === 0) return;
+
+  const existingSet = new Set(
+    getRowsData(psSheet).map(r => String(r.pattern_id) + '||' + String(r.subject_id))
+  );
+
+  const newPsRows = [];
+  patternInfos.forEach(({ pattern_id, grade }) => {
+    totalSubjects
+      .filter(s => { const sg = String(s.grade || '').trim(); return !sg || sg === grade; })
+      .forEach(s => {
+        const sid = String(s.subject_id || '').trim();
+        if (!sid) return;
+        const key = pattern_id + '||' + sid;
+        if (!existingSet.has(key)) { newPsRows.push([pattern_id, sid]); existingSet.add(key); }
+      });
   });
 
   if (newPsRows.length > 0)
