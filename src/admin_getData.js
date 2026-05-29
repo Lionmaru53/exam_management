@@ -408,87 +408,33 @@ function _autoCreateExamPatterns(childSS, schoolName, schoolCourse, subCourse, g
   _addTotalGenreSubjects(childSS, newRows.map(r => ({ pattern_id: r[0], grade: r[3] })));
 
   // sub_course がある新規パターンは、sub_course なしの既存パターンから教科をコピーしてマージ
-  // コピー元が存在しない場合はデフォルト教科にフォールバック
   if (subCourse) {
-    const psSheet = childSS.getSheetByName('pattern_subjects');
+    const psSheet   = childSS.getSheetByName('pattern_subjects');
     const existingPs = psSheet ? getRowsData(psSheet) : [];
-    const newPsRows = [];
-    const patternInfosForDefault = [];
+    const newPsRows  = [];
 
     newRows.forEach(r => {
       const newPatternId = r[0];
-      const grade = r[3];
-
-      const basePattern = existing.find(p =>
+      const grade        = r[3];
+      const basePattern  = existing.find(p =>
         String(p.school_name   || '').trim() === schoolName   &&
         String(p.school_course || '').trim() === schoolCourse &&
         String(p.grade         || '').trim() === grade        &&
         String(p.sub_course    || '').trim() === ''
       );
-
       if (basePattern) {
-        const baseSubjects = existingPs
+        existingPs
           .filter(ps => String(ps.pattern_id).trim() === String(basePattern.pattern_id).trim())
           .map(ps => String(ps.subject_id).trim())
-          .filter(Boolean);
-        if (baseSubjects.length > 0) {
-          baseSubjects.forEach(sid => newPsRows.push([newPatternId, sid]));
-          return;
-        }
+          .filter(Boolean)
+          .forEach(sid => newPsRows.push([newPatternId, sid]));
       }
-      patternInfosForDefault.push({ pattern_id: newPatternId, grade });
     });
 
     if (newPsRows.length > 0 && psSheet) {
       psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
     }
   }
-}
-
-/**
- * 新規生成した exam_patterns に subjects_master.default = true の教科を設定する。
- * patternInfos: [{ pattern_id, grade }]
- */
-function _setDefaultSubjectsForPatterns(childSS, patternInfos) {
-  if (!patternInfos || patternInfos.length === 0) return;
-  const psSheet = childSS.getSheetByName('pattern_subjects');
-  if (!psSheet) return;
-
-  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const subSheet = parentSS.getSheetByName('subjects_master');
-  if (!subSheet) return;
-
-  // grade → [subject_id, ...] （subjects_master.default が true の教科のみ）
-  const gradeSubjectMap = {};
-  getRowsData(subSheet).forEach(s => {
-    const sid = String(s.subject_id || '').trim();
-    const sgr = String(s.grade      || '').trim();
-    if (!sid) return;
-    const def = s['default'];
-    const isDefault = def === true || String(def).trim().toLowerCase() === 'true' || String(def).trim() === '1';
-    if (!isDefault) return;
-    if (!gradeSubjectMap[sgr]) gradeSubjectMap[sgr] = [];
-    gradeSubjectMap[sgr].push(sid);
-  });
-
-  // 既存 pattern_subjects で重複チェック
-  const existingPs  = getRowsData(psSheet);
-  const existingSet = new Set(existingPs.map(r => String(r.pattern_id) + '||' + String(r.subject_id)));
-
-  const newPsRows = [];
-  patternInfos.forEach(({ pattern_id, grade }) => {
-    const ids = gradeSubjectMap[grade] || [];
-    ids.forEach(sid => {
-      const key = pattern_id + '||' + sid;
-      if (!existingSet.has(key)) {
-        newPsRows.push([pattern_id, sid]);
-        existingSet.add(key);
-      }
-    });
-  });
-
-  if (newPsRows.length > 0)
-    psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
 }
 
 /**
@@ -1205,5 +1151,4 @@ if (typeof module !== 'undefined') Object.assign(global, {
   getSchoolCoursesFromSettingsSheet,
   _normalizeCourseName,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
-  _setDefaultSubjectsForPatterns,
 });

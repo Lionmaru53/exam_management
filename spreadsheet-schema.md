@@ -115,11 +115,13 @@ LIFF（生徒アプリ）へのアクセスログ。`_writeLiffLog()`（`getData
 
 | 列 | 列名 | 説明 |
 |----|------|------|
-| 1 | `student_id` | 生徒 ID |
-| 2 | `line_user_id` | LINE ユーザー ID |
-| 3 | `cram_id` | 校舎 ID |
+| A | `cram_id` | 校舎 ID |
+| B | `student_id` | 生徒 ID |
+| C〜H | （未使用） | 削除しない |
+| I〜N | `line_user_id` | LINE ユーザー ID（複数列） |
 
-**備考**: 外部担当者が直接入力する運用を想定。`student_index` は VSTACK 等の数式でこのシートを参照している。
+**備考**: 外部担当者が直接入力する運用を想定。`student_index` は VSTACK 等の数式でこのシートを参照している。  
+**注意**: 列構成が特殊なため `setupAdminSS()` の reconcile 対象外。シートが存在しない場合のみ空シートを作成する。
 
 ---
 
@@ -157,8 +159,7 @@ LIFF（生徒アプリ）へのアクセスログ。`_writeLiffLog()`（`getData
 | 2 | `subject_name` | 教科名 |
 | 3 | `genre_id` | ジャンル ID（`genres_master` 参照） |
 | 4 | `grade` | 対象学年（例: `高1`, `高2`, `高3`） |
-| 5 | `default` | `TRUE` の教科のみ新パターン自動生成時の初期教科として `pattern_subjects` に登録される |
-| 6 | `is_temp` | 仮教科フラグ（`'1'` = 生徒が「その他」で入力した未解決教科。管理者が「新規登録」または「既存に統合」するまで保持） |
+| 5 | `is_temp` | 仮教科フラグ（`'1'` = 生徒が「その他」で入力した未解決教科。管理者が「新規登録」または「既存に統合」するまで保持） |
 
 **主キー**: `subject_id`
 

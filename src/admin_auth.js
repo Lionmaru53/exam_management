@@ -187,6 +187,31 @@ function setupAdminSS() {
   // ── branches ─────────────────────────────────────────────────────────────
   _ensureBranchesSheet(ss);
 
+  // ── 親 SS マスターデータ シート ─────────────────────────────────────────
+  // line_student_import は A:cram_id / B:student_id / C~H:未使用列 / I~N:line_user_id 複数列という
+  // 特殊レイアウトのため reconcile 対象外。シートが存在しなければ空シートとして作成するだけにとどめる。
+  if (!ss.getSheetByName('line_student_import')) {
+    ss.insertSheet('line_student_import');
+    Logger.log('line_student_import シートを作成しました（列設定は手動で行ってください）。');
+  }
+
+  const _parentSheets = [
+    { name: 'term_tests_master',         headers: ['term_test_id', 'test_name'] },
+    { name: 'genres_master',             headers: ['genre_id', 'genre_name'] },
+    { name: 'subjects_master',           headers: ['subject_id', 'subject_name', 'genre_id', 'grade', 'is_temp'] },
+    { name: 'school_subject_aliases',    headers: ['school_name', 'subject_id', 'display_name', 'updated_at'] },
+    { name: 'school_term_test_settings', headers: ['school_name', 'term_test_id', 'is_active', 'display_name', 'updated_at'] },
+    { name: 'bug_reports',               headers: ['report_id', 'timestamp', 'student_id', 'student_name', 'school_name', 'grade', 'report_type', 'detail'] },
+  ];
+  _parentSheets.forEach(function({ name, headers }) {
+    let sheet = ss.getSheetByName(name);
+    if (!sheet) {
+      sheet = ss.insertSheet(name);
+      Logger.log(name + ' シートを作成しました。');
+    }
+    _logReconcile(name, _reconcileSheetSchema(sheet, headers));
+  });
+
   // ── 実行者をマスター管理者として登録（未登録の場合のみ）────────────────
   const myEmail = Session.getActiveUser().getEmail();
   if (myEmail) {

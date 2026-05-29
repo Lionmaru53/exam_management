@@ -27,7 +27,7 @@ function _renderBranchList(branches) {
   let html = '<h3>校舎管理</h3>'
            + '<p class="tab-desc">'
            + '校舎の追加と専用スプレッドシート（子SS）の管理を行います。<br>'
-           + '<span class="step">▶ 新規校舎の手順: <strong>① 校舎を追加</strong> → <strong>② 子SS作成</strong>（生徒・得点データの保存先を作成）→ <strong>③ 共有設定</strong>（担当管理者に編集権限を付与）</span>'
+           + '<span class="step">▶ 新規校舎の手順: <strong>① 校舎を追加</strong> → <strong>② 子SS作成</strong>（生徒・得点データの保存先を作成）</span>'
            + '</p>';
 
   // 追加フォーム
@@ -91,7 +91,7 @@ function _renderBranchList(branches) {
       const idx = _brPush({ cram_id: branch.cram_id, is_active: isActive });
       const setupBtn = !ssId
         ? '<button onclick="_brSetupSS(' + idx + ')" class="br-row-btn br-setup-btn">子SS作成</button>'
-        : '<button onclick="_brShareSS(' + idx + ')" class="br-row-btn">共有設定</button>';
+        : '';
       const toggleBtn = isActive
         ? '<button class="btn-cancel-admin" onclick="_brToggleActive(' + idx + ')">無効化</button>'
         : '<button class="btn-save-admin" onclick="_brToggleActive(' + idx + ')">有効化</button>';
@@ -190,14 +190,9 @@ function _brSubmitEdit(idx) {
 
 function _brSetupSS(idx) {
   const { cram_id } = _brStore[idx];
-  if (!confirm('"' + cram_id + '" の子スプレッドシートを新規作成します。\n作成後、branches シートに spreadsheet_id が自動登録されます。\n同じ cram_id を持つ校舎管理者（admin_users）へ自動で共有されます。\n\n続けますか？')) return;
+  if (!confirm('"' + cram_id + '" の子スプレッドシートを新規作成します。\n作成後、branches シートに spreadsheet_id が自動登録されます。\n\n続けますか？')) return;
 
-  setLoading(true, [
-    '子 SS を作成中...',
-    'シートを初期化中...',
-    '校舎管理者に共有中...',
-    'もうしばらくお待ちください...'
-  ]);
+  setLoading(true, ['子 SS を作成中...', 'シートを初期化中...', 'もうしばらくお待ちください...']);
   google.script.run
     .withSuccessHandler(function (res) {
       setLoading(false);
@@ -210,32 +205,6 @@ function _brSetupSS(idx) {
     })
     .withFailureHandler(function (err) { var m = err && err.message ? err.message : JSON.stringify(err); console.error(m, err); setLoading(false); showMessage('エラー: ' + m, 'error'); })
     .setupBranchSS(cram_id);
-}
-
-// ---- 共有設定 ----
-
-function _brShareSS(idx) {
-  const { cram_id } = _brStore[idx];
-  if (!confirm('"' + cram_id + '" の子 SS を admin_users に登録済みの校舎管理者へ共有します。\n\n続けますか？')) return;
-
-  setLoading(true, '共有設定中...');
-  google.script.run
-    .withSuccessHandler(function (res) {
-      setLoading(false);
-      if (res && res.success) {
-        const emails = (res.sharedEmails || []).join(', ') || '（なし）';
-        showMessage('共有完了: ' + emails, 'success');
-      } else {
-        showMessage((res && res.error) || '共有に失敗しました。', 'error');
-      }
-    })
-    .withFailureHandler(function (err) {
-      setLoading(false);
-      const msg = (err && err.message) ? err.message : JSON.stringify(err);
-      console.error('shareBranchSS failure:', msg);
-      showMessage('エラー: ' + msg, 'error');
-    })
-    .shareBranchSS(cram_id);
 }
 
 // ---- 有効/無効切り替え ----

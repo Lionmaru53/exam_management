@@ -1,5 +1,15 @@
 const BRANCHES_SHEET = 'branches';
 
+// 子 SS の全シート定義（_createChildSheets / reconcileChildSchemas で共用）
+const _CHILD_SHEET_DEFS = [
+  { name: 'school_course_master', headers: ['school_name', 'school_course'] },
+  { name: 'exam_patterns',        headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id'] },
+  { name: 'school_exam_periods',  headers: ['school_name', 'school_course', 'grade', 'sub_course', 'term_test_id', 'year', 'start_date', 'end_date'] },
+  { name: 'pattern_subjects',     headers: ['pattern_id', 'subject_id'] },
+  { name: 'scores_data',          headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
+  { name: 'students_master',      headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
+];
+
 /**
  * cram_id に対応する子 SS を返す。
  * branches シートで spreadsheet_id を引き、SpreadsheetApp.openById() で開く。
@@ -183,14 +193,7 @@ function setupBranchSS(cramId) {
  * 子 SS に必要なシートとヘッダーを作成する。
  */
 function _createChildSheets(ss) {
-  const defs = [
-    { name: 'school_course_master',    headers: ['school_name', 'school_course'] },
-    { name: 'exam_patterns',           headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course'] },
-    { name: 'school_exam_periods',     headers: ['school_name', 'school_course', 'grade', 'sub_course', 'term_test_id', 'year', 'start_date', 'end_date'] },
-    { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
-    { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
-    { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
-  ];
+  const defs = _CHILD_SHEET_DEFS;
   defs.forEach(function({ name, headers }) {
     const sheet = ss.insertSheet(name);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -217,16 +220,7 @@ function reconcileChildSchemas(cramId) {
     const childSS = getChildSS(cramId);
     const results = {};
 
-    const defs = [
-      { name: 'school_course_master',    headers: ['school_name', 'school_course'] },
-      { name: 'exam_patterns',           headers: ['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course'] },
-      { name: 'school_exam_periods',     headers: ['school_name', 'school_course', 'grade', 'sub_course', 'term_test_id', 'year', 'start_date', 'end_date'] },
-      { name: 'pattern_subjects',        headers: ['pattern_id', 'subject_id'] },
-      { name: 'scores_data',             headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
-      { name: 'students_master',         headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
-    ];
-
-    defs.forEach(function({ name, headers }) {
+    _CHILD_SHEET_DEFS.forEach(function({ name, headers }) {
       let sheet = childSS.getSheetByName(name);
       if (!sheet) {
         sheet = childSS.insertSheet(name);
@@ -236,6 +230,24 @@ function reconcileChildSchemas(cramId) {
       results[name] = report;
       _logReconcile(name, report);
     });
+
+    // config は行ベースの KV シートのため列ヘッダー reconcile は行わない。
+    // A/B 列のみ残し、余剰列があれば削除する。
+    const configSheet = childSS.getSheetByName('config');
+    if (configSheet) {
+      const maxCols = configSheet.getMaxColumns();
+      if (maxCols > 2) {
+        configSheet.deleteColumns(3, maxCols - 2);
+        results['config'] = { exists: true, trimmed: maxCols - 2 };
+        Logger.log('config: 余剰 ' + (maxCols - 2) + ' 列を削除');
+      } else {
+        results['config'] = { exists: true, trimmed: 0 };
+        Logger.log('config: 存在確認 OK');
+      }
+    } else {
+      results['config'] = { exists: false, note: 'シートが見つかりません。setupBranchSS() を実行してください。' };
+      Logger.log('config: シートが見つかりません。setupBranchSS() を実行してください。');
+    }
 
     writeAuditLog(ctx, 'reconcile_child_schemas', { cram_id: cramId }, 'success');
     return { success: true, results };
@@ -247,167 +259,37 @@ function reconcileChildSchemas(cramId) {
 }
 
 /**
- * 既存子 SS の exam_patterns スキーマを新設計（term_test_id 除去）に移行する。
- * 実行前に必ずバックアップを確認すること。
+ * 子 SS のスキーマを現在の仕様（spreadsheet-schema.md）に一括移行する。
+ * - exam_patterns: term_test_id 列を追加
+ * - scores_data: raw_subject_name / genre_name をレガシー列として削除
+ * - students_master: line_user_id があれば削除
+ * - school_course_master: is_two_terms があれば削除
+ * - exam_schedule シートはコードから未参照だが削除しない（ログで警告）
+ * master 権限が必要。GAS エディタまたは管理画面から実行。
  * @param {string} cramId
+ * @returns {{ success: boolean, results: object, warnings: string[] }}
  */
-function migratePatternSchema(cramId) {
+function migrateToCurrentSchema(cramId) {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
     const ctx = getAdminContext();
     if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
 
+    const warnings = [];
+
+    // exam_schedule は廃止済みだがシート削除は手動対応
     const childSS = getChildSS(cramId);
-
-    // Step 1: バックアップシートを作成
-    ['exam_patterns', 'exam_schedule', 'pattern_subjects'].forEach(name => {
-      const src = childSS.getSheetByName(name);
-      if (!src) return;
-      const bkName = name + '_bk';
-      const existing = childSS.getSheetByName(bkName);
-      if (existing) childSS.deleteSheet(existing);
-      src.copyTo(childSS).setName(bkName);
-    });
-
-    const patSheet    = childSS.getSheetByName('exam_patterns');
-    const schedSheet  = childSS.getSheetByName('exam_schedule');
-    const psSheet     = childSS.getSheetByName('pattern_subjects');
-    const scoresSheet = childSS.getSheetByName('scores_data');
-
-    if (!patSheet) return { success: false, error: 'exam_patterns シートが見つかりません' };
-
-    // Step 2: exam_patterns をグループ化し代表 pattern_id を選出
-    const patterns     = getRowsData(patSheet);
-    const groupMap     = {};
-    const obsoleteRows = [];
-
-    patterns.forEach(p => {
-      const sn  = String(p.school_name   || '').trim();
-      const sc  = String(p.school_course || '').trim();
-      const gr  = String(p.grade         || '').trim();
-      const sub = String(p.sub_course    || '').trim();
-      const pid = String(p.pattern_id    || '').trim();
-      const tid = String(p.term_test_id  || '').trim();
-
-      if (!sc) {
-        obsoleteRows.push([pid, sn, sc, gr, sub, tid]);
-        return;
-      }
-      const key = `${sn}||${sc}||${gr}||${sub}`;
-      if (!groupMap[key]) {
-        groupMap[key] = { repId: pid, patternIds: [pid], school: sn, course: sc, grade: gr, sub };
-      } else {
-        groupMap[key].patternIds.push(pid);
-      }
-    });
-
-    // oldPatternId → { repId, termTestId } のマップを構築
-    const idToGroup = {};
-    Object.values(groupMap).forEach(g => {
-      g.patternIds.forEach(pid => {
-        const orig = patterns.find(p => String(p.pattern_id || '').trim() === pid);
-        idToGroup[pid] = { repId: g.repId, termTestId: orig ? String(orig.term_test_id || '').trim() : '' };
-      });
-    });
-
-    // Step 3: exam_schedule に term_test_id を補完してリマップ（5列 → 6列）
-    if (schedSheet) {
-      const schedData    = schedSheet.getDataRange().getValues();
-      const schedHeaders = schedData[0];
-      if (!schedHeaders.includes('term_test_id')) {
-        const pidIdx  = schedHeaders.indexOf('pattern_id');
-        const yearIdx = schedHeaders.indexOf('year');
-        const sdIdx   = schedHeaders.indexOf('start_date');
-        const edIdx   = schedHeaders.indexOf('end_date');
-        const newRows = [['exam_id', 'pattern_id', 'term_test_id', 'year', 'start_date', 'end_date']];
-        for (let i = 1; i < schedData.length; i++) {
-          const row = schedData[i];
-          if (!row[0]) continue;
-          const oldPid   = String(row[pidIdx]  || '').trim();
-          const mapping  = idToGroup[oldPid];
-          newRows.push([
-            row[0],
-            mapping ? mapping.repId      : oldPid,
-            mapping ? mapping.termTestId : '',
-            yearIdx >= 0 ? row[yearIdx] : '',
-            sdIdx   >= 0 ? row[sdIdx]   : '',
-            edIdx   >= 0 ? row[edIdx]   : ''
-          ]);
-        }
-        schedSheet.clearContents();
-        if (newRows.length > 0)
-          schedSheet.getRange(1, 1, newRows.length, 6).setValues(newRows);
-      }
+    if (childSS.getSheetByName('exam_schedule')) {
+      warnings.push('exam_schedule シートが残っています。確認後、手動で削除してください。');
+      Logger.log('[migrateToCurrentSchema] WARNING: exam_schedule シートが残存しています。');
     }
 
-    // Step 4: pattern_subjects を代表 pattern_id にマージ（重複除去）
-    if (psSheet) {
-      const psData    = psSheet.getDataRange().getValues();
-      const psHeaders = psData[0];
-      const psPidIdx  = psHeaders.indexOf('pattern_id');
-      const psSubIdx  = psHeaders.indexOf('subject_id');
-      const seen      = new Set();
-      const newPsRows = [['pattern_id', 'subject_id']];
-      for (let i = 1; i < psData.length; i++) {
-        const row    = psData[i];
-        const oldPid = String(row[psPidIdx] || '').trim();
-        const sid    = String(row[psSubIdx]  || '').trim();
-        if (!oldPid || !sid) continue;
-        const mapping = idToGroup[oldPid];
-        const newPid  = mapping ? mapping.repId : oldPid;
-        const key     = `${newPid}||${sid}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          newPsRows.push([newPid, sid]);
-        }
-      }
-      psSheet.clearContents();
-      if (newPsRows.length > 0)
-        psSheet.getRange(1, 1, newPsRows.length, 2).setValues(newPsRows);
-    }
+    const reconcileResult = reconcileChildSchemas(cramId);
+    if (!reconcileResult.success) return reconcileResult;
 
-    // Step 5: exam_patterns シートを5列で書き直し
-    const newPatRows = [['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course']];
-    Object.values(groupMap).forEach(g => {
-      newPatRows.push([g.repId, g.school, g.course, g.grade, g.sub]);
-    });
-    patSheet.clearContents();
-    if (newPatRows.length > 0)
-      patSheet.getRange(1, 1, newPatRows.length, 5).setValues(newPatRows);
-
-    // 空コースパターンを別シートに退避
-    if (obsoleteRows.length > 0) {
-      let obsSheet = childSS.getSheetByName('exam_patterns_obsolete');
-      if (!obsSheet) {
-        obsSheet = childSS.insertSheet('exam_patterns_obsolete');
-        obsSheet.getRange(1, 1, 1, 6).setValues([['pattern_id', 'school_name', 'school_course', 'grade', 'sub_course', 'term_test_id']]);
-      }
-      obsSheet.getRange(obsSheet.getLastRow() + 1, 1, obsoleteRows.length, 6).setValues(obsoleteRows);
-    }
-
-    // Step 6: exam_subject_exclusions シートを新規作成
-    if (!childSS.getSheetByName('exam_subject_exclusions')) {
-      const exSheet = childSS.insertSheet('exam_subject_exclusions');
-      exSheet.getRange(1, 1, 1, 3).setValues([['exam_id', 'subject_id', 'updated_at']]);
-    }
-
-    // Step 7: scores_data に not_taken 列を追加（既存行は空文字のまま）
-    if (scoresSheet && scoresSheet.getLastColumn() > 0) {
-      const scHeaders = scoresSheet.getRange(1, 1, 1, scoresSheet.getLastColumn()).getValues()[0];
-      if (!scHeaders.includes('not_taken')) {
-        scoresSheet.getRange(1, scoresSheet.getLastColumn() + 1).setValue('not_taken');
-      }
-    }
-
-    writeAuditLog(ctx, 'migrate_pattern_schema', { cram_id: cramId }, 'success');
-    const groups = Object.values(groupMap);
-    return {
-      success: true,
-      groupCount: groups.length,
-      obsoleteCount: obsoleteRows.length,
-      message: `マイグレーション完了: ${groups.length} グループ, 廃止パターン ${obsoleteRows.length} 件`
-    };
+    writeAuditLog(ctx, 'migrate_to_current_schema', { cram_id: cramId }, 'success');
+    return { success: true, results: reconcileResult.results, warnings };
   } catch (e) {
     return { success: false, error: e.message };
   } finally {
@@ -416,54 +298,40 @@ function migratePatternSchema(cramId) {
 }
 
 /**
- * 子 SS を admin_users の対象校舎管理者へ共有する（DriveApp スコープが必要）。
- * setupBranchSS() とは分離して独立して呼び出す。
- * @param {string} cramId
+ * spreadsheet_id が設定済みのすべての子 SS に migrateToCurrentSchema を適用する。
+ * master 権限が必要。GAS エディタから手動実行する。
+ * @returns {{ success: boolean, total: number, succeeded: number, failed: number, details: object[] }}
  */
-function shareBranchSS(cramId) {
+function migrateAllChildSchemas() {
   try {
     const ctx = getAdminContext();
     if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
 
-    const parentSS    = SpreadsheetApp.getActiveSpreadsheet();
-    const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
-    if (!branchSheet) return { success: false, error: 'branches シートが見つかりません' };
+    const sheet    = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BRANCHES_SHEET);
+    if (!sheet) return { success: false, error: 'branches シートが見つかりません' };
 
-    const rows   = getRowsData(branchSheet);
-    const branch = rows.find(r => String(r.cram_id || '').trim() === String(cramId).trim());
-    if (!branch)                       return { success: false, error: `cram_id "${cramId}" が見つかりません` };
-    if (!branch.spreadsheet_id)        return { success: false, error: '先に子 SS を作成してください' };
+    const branches = getRowsData(sheet).filter(r => String(r.spreadsheet_id || '').trim());
+    const details  = [];
+    let succeeded  = 0;
+    let failed     = 0;
 
-    const adminSheet = parentSS.getSheetByName(ADMIN_USERS_SHEET);
-    if (!adminSheet) return { success: false, error: 'admin_users シートが見つかりません' };
-
-    const adminRows    = getRowsData(adminSheet);
-    const targetCramId = String(cramId).trim();
-    const targetAdmins = adminRows.filter(r => {
-      const val        = r[targetCramId];
-      const isAssigned = val === true || String(val || '').trim().toUpperCase() === 'TRUE' || String(val || '').trim() === '1';
-      return isAssigned &&
-        r.role === 'branch_admin' &&
-        (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true');
-    });
-
-    if (targetAdmins.length === 0) return { success: false, error: 'この校舎に有効な校舎管理者が登録されていません' };
-
-    const file         = DriveApp.getFileById(String(branch.spreadsheet_id).trim());
-    const sharedEmails = [];
-    targetAdmins.forEach(r => {
-      try {
-        file.addEditor(String(r.email).trim());
-        sharedEmails.push(String(r.email).trim());
-      } catch (e) {
-        console.error('共有失敗:', r.email, e.message);
+    branches.forEach(function(branch) {
+      const cramId = String(branch.cram_id || '').trim();
+      Logger.log('[migrateAllChildSchemas] 処理中: ' + cramId);
+      const result = migrateToCurrentSchema(cramId);
+      if (result.success) {
+        succeeded++;
+      } else {
+        failed++;
+        Logger.log('[migrateAllChildSchemas] 失敗: ' + cramId + ' → ' + result.error);
       }
+      details.push({ cram_id: cramId, ...result });
     });
 
-    writeAuditLog(ctx, 'share_branch_ss', { cram_id: cramId, shared: sharedEmails }, 'success');
-    return { success: true, sharedEmails };
+    writeAuditLog(ctx, 'migrate_all_child_schemas', { total: branches.length, succeeded, failed }, 'success');
+    Logger.log('[migrateAllChildSchemas] 完了: ' + succeeded + '/' + branches.length + ' 成功');
+    return { success: true, total: branches.length, succeeded, failed, details };
   } catch (e) {
-    console.error('shareBranchSS error:', e);
     return { success: false, error: e.message };
   }
 }
@@ -494,8 +362,8 @@ function _ensureBranchesSheet(ss) {
 
 // Node.js（Jest）でテストできるよう関数を global に公開する
 if (typeof module !== 'undefined') Object.assign(global, {
-  BRANCHES_SHEET,
-  getChildSS, getBranches, addBranch, updateBranch, setupBranchSS, shareBranchSS,
-  _ensureBranchesSheet, _getTargetSS, _createChildSheets, migratePatternSchema,
-  reconcileChildSchemas,
+  BRANCHES_SHEET, _CHILD_SHEET_DEFS,
+  getChildSS, getBranches, addBranch, updateBranch, setupBranchSS,
+  _ensureBranchesSheet, _getTargetSS, _createChildSheets,
+  reconcileChildSchemas, migrateToCurrentSchema, migrateAllChildSchemas,
 });

@@ -157,7 +157,6 @@
 ## 技術的負債・将来対応メモ（Issue 化候補）
 
 - `getData.js` の `getSubjectsForEdit` 関数は UI から未使用（削除候補）
-- `_autoCreateExamPatterns` 内の `patternInfosForDefault` は `_setDefaultSubjectsForPatterns` 廃止後のデッドコード（削除候補）
 - 合計 genre（genre_id='to'）への「タップして科目を追加」は非表示だが、✎ボタン（置換）は表示される。将来的に合計科目の追加を管理者のみに制限することを検討
 
 ---

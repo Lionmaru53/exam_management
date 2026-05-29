@@ -40,7 +40,7 @@
 - [x] **2-A**: `getAdminInitialData()` に master 向け branches 一覧を追加・子SS参照対応
 - [x] **2-B**: `admin_logic_branches.html` 実装（校舎一覧・追加・編集・有効化/無効化 UI）
 - [x] **2-C**: `setupBranchSS()` 実装（子 SS のシート自動作成）
-- [x] **2-C**: `shareBranchSS()` 実装（DriveApp スコープ分離・校舎管理者への共有）
+- [x] **2-C**: `shareBranchSS()` 実装（DriveApp スコープ分離・校舎管理者への共有）→ **2026-05-29 廃止**（未使用のため削除）
 - [x] **2-D**: 管理画面フロントエンドの cramId 引数渡し対応（exams / patterns / branches）
 - [x] **2-E**: `admin_import.js` 実装（`importStudentData` / `linkLineIds` / `migrateStudentsFromParentSS`）
   - xlsx 解析を SheetJS（ブラウザ側 CDN）で行い Drive API 不要とした
@@ -153,7 +153,7 @@
 - [x] ドロップダウンに「その他（名称を入力）」選択肢を追加・仮教科登録と連携
 - [x] genres_master の行順で教科表示をソート
 - [x] ✎ アイコンを SVG（四角＋鉛筆、class="icon-edit"）に刷新
-- [x] パターン初回作成時の subject_id 自動登録を廃止（`_setDefaultSubjectsForPatterns` の呼び出し削除）
+- [x] パターン初回作成時の subject_id 自動登録を廃止（`_setDefaultSubjectsForPatterns` の呼び出し削除）→ **2026-05-29 関数本体・`default` 列・デッドコードをすべて削除**
 - [x] パターン初回作成時に genre_id='to'（合計）科目のみ自動登録（`_addTotalGenreSubjects` 新設）
 - [x] CSS 改善: `.subj-replace-select` をコンテンツ幅に縮小・ボタン高さ統一・余白縮小
 - [x] usage-hint に説明文を追記（✎ボタン説明・変更保持・不具合報告）
@@ -169,6 +169,21 @@
 - [x] ユーザー入力画面をフレックスレイアウトに変更（ヘッダー固定・main のみスクロール）
 - [x] 校舎切り替え・初回ロード時にローディングオーバーレイを追加
 - [x] 並び替え機能ボタンを非表示化（Issue #021: 動作不具合のため暫定対処）
+
+### スキーマ移行・コード整理（完了 2026-05-29）
+- [x] `_CHILD_SHEET_DEFS` 定数を新設し `_createChildSheets` / `reconcileChildSchemas` を統一
+- [x] `exam_patterns` に `term_test_id` 列を追加（`_createChildSheets` / `reconcileChildSchemas`）
+- [x] `scores_data` の `raw_subject_name` / `genre_name` をスキーマ定義から除外（reconcile 時に自動削除）
+- [x] `migrateToCurrentSchema(cramId)` 新設（単一校舎の一括移行）
+- [x] `migrateAllChildSchemas()` 新設（全校舎への一括適用）
+- [x] `reconcileChildSchemas` に `config` シートの存在確認・余剰列削除を追加
+- [x] `setupAdminSS` に親 SS の全シートの reconcile を追加（`term_tests_master` / `genres_master` / `subjects_master` / `school_subject_aliases` / `school_term_test_settings` / `bug_reports`）
+- [x] `line_student_import` を reconcile 対象外とし、存在しない場合のみ空シート作成
+- [x] `subjects_master` から `default` 列を廃止（`setupAdminSS` / `spreadsheet-schema.md`）
+- [x] `_setDefaultSubjectsForPatterns` 関数を削除（デッドコード）
+- [x] `_autoCreateExamPatterns` 内の `patternInfosForDefault` を削除（デッドコード）
+- [x] `migratePatternSchema` を削除（旧設計の移行関数・現スキーマと矛盾）
+- [x] `shareBranchSS` を GAS / HTML 両方から削除（未使用）
 
 ### その他（バックログ）
 - [ ] 得点シート・過去成績の表示機能（[backlog.md](backlog.md) 参照）
