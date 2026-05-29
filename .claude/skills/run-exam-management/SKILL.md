@@ -19,17 +19,21 @@ C:\Program Files\Google\Chrome\Application\chrome.exe  # システム Chrome（W
 
 ## コード変更の反映
 
-管理画面の変更を確認するには、先に GAS へ push が必要:
+**Playwright（driver.mjs）はテスト環境のみ使用。本番環境には触れない。**
 
 ```powershell
-clasp push --project .clasp.dev.json
+clasp push --project .clasp.dev.json   # テスト GAS へ push
+# → 即座にテスト環境へ反映（HEAD デプロイのためバージョン作成不要）
 ```
 
-その後 `/exec` URL は**デプロイ済みバージョン**を実行するため、GAS エディタで「デプロイを管理」→鉛筆アイコン→「新しいバージョン」を選択する必要がある（`/dev` URL は組織ポリシーで制限されているため Playwright からは使えない）。
+その後 `screenshot` コマンドを実行すると最新コードを反映した画面を取得できる。
 
 ## ドライバーの使い方（エージェントパス）
 
 ```bash
+# セッション作成（初回・再ログイン時）
+node .claude/skills/run-exam-management/driver.mjs login
+
 # 管理画面トップのスクリーンショット
 node .claude/skills/run-exam-management/driver.mjs screenshot
 
@@ -38,23 +42,25 @@ node .claude/skills/run-exam-management/driver.mjs screenshot students
 node .claude/skills/run-exam-management/driver.mjs screenshot exams
 node .claude/skills/run-exam-management/driver.mjs screenshot patterns
 
+# 出力先ディレクトリを指定して保存
+node .claude/skills/run-exam-management/driver.mjs screenshot patterns docs/images
+
 # 全タブ一覧と起動確認
 node .claude/skills/run-exam-management/driver.mjs check
 ```
 
 **有効なタブ名:** `patterns` / `exams` / `students` / `import` / `files` / `adminUsers` / `branches` / `masterData`
 
-スクリーンショットは `.playwright-mcp/admin-top.png` / `.playwright-mcp/admin-<tab>.png` に保存される。
+スクリーンショットは `.playwright-mcp/admin-top.png` / `.playwright-mcp/admin-<tab>.png` に保存される（出力先指定時はそちらに保存）。
 
 ## 手動確認（ブラウザパス）
 
-ブラウザで直接 `/dev` URL を開くと常に最新 HEAD が実行される（push 直後に確認できる）:
-
+**テスト環境（HEAD デプロイ）** — `.clasp.dev.json` で push 後すぐ確認できる。個人アカウントのため組織ポリシー制限なし:
 ```
-https://script.google.com/macros/d/1OxtDXoocsBpbTtWjqmRUqyQ-HMk1UOy_eznGAF3Z01Jx2EuaIuKX6lMJ/dev?page=admin
+https://script.google.com/macros/s/AKfycbyz4MLhrFoP3W7a9FDRk9LP4IiExBVn7xvBHVMZHECr/dev?page=admin
 ```
 
-`/exec` URL（デプロイ済み版・Playwright でも使用）:
+**本番環境**（基本的に触らない）:
 ```
 https://script.google.com/macros/s/AKfycbwQdmCh2CmSg0zFX5d_mCH9tR5Da4LkFIWbjDdMDHhdizNIVMm3srbG-88u2mQRyP4q0Q/exec?page=admin
 ```
@@ -67,19 +73,24 @@ npm test
 
 ## 初回セットアップ（Google ログインセッションの保存）
 
-`.playwright-mcp/user-data/` が存在しない場合、Playwright MCP 経由でログインが必要:
+`.playwright-mcp/user-data/` が存在しない場合は `login` コマンドで作成する:
 
-1. `.mcp.json` に `--user-data-dir` が設定済みであることを確認
-2. Claude Code で「Googleでログインして」と指示
-3. 表示されたブラウザウィンドウでパスワードを手動入力
-4. ログイン完了後、セッションが自動保存される
+```bash
+node .claude/skills/run-exam-management/driver.mjs login
+```
+
+1. Chrome が見える状態（非ヘッドレス）で起動し、管理画面 URL に遷移する
+2. 表示されたブラウザウィンドウで Google アカウントにログインする
+3. 管理画面が表示されたらドライバーが自動検出して終了し、セッションが `.playwright-mcp/user-data/` に保存される
+
+> **Note**: `.playwright-mcp/user-data/` は `.gitignore` に含まれているため、PC を変えた場合や削除された場合は再実行が必要。
 
 ## Gotchas
 
 - **GAS は 3 重 iframe**: `main → googleusercontent.com → #userHtmlFrame (/blank URL)`。ドライバーは `#admin-nav button` が存在するフレームをポーリングで探す。`networkidle` 後もさらに数秒かかる。
-- **`/dev` URL は Playwright から使えない**: `wasedazemi.com` の Workspace 組織ポリシーで制限される。Playwright には `/exec` URL を使う。手動ブラウザからは `/dev` が使える。
+- **テスト環境のみ使用**: driver.mjs は個人アカウントのテスト環境（HEAD デプロイ）にのみアクセスする。本番環境には触れない。
 - **生徒一覧・試験日程はローディング継続**: 校舎セレクターで校舎を選択するまでデータが取得できない。スクリーンショットはローディング状態になるが正常。
-- **セッション期限切れ**: `admin-top.png` が「ログイン画面」や Drive エラーになっていたら、Playwright MCP 経由で再ログインが必要。
+- **セッション期限切れ**: `admin-top.png` が「ログイン画面」や Drive エラーになっていたら、`login` コマンドで再ログインする。
 
 ## Troubleshooting
 

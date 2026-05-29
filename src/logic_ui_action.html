@@ -503,4 +503,40 @@ function _onDragEnd(event) {
   }
   _dragState = null;
 }
+
+// ---- お知らせパネル開閉 ----
+
+var _annPanelOpen = false;
+
+function toggleAnnouncementPanel() {
+  if (_annPanelOpen) {
+    closeAnnouncementPanel();
+  } else {
+    openAnnouncementPanel();
+  }
+}
+
+function openAnnouncementPanel() {
+  var panel   = document.getElementById('ann-panel');
+  var overlay = document.getElementById('ann-overlay');
+  if (!panel) return;
+  _annPanelOpen = true;
+  panel.classList.add('ann-panel--open');
+  if (overlay) overlay.classList.add('ann-overlay--active');
+  // 開いた時点で全件既読にしてバッジを消す
+  if (_appData && _appData.announcements) {
+    _markAllAsRead(_appData.announcements);
+    var badge = document.querySelector('.ann-badge');
+    if (badge) badge.remove();
+  }
+}
+
+function closeAnnouncementPanel() {
+  var panel   = document.getElementById('ann-panel');
+  var overlay = document.getElementById('ann-overlay');
+  if (!panel) return;
+  _annPanelOpen = false;
+  panel.classList.remove('ann-panel--open');
+  if (overlay) overlay.classList.remove('ann-overlay--active');
+}
 </script>

@@ -273,6 +273,34 @@ function getInitialData(lineUserId) {
 
     const availableSubjects = Object.values(subjectMap);
 
+    // 10. お知らせ取得（親 SS の announcements シート）
+    let announcements = [];
+    const annSheet = parentSS.getSheetByName('announcements');
+    if (annSheet) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      announcements = getRowsData(annSheet).filter(r => {
+        if (String(r.is_active || '') !== '1') return false;
+        const tc = String(r.target_cram_id || '').trim();
+        if (tc && tc !== cramId) return false;
+        if (r.published_at && new Date(r.published_at) > today) return false;
+        if (r.expires_at) {
+          const exp = new Date(r.expires_at);
+          exp.setHours(23, 59, 59, 999);
+          if (exp < today) return false;
+        }
+        return true;
+      }).map(r => ({
+        id:           String(r.announcement_id || ''),
+        title:        String(r.title || ''),
+        body:         String(r.body || ''),
+        category:     String(r.category || 'info'),
+        published_at: r.published_at
+          ? Utilities.formatDate(new Date(r.published_at), 'JST', 'yyyy-MM-dd')
+          : ''
+      })).sort((a, b) => (b.published_at || '').localeCompare(a.published_at || ''));
+    }
+
     return stringifyDates({
       student,
       lineUserId,
@@ -285,7 +313,8 @@ function getInitialData(lineUserId) {
       scores:   currentExam ? currentExam.scores   : [],
       history:  examTabs.filter(t => t.exam_id),
       examTabs,
-      genres: allGenres
+      genres: allGenres,
+      announcements
     });
 
   } catch (e) {

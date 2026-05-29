@@ -1,3 +1,13 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--user-data-dir", ".playwright-mcp/user-data"
+      ],
+      "env": {}
+    }
+  }
 }

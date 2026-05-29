@@ -13,6 +13,18 @@
     <div class="loading-spinner"></div>
     <div class="loading-label" id="loading-label">読み込み中...</div>
   </div>
+  <div id="ann-overlay" class="ann-overlay" onclick="closeAnnouncementPanel()"></div>
+  <div id="ann-panel" class="ann-panel" role="dialog" aria-label="お知らせ">
+    <div class="ann-panel-header">
+      <span class="ann-panel-title">お知らせ</span>
+      <button class="ann-panel-close" onclick="closeAnnouncementPanel()" aria-label="閉じる">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div id="ann-list" class="ann-list"></div>
+  </div>
   <div id="app">
     <header id="header"></header>
     <main id="subject-list"></main>

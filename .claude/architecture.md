@@ -55,12 +55,11 @@ LINE アプリ
 
 | 方法 | URL | 備考 |
 |------|-----|------|
-| **手動確認**（ブラウザ直接） | `/dev?page=admin` | 常に最新コード（HEAD）を実行。push 後すぐ反映 |
-| **Playwright 自動確認** | `/exec?page=admin` | `wasedazemi.com` 組織ポリシーにより `/dev` が制限されるため `/exec` を使う |
+| **テスト環境 手動確認 / Playwright** | `https://script.google.com/macros/s/AKfycbyz4MLhrFoP3W7a9FDRk9LP4IiExBVn7xvBHVMZHECr/dev?page=admin` | HEAD デプロイ。`clasp push --project .clasp.dev.json` 後すぐ反映。個人アカウントのため組織ポリシー制限なし |
+| **本番環境**（基本的に触らない） | `https://script.google.com/macros/s/AKfycbwQdmCh2CmSg0zFX5d_mCH9tR5Da4LkFIWbjDdMDHhdizNIVMm3srbG-88u2mQRyP4q0Q/exec?page=admin` | デプロイ済みバージョン。反映には「新しいバージョン」作成が必要 |
 
-- `/dev` URL: `https://script.google.com/macros/d/{scriptId}/dev`
-- `/exec` URL（開発デプロイ）: `https://script.google.com/macros/s/AKfycbwQdmCh2CmSg0zFX5d_mCH9tR5Da4LkFIWbjDdMDHhdizNIVMm3srbG-88u2mQRyP4q0Q/exec`
-- Playwright は `--user-data-dir` でセッション保存済み（`.playwright-mcp/user-data/`）
+> Playwright（driver.mjs）はテスト環境のみ使用。本番環境には触れない。
+> セッションは `.playwright-mcp/user-data/` に保存（`driver.mjs login` で作成）。
 
 ## ディレクトリ構成
 

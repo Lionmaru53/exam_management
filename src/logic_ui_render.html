@@ -116,9 +116,19 @@ function renderApp(data) {
   const infoItems = [s.school_name, s.school_course_name, s.grade, s.sub_course].filter(Boolean);
   const infoText  = infoItems.join('　');
 
+  const _annUnreadCount = _getUnreadCount(data.announcements || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
-      <h2 class="app-title">定期テスト得点入力フォーム</h2>
+      <div class="header-top-row">
+        <h2 class="app-title">定期テスト得点入力フォーム</h2>
+        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
+          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          ${_annUnreadCount > 0 ? `<span class="ann-badge">${_annUnreadCount > 9 ? '9+' : _annUnreadCount}</span>` : ''}
+        </button>
+      </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${infoText})</span></p>
     </div>
   `;
@@ -391,6 +401,11 @@ function renderApp(data) {
 
   document.getElementById('subject-list').innerHTML = listHtml;
   document.getElementById('footer').innerHTML = _renderBugReportSection();
+
+  _renderAnnouncementPanel(data.announcements || []);
+  if (_annUnreadCount > 0 && !_annPanelOpen) {
+    setTimeout(function() { openAnnouncementPanel(); }, 200);
+  }
 }
 
 // ---- 不具合報告 ----
@@ -592,9 +607,19 @@ function renderCourseInput(data) {
   const s       = data.student;
   const courses = Array.isArray(data.availableCourses) ? data.availableCourses : [];
 
+  const _courseAnnUnread = _getUnreadCount((_appData && _appData.announcements) || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
-      <h2 class="app-title">定期テスト得点入力フォーム</h2>
+      <div class="header-top-row">
+        <h2 class="app-title">定期テスト得点入力フォーム</h2>
+        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
+          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          ${_courseAnnUnread > 0 ? `<span class="ann-badge">${_courseAnnUnread > 9 ? '9+' : _courseAnnUnread}</span>` : ''}
+        </button>
+      </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${s.school_name}　${s.grade})</span></p>
     </div>
   `;
@@ -711,9 +736,19 @@ var _subCourseData = null;
 function renderSubCourseSelect(data) {
   _subCourseData = data;
   const s = data.student;
+  const _subAnnUnread = _getUnreadCount((_appData && _appData.announcements) || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
-      <h2 class="app-title">定期テスト得点入力フォーム</h2>
+      <div class="header-top-row">
+        <h2 class="app-title">定期テスト得点入力フォーム</h2>
+        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
+          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          ${_subAnnUnread > 0 ? `<span class="ann-badge">${_subAnnUnread > 9 ? '9+' : _subAnnUnread}</span>` : ''}
+        </button>
+      </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${s.school_name}　${s.grade})</span></p>
     </div>
   `;
@@ -988,5 +1023,64 @@ function saveGenreSubjectEdit(tabId, genreName) {
       genre_name:  genreName,
       subject_ids: subjectIds
     });
+}
+
+// ---- お知らせ機能 ヘルパー ----
+
+function _annLsKey() {
+  var sid = (_currentStudent && _currentStudent.student_id) || 'unknown';
+  return 'ann_read_' + sid;
+}
+
+function _getReadIds() {
+  try {
+    var raw = localStorage.getItem(_annLsKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function _markAllAsRead(announcements) {
+  try {
+    var ids = (announcements || []).map(function(a) { return a.id; });
+    localStorage.setItem(_annLsKey(), JSON.stringify(ids));
+  } catch (e) {}
+}
+
+function _getUnreadCount(announcements) {
+  var readIds = _getReadIds();
+  return (announcements || []).filter(function(a) {
+    return readIds.indexOf(a.id) === -1;
+  }).length;
+}
+
+function _annCategoryLabel(cat) {
+  var map = { important: '重要', info: 'お知らせ', notice: '注意' };
+  return map[cat] || 'お知らせ';
+}
+
+function _renderAnnouncementPanel(announcements) {
+  var list = document.getElementById('ann-list');
+  if (!list) return;
+
+  if (!announcements || announcements.length === 0) {
+    list.innerHTML = '<p class="ann-empty">現在お知らせはありません。</p>';
+    return;
+  }
+
+  var readIds = _getReadIds();
+  list.innerHTML = announcements.map(function(ann) {
+    var isUnread = readIds.indexOf(ann.id) === -1;
+    var catClass = 'ann-card--' + (ann.category || 'info');
+    var bodyHtml = _escHtml(ann.body).replace(/\n/g, '<br>');
+    return '<div class="ann-card ' + catClass + (isUnread ? ' ann-card--unread' : '') + '">'
+      + '<div class="ann-card-header">'
+      + (isUnread ? '<span class="ann-unread-dot"></span>' : '')
+      + '<span class="ann-card-category ' + catClass + '-label">' + _annCategoryLabel(ann.category) + '</span>'
+      + '<span class="ann-card-date">' + _escHtml(ann.published_at || '') + '</span>'
+      + '</div>'
+      + '<p class="ann-card-title">' + _escHtml(ann.title) + '</p>'
+      + '<p class="ann-card-body">' + bodyHtml + '</p>'
+      + '</div>';
+  }).join('');
 }
 </script>
