@@ -8,6 +8,7 @@ const _CHILD_SHEET_DEFS = [
   { name: 'pattern_subjects',     headers: ['pattern_id', 'subject_id'] },
   { name: 'scores_data',          headers: ['score_id', 'exam_id', 'student_id', 'subject_id', 'score', 'grade_rank', 'class_rank', 'update_at', 'not_taken', 'term_test_id', 'grade', 'year'] },
   { name: 'students_master',      headers: ['student_id', 'name', 'pronunciation', 'cram_id', 'school_name', 'school_course', 'sub_course', 'grade', 'is_active'] },
+  { name: 'upload_history',       headers: ['upload_id', 'student_id', 'term_test_id', 'test_name', 'grade', 'file_url', 'uploaded_at', 'thumbnail_b64'] },
 ];
 
 /**

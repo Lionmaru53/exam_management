@@ -169,6 +169,10 @@ function getInitialData(lineUserId) {
     // 8. 得点（子 SS）
     const allScores = getRowsData(ss.getSheetByName('scores_data'));
 
+    // 9. アップロード履歴（子 SS）
+    const histSheet     = ss.getSheetByName('upload_history');
+    const uploadHistory = histSheet ? getRowsData(histSheet) : [];
+
     // 9. 全試験区分に対してタブデータを構築
     const examTabs = relevantTermTests.map(termTest => {
       const ttId  = String(termTest.term_test_id).trim();
@@ -247,6 +251,15 @@ function getInitialData(lineUserId) {
       return 0;
     });
 
+    // アップロード済みファイル情報を各タブに付与
+    examTabs.forEach(tab => {
+      const matches = uploadHistory.filter(r =>
+        String(r.student_id   || '').trim() === studentId &&
+        String(r.term_test_id || '').trim() === String(tab.term_test_id || '').trim()
+      );
+      tab.uploadedFile = matches.length > 0 ? matches[matches.length - 1] : null;
+    });
+
     // パターンがある（教科が表示できる）タブを優先して選択
     const currentExam = examTabs.find(t => t.hasPattern) || examTabs[0] || null;
 
@@ -314,7 +327,8 @@ function getInitialData(lineUserId) {
       history:  examTabs.filter(t => t.exam_id),
       examTabs,
       genres: allGenres,
-      announcements
+      announcements,
+      gasWebAppUrl: ScriptApp.getService().getUrl()
     });
 
   } catch (e) {

@@ -325,6 +325,25 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 
 ---
 
+### `upload_history`
+生徒がアップロードした写真・PDFの履歴。`uploadFileToServer()` が記録する。
+
+| 列 | 列名 | 説明 |
+|----|------|------|
+| 1 | `upload_id` | レコード ID（`UH` + 連番） |
+| 2 | `student_id` | 生徒 ID（`students_master` 参照） |
+| 3 | `term_test_id` | 試験区分 ID（`term_tests_master` 参照・親 SS） |
+| 4 | `test_name` | 試験区分名（アップロード時の表示名） |
+| 5 | `grade` | アップロード時の学年 |
+| 6 | `file_url` | Google Drive の閲覧 URL（`DriveApp.getFileById().getUrl()`） |
+| 7 | `uploaded_at` | アップロード日時（ISO 文字列） |
+
+**主キー**: `upload_id`  
+**upsert キー**: `(student_id, term_test_id)`  
+**備考**: 同じ試験区分に再アップロードすると既存行を上書き（Drive 側も旧ファイルをゴミ箱へ）。シートが存在しない場合は `_getOrCreateUploadHistorySheet()` が自動生成する。
+
+---
+
 ## ER 図（簡略）
 
 ```

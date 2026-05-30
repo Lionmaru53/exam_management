@@ -202,6 +202,7 @@ function setupAdminSS() {
     { name: 'school_subject_aliases',    headers: ['school_name', 'subject_id', 'display_name', 'updated_at'] },
     { name: 'school_term_test_settings', headers: ['school_name', 'term_test_id', 'is_active', 'display_name', 'updated_at'] },
     { name: 'bug_reports',               headers: ['report_id', 'timestamp', 'student_id', 'student_name', 'school_name', 'grade', 'report_type', 'detail'] },
+    { name: 'announcements',             headers: ['announcement_id', 'title', 'body', 'category', 'target_cram_id', 'published_at', 'expires_at', 'is_active'] },
   ];
   _parentSheets.forEach(function({ name, headers }) {
     let sheet = ss.getSheetByName(name);

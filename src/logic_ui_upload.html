@@ -1,0 +1,464 @@
+<style>
+/* ---- アクションシート ---- */
+.upload-action-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1900;
+}
+.upload-action-sheet {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #f2f2f7;
+  border-radius: 14px 14px 0 0;
+  z-index: 1901;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%);
+  transition: transform 0.25s ease;
+}
+.upload-action-sheet.is-open { transform: translateY(0); }
+.upload-action-title {
+  text-align: center;
+  font-size: 0.75em;
+  color: #888;
+  padding: 12px 0 8px;
+}
+.upload-action-btn {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  background: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.97em;
+  color: #4a7fc1;
+  cursor: pointer;
+  margin-bottom: 8px;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.upload-action-btn:active { background: #f0f0f0; }
+.upload-action-cancel-btn {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  background: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.97em;
+  font-weight: 700;
+  color: #333;
+  cursor: pointer;
+  margin-top: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+.upload-action-cancel-btn:active { background: #f0f0f0; }
+
+/* ---- プレビューモーダル ---- */
+.upload-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.upload-modal {
+  background: #fff;
+  border-radius: 18px 18px 0 0;
+  padding: 20px 20px calc(32px + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.upload-modal-title {
+  font-size: 1em;
+  font-weight: 700;
+  color: #222;
+  margin: 0 0 14px;
+  text-align: center;
+}
+.upload-preview-img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e5e5ea;
+  display: block;
+  margin: 0 auto 14px;
+}
+.upload-pdf-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  background: #f2f2f7;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  color: #555;
+  font-size: 0.88em;
+  word-break: break-all;
+  text-align: center;
+}
+.upload-modal-info {
+  font-size: 0.8em;
+  color: #888;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.upload-btn-row { display: flex; gap: 10px; }
+.upload-btn-do {
+  flex: 1; padding: 12px;
+  background: #4a7fc1; color: #fff;
+  border: none; border-radius: 10px;
+  font-size: 1em; font-weight: 600; cursor: pointer;
+}
+.upload-btn-do:disabled { background: #aaa; cursor: default; }
+.upload-btn-cancel {
+  flex: 1; padding: 12px;
+  background: #f2f2f7; color: #333;
+  border: none; border-radius: 10px;
+  font-size: 1em; cursor: pointer;
+}
+</style>
+<script>
+var _uploadPending = false;
+
+/* ---- 隠しinput（renderApp 後に DOM 挿入済みの想定） ---- */
+function _ensureFileInputs() {
+  if (!document.getElementById('upload-input-camera')) {
+    var cam = document.createElement('input');
+    cam.type = 'file'; cam.id = 'upload-input-camera';
+    cam.accept = 'image/*'; cam.setAttribute('capture', 'environment');
+    cam.style.display = 'none';
+    cam.onchange = function() { onUploadFileSelected(this); };
+    document.body.appendChild(cam);
+  }
+  if (!document.getElementById('upload-input-library')) {
+    var lib = document.createElement('input');
+    lib.type = 'file'; lib.id = 'upload-input-library';
+    lib.accept = 'image/jpeg,image/png,application/pdf';
+    lib.style.display = 'none';
+    lib.onchange = function() { onUploadFileSelected(this); };
+    document.body.appendChild(lib);
+  }
+}
+
+/* ---- アクションシート（得点入力ページから呼ぶ場合のみ使用） ---- */
+function openUploadPicker() {
+  _ensureFileInputs();
+  _showActionSheet();
+}
+
+function _showActionSheet() {
+  if (document.getElementById('upload-action-wrap')) return;
+  var wrap = document.createElement('div');
+  wrap.id  = 'upload-action-wrap';
+
+  var overlay = document.createElement('div');
+  overlay.className = 'upload-action-overlay';
+  overlay.onclick   = _closeActionSheet;
+
+  var sheet = document.createElement('div');
+  sheet.className = 'upload-action-sheet';
+  sheet.innerHTML = '<p class="upload-action-title">ファイルを選択してください</p>'
+    + '<button class="upload-action-btn" onclick="_pickCamera()">📷　カメラで撮影</button>'
+    + '<button class="upload-action-btn" onclick="_pickLibrary()">🖼　ライブラリ・ファイルから選択</button>'
+    + '<button class="upload-action-cancel-btn" onclick="_closeActionSheet()">キャンセル</button>';
+
+  wrap.appendChild(overlay);
+  wrap.appendChild(sheet);
+  document.body.appendChild(wrap);
+
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() { sheet.classList.add('is-open'); });
+  });
+}
+
+function _closeActionSheet() {
+  var wrap = document.getElementById('upload-action-wrap');
+  if (!wrap) return;
+  var sheet = wrap.querySelector('.upload-action-sheet');
+  if (sheet) {
+    sheet.classList.remove('is-open');
+    setTimeout(function() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }, 260);
+  } else {
+    wrap.parentNode.removeChild(wrap);
+  }
+}
+
+function _pickCamera() {
+  _closeActionSheet();
+  setTimeout(function() {
+    var inp = document.getElementById('upload-input-camera');
+    if (inp) inp.click();
+  }, 280);
+}
+
+function _pickLibrary() {
+  _closeActionSheet();
+  setTimeout(function() {
+    var inp = document.getElementById('upload-input-library');
+    if (inp) inp.click();
+  }, 280);
+}
+
+/* ---- 成績表画像ページから直接カメラ起動 ---- */
+function _pickCameraForTab(termTestId) {
+  _ensureFileInputs();
+  _currentTabId = termTestId;
+  var inp = document.getElementById('upload-input-camera');
+  if (inp) inp.click();
+}
+
+/* ---- ファイル選択後の処理 ---- */
+function onUploadFileSelected(input) {
+  var file = input && input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+
+  var allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+  if (allowed.indexOf(file.type) === -1) {
+    showMessage('対応形式はJPEG・PNG・PDFのみです', 'error');
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showMessage('ファイルサイズは10MB以内にしてください', 'error');
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataURL = e.target.result;
+    if (file.type !== 'application/pdf') {
+      _resizeToThumbnail(file, function(b64) {
+        _showUploadPreview(file, dataURL, b64);
+      });
+    } else {
+      _showUploadPreview(file, dataURL, null);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function _resizeToThumbnail(file, callback) {
+  var img = new Image();
+  var url = URL.createObjectURL(file);
+  img.onload = function() {
+    var maxW = 200;
+    var scale = Math.min(1, maxW / img.width);
+    var w = Math.round(img.width  * scale);
+    var h = Math.round(img.height * scale);
+    var canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    var b64 = canvas.toDataURL('image/jpeg', 0.75).split(',')[1];
+    URL.revokeObjectURL(url);
+    callback(b64);
+  };
+  img.onerror = function() { URL.revokeObjectURL(url); callback(null); };
+  img.src = url;
+}
+
+/* ---- プレビューモーダル ---- */
+function _showUploadPreview(file, dataURL, thumbnailB64) {
+  var testName = _getUploadTestName();
+  var isImage  = file.type !== 'application/pdf';
+
+  var previewHtml = isImage
+    ? '<img class="upload-preview-img" src="' + dataURL + '" alt="プレビュー">'
+    : '<div class="upload-pdf-placeholder">'
+        + '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="#cc3333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+        + '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+        + '<polyline points="14 2 14 8 20 8"/>'
+        + '<line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'
+        + '<polyline points="10 9 9 9 8 9"/>'
+        + '</svg>'
+        + '<span>' + _escHtml(file.name) + '</span>'
+        + '</div>';
+
+  var html = '<div class="upload-modal-overlay" id="upload-modal-overlay" onclick="_closeUploadModalOnBg(event)">'
+    + '<div class="upload-modal">'
+    + '<p class="upload-modal-title">アップロード確認</p>'
+    + previewHtml
+    + '<p class="upload-modal-info">試験区分：' + _escHtml(testName) + '</p>'
+    + '<div class="upload-btn-row">'
+    + '<button class="upload-btn-cancel" onclick="_closeUploadModal()">キャンセル</button>'
+    + '<button class="upload-btn-do" id="upload-do-btn" onclick="_doUpload(this)">アップロードする</button>'
+    + '</div></div></div>';
+
+  var wrap = document.createElement('div');
+  wrap.id  = 'upload-modal-wrap';
+  wrap.innerHTML = html;
+  wrap._uploadFile    = file;
+  wrap._uploadDataURL = dataURL;
+  wrap._thumbnailB64  = thumbnailB64 || null;
+  document.body.appendChild(wrap);
+}
+
+function _closeUploadModalOnBg(e) {
+  if (e.target.id === 'upload-modal-overlay') _closeUploadModal();
+}
+
+function _closeUploadModal() {
+  var wrap = document.getElementById('upload-modal-wrap');
+  if (wrap) wrap.parentNode.removeChild(wrap);
+}
+
+/* ---- アップロード実行 ---- */
+function _doUpload(btn) {
+  if (_uploadPending) return;
+  var wrap = document.getElementById('upload-modal-wrap');
+  if (!wrap) return;
+
+  var file    = wrap._uploadFile;
+  var dataURL = wrap._uploadDataURL;
+  if (!file || !dataURL) return;
+
+  var base64   = dataURL.split(',')[1];
+  var student  = _appData && _appData.student;
+  var testName = _getUploadTestName();
+  var payload  = {
+    student_id:   student && student.student_id,
+    grade:        student && student.grade,
+    cram_id:      student && student.cram_id,
+    term_test_id: _currentTabId,
+    test_name:    testName,
+    file_name:    file.name,
+    mime_type:    file.type,
+    base64_data:  base64,
+    thumbnail_b64: wrap._thumbnailB64 || null
+  };
+
+  _uploadPending  = true;
+  btn.disabled    = true;
+  btn.textContent = '送信中...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      _uploadPending = false;
+      _closeUploadModal();
+      if (result && result.success) {
+        // _appData の該当タブをローカル更新
+        var tab = (_appData && _appData.examTabs || []).find(function(t) {
+          return t.term_test_id === payload.term_test_id;
+        });
+        if (tab) {
+          tab.uploadedFile = {
+            file_url:     result.file_url,
+            uploaded_at:  new Date().toISOString(),
+            test_name:    payload.test_name,
+            grade:        payload.grade,
+            thumbnail_b64: payload.thumbnail_b64 || null
+          };
+        }
+        if (_currentView === 'photos') _renderPhotosPage();
+        showMessage('アップロードしました', 'success');
+      } else {
+        showMessage('エラー: ' + (result && result.error || '不明なエラー'), 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      _uploadPending = false;
+      _closeUploadModal();
+      showMessage('通信エラー: ' + (err && err.message || ''), 'error');
+    })
+    .uploadFileToServer(payload);
+}
+
+/* ---- 成績表画像ページ ---- */
+function bottomNavGoPhotos() {
+  _currentView = 'photos';
+  document.querySelectorAll('.bottom-nav-item').forEach(function(el) { el.classList.remove('active'); });
+  var el = document.getElementById('bnav-photos');
+  if (el) el.classList.add('active');
+  _renderPhotosPage();
+}
+
+function _renderPhotosPage() {
+  _ensureFileInputs();
+  var tabs = (_appData && _appData.examTabs) || [];
+  var html = '<div class="photos-page">'
+    + '<p class="photos-hint">試験ごとに成績表の写真を保管できます。</p>';
+
+  tabs.forEach(function(tab) {
+    var ttId     = tab.term_test_id || '';
+    var name     = _escHtml(tab.test_name || '');
+    var uf       = tab.uploadedFile;
+    var bodyHtml;
+
+    if (uf && uf.file_url) {
+      var dateStr = uf.uploaded_at ? uf.uploaded_at.slice(0, 10) : '';
+      if (uf.thumbnail_b64) {
+        bodyHtml = '<img class="photo-card-thumb" src="data:image/jpeg;base64,' + uf.thumbnail_b64 + '" alt="サムネイル">'
+          + '<div class="photo-card-footer">'
+          + '<span class="photo-card-date">' + _escHtml(dateStr) + '</span>'
+          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">再登録</button>'
+          + '</div>';
+      } else {
+        // PDF または thumbnail なし
+        bodyHtml = '<div class="upload-pdf-placeholder" style="margin-bottom:10px;">'
+          + '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none"'
+          + ' stroke="#cc3333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+          + '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>'
+          + '<polyline points="14 2 14 8 20 8"/>'
+          + '</svg>'
+          + '<span>PDF登録済み</span>'
+          + '</div>'
+          + '<div class="photo-card-footer">'
+          + '<span class="photo-card-date">' + _escHtml(dateStr) + '</span>'
+          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">再登録</button>'
+          + '</div>';
+      }
+    } else {
+      bodyHtml = '<button class="photo-card-upload-btn" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">'
+        + '📷　画像をアップロード'
+        + '</button>';
+    }
+
+    html += '<div class="photo-card">'
+      + '<div class="photo-card-title">' + name + '</div>'
+      + bodyHtml
+      + '</div>';
+  });
+
+  html += '</div>';
+  document.getElementById('subject-list').innerHTML = html;
+}
+
+/* ---- 得点入力ページへ戻る ---- */
+function bottomNavGoScores() {
+  _currentView = 'scores';
+  document.querySelectorAll('.bottom-nav-item').forEach(function(el) { el.classList.remove('active'); });
+  var el = document.getElementById('bnav-scores');
+  if (el) el.classList.add('active');
+  // 成績表画像ページを表示中なら得点入力を再描画
+  var main = document.getElementById('subject-list');
+  if (main && main.querySelector('.photos-page')) {
+    if (_appData) renderApp(_appData);
+    return;
+  }
+  if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---- ユーティリティ ---- */
+function _getUploadTestName() {
+  var tabs  = (_appData && _appData.examTabs) || [];
+  var tabId = _currentTabId || (tabs[0] && tabs[0].term_test_id);
+  var tab   = tabs.find(function(t) { return t.term_test_id === tabId; });
+  return tab ? (tab.test_name || '') : '';
+}
+
+function _escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>

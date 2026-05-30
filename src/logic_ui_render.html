@@ -20,6 +20,8 @@ var _editGenre       = null;   // 編集中の教科名
 var _collapsedGenres = {};     // { genreName: true } 折りたたみ状態
 var _editSubjectInfo = null;   // { tabId, genreName, subjectId } 1件編集中の科目情報
 
+var _currentView      = 'scores'; // 'scores' | 'photos'
+
 var _reorderMode      = false; // 並び替えモード ON/OFF
 var _genreOrder       = null;  // string[] | null。null = masterGenreOrder を使用
 var _subjectOrder     = {};    // { [genreName]: subject_id[] } ユーザー定義順
@@ -153,7 +155,7 @@ function renderApp(data) {
     listHtml += `<option value="${tabId}">${exam.test_name}</option>`;
   });
 
-  listHtml += `</select></div><div class="tab-content">`;
+  listHtml += '</select></div><div class="tab-content">';
 
   examTabs.forEach((exam, examIndex) => {
     const tabId      = exam.term_test_id;
@@ -401,6 +403,12 @@ function renderApp(data) {
 
   document.getElementById('subject-list').innerHTML = listHtml;
   document.getElementById('footer').innerHTML = _renderBugReportSection();
+
+  if (examTabs.length > 0 && !_currentTabId) {
+    switchExamTab(examTabs[0].term_test_id);
+  }
+
+  _initBottomNavScroll();
 
   _renderAnnouncementPanel(data.announcements || []);
   if (_annUnreadCount > 0 && !_annPanelOpen) {
@@ -801,6 +809,26 @@ function switchExamTab(tabId) {
   document.querySelectorAll('.tab-panel-app').forEach(panel => {
     panel.style.display = panel.dataset.tabId === tabId ? 'block' : 'none';
   });
+}
+
+var _bottomNavScrollInited = false;
+
+function _initBottomNavScroll() {
+  if (_bottomNavScrollInited) return;
+  var main = document.getElementById('subject-list');
+  var nav  = document.getElementById('bottom-nav');
+  if (!main || !nav) return;
+  var lastY = 0;
+  main.addEventListener('scroll', function() {
+    var y = main.scrollTop;
+    if (y > lastY && y > 40) {
+      nav.classList.add('bottom-nav-hidden');
+    } else {
+      nav.classList.remove('bottom-nav-hidden');
+    }
+    lastY = y;
+  }, { passive: true });
+  _bottomNavScrollInited = true;
 }
 
 // ---- 教科編集 ミートボールメニュー ----

@@ -22,7 +22,7 @@
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 0 20px 80px; /* 80px: LINE アプリ下部バーの高さ分 */
+    padding: 0 20px 120px; /* 120px: LINEバー + ボトムナビ分 */
     width: 100%;
     box-sizing: border-box;
   }
@@ -39,6 +39,10 @@
   }
 
   .exam-select-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
     margin-bottom: 16px;
   }
 
@@ -53,7 +57,7 @@
     font-size: 0.95rem;
     cursor: pointer;
     min-width: 200px;
-    max-width: 100%;
+    flex: 1;
   }
 
   .exam-select:focus {
@@ -1226,5 +1230,159 @@
     margin: 0;
     line-height: 1.65;
     word-break: break-all;
+  }
+
+  /* ---- ボトムナビゲーション ---- */
+  #bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    height: 58px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-top: 1px solid #e5e5ea;
+    z-index: 500;
+    transition: transform 0.25s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: content-box;
+  }
+
+  #bottom-nav.bottom-nav-hidden {
+    transform: translateY(100%);
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border: none;
+    background: none;
+    color: #aaa;
+    font-size: 0.62em;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 0 0;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s;
+  }
+
+  .bottom-nav-item.active {
+    color: #4a7fc1;
+  }
+
+  .bottom-nav-item svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .bottom-nav-item:active {
+    opacity: 0.7;
+  }
+
+  /* ---- 成績表画像ページ ---- */
+  .photos-page {
+    padding: 12px 0 16px;
+  }
+
+  .photos-hint {
+    font-size: 0.82em;
+    color: #888;
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  .photo-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .photo-card-title {
+    font-weight: 700;
+    font-size: 0.95em;
+    margin-bottom: 10px;
+    color: #222;
+  }
+
+  .photo-card-registered {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
+  .photo-card-check {
+    color: #34c759;
+    font-weight: 700;
+    font-size: 0.88em;
+    white-space: nowrap;
+  }
+
+  .photo-card-date {
+    font-size: 0.78em;
+    color: #aaa;
+  }
+
+  .photo-card-link {
+    font-size: 0.82em;
+    color: #4a7fc1;
+    text-decoration: none;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
+  .photo-card-reupload {
+    font-size: 0.78em;
+    color: #888;
+    background: none;
+    border: 1px solid #d1d1d6;
+    border-radius: 6px;
+    padding: 5px 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .photo-card-upload-btn {
+    width: 100%;
+    padding: 12px;
+    background: #f2f2f7;
+    border: none;
+    border-radius: 8px;
+    color: #4a7fc1;
+    font-size: 0.9em;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .photo-card-upload-btn:active { background: #e5e5ea; }
+
+  .photo-card-thumb {
+    width: 100%;
+    max-height: 200px;
+    object-fit: contain;
+    border-radius: 8px;
+    border: 1px solid #e5e5ea;
+    display: block;
+    margin-bottom: 8px;
+    background: #f8f8f8;
+  }
+
+  .photo-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
   }
 </style>

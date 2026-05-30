@@ -58,6 +58,26 @@ function doGet(e) {
   .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+function doPost(e) {
+  try {
+    const body   = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const action = body.action;
+    let result;
+    if (action === 'uploadFile') {
+      result = _uploadFileToDrive(body.payload);
+    } else {
+      result = { success: false, error: 'unknown action' };
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 /**
  * 訪問者がスクリプトオーナー（デプロイ者）本人かを確認する。
  * getEffectiveUser() は "Execute as: Me" 設定で常にオーナーのメールを返す。
