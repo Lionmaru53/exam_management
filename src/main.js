@@ -1,7 +1,7 @@
 /** アプリバージョン（機能変更時に更新） */
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.1.1';
 /** GASデプロイ番号（clasp push → git tag v? と連動して更新） */
-const GAS_BUILD   = 'v1';
+const GAS_BUILD   = 'v81';
 
 /**
  * 生徒向けアプリ / 管理画面 の振り分け
@@ -224,6 +224,8 @@ function getStudentAppHtml(userId) {
   const tmpl = HtmlService.createTemplateFromFile('index_app');
   tmpl.appData    = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
   tmpl.isDemoMode = false;
+  tmpl.appVersion = APP_VERSION;
+  tmpl.gasBuild   = GAS_BUILD;
   return tmpl.evaluate().getContent();
 }
 
