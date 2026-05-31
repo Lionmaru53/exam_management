@@ -41,13 +41,35 @@ clasp push --project .clasp.dev.json
 clasp push
 ```
 
-## 本番バージョンのリリース手順
+## バージョン管理とリリース手順
+
+### バージョン定義（`src/main.js` の先頭で管理）
+
+```javascript
+const APP_VERSION = '0.1.1';   // セマンティックバージョン（機能変更時に更新）
+const GAS_BUILD   = 'v81';     // GitHubタグと連動するビルド番号（リリースのたびに更新）
+```
+
+`package.json` の `"version"` も `APP_VERSION` と合わせて更新する。
+
+### リリース手順
 
 ```
-1. clasp push --project .clasp.dev.json    # 開発環境で動作確認
-2. clasp push                              # 本番に push
-3. GAS エディタで本番デプロイの新バージョンを作成
+1. src/main.js の APP_VERSION・GAS_BUILD を更新
+2. package.json の version を更新
+3. clasp push --project .clasp.dev.json    # 開発環境で動作確認
+4. clasp push                              # 本番に push
+5. GAS エディタで本番デプロイの新バージョンを作成
+6. git add & git commit & git push exam_management_remote main
+7. git tag v81 && git push exam_management_remote v81
 ```
+
+### バージョン表示場所
+
+| 場所 | 表示内容 |
+|---|---|
+| 管理画面タイトルバー右上 | `0.1.1 (build 81)` |
+| 生徒アプリのメニューパネル下部 | `0.1.1 (build 81)` |
 
 ## GAS 初期セットアップ（未実行の場合のみ）
 
