@@ -324,9 +324,10 @@ function _doUpload(btn) {
   var student  = _appData && _appData.student;
   var testName = _getUploadTestName();
   var payload  = {
-    student_id:   student && student.student_id,
-    grade:        student && student.grade,
-    cram_id:      student && student.cram_id,
+    student_id:    student && student.student_id,
+    pronunciation: student && student.pronunciation,
+    grade:         student && student.grade,
+    cram_id:       student && student.cram_id,
     term_test_id: _currentTabId,
     test_name:    testName,
     file_name:    file.name,

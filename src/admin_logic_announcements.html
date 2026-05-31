@@ -178,12 +178,12 @@ function _anFormHtml(mode, ann) {
   html += '</div>';
 
   html += '<div>';
-  html += '<label>公開日<br><input type="date" id="' + pfx + '_published" value="' + _anEsc(publishedAt) + '" class="admin-input" style="width:100%;"></label>';
+  html += '<label>公開日時<br><input type="datetime-local" id="' + pfx + '_published" value="' + _anEsc(publishedAt) + '" class="admin-input" style="width:100%;"></label>';
   html += '</div>';
 
   html += '<div>';
-  html += '<label>掲載終了日 <span style="color:#aaa;font-size:0.85em;">（空欄＝無期限）</span><br>'
-    + '<input type="date" id="' + pfx + '_expires" value="' + _anEsc(expiresAt) + '" class="admin-input" style="width:100%;"></label>';
+  html += '<label>掲載終了日時 <span style="color:#aaa;font-size:0.85em;">（空欄＝無期限）</span><br>'
+    + '<input type="datetime-local" id="' + pfx + '_expires" value="' + _anEsc(expiresAt) + '" class="admin-input" style="width:100%;"></label>';
   html += '</div>';
 
   html += '<div style="grid-column:span 2;">';

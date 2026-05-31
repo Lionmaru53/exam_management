@@ -211,8 +211,8 @@ LIFF（生徒アプリ）へのアクセスログ。`_writeLiffLog()`（`getData
 | 3 | `body` | 本文。改行は `\n` で入力 |
 | 4 | `category` | カテゴリ（`important` / `info` / `notice`）|
 | 5 | `target_cram_id` | 対象校舎の cram_id。空欄 = 全校舎に表示 |
-| 6 | `published_at` | 公開日（この日付以降に表示される） |
-| 7 | `expires_at` | 掲載終了日（空欄 = 無期限） |
+| 6 | `published_at` | 公開日時（この日時以降に表示される） |
+| 7 | `expires_at` | 掲載終了日時（空欄 = 無期限。この日時を過ぎると非表示） |
 | 8 | `is_active` | 表示フラグ（`1`: 表示 / `0`: 非表示） |
 
 **備考**: シートが存在しない場合は `getInitialData()` が `[]` を返す（既存機能への影響なし）。  

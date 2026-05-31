@@ -290,18 +290,13 @@ function getInitialData(lineUserId) {
     let announcements = [];
     const annSheet = parentSS.getSheetByName('announcements');
     if (annSheet) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const now = new Date();
       announcements = getRowsData(annSheet).filter(r => {
         if (String(r.is_active || '') !== '1') return false;
         const tc = String(r.target_cram_id || '').trim();
         if (tc && tc !== cramId) return false;
-        if (r.published_at && new Date(r.published_at) > today) return false;
-        if (r.expires_at) {
-          const exp = new Date(r.expires_at);
-          exp.setHours(23, 59, 59, 999);
-          if (exp < today) return false;
-        }
+        if (r.published_at && new Date(r.published_at) > now) return false;
+        if (r.expires_at && new Date(r.expires_at) < now) return false;
         return true;
       }).map(r => ({
         id:           String(r.announcement_id || ''),

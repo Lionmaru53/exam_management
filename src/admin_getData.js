@@ -1290,7 +1290,16 @@ function getAdminAnnouncements() {
     const ss    = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('announcements');
     if (!sheet || sheet.getLastRow() <= 1) return { success: true, announcements: [] };
-    const rows = stringifyDates(getRowsData(sheet));
+    const rows = getRowsData(sheet).map(function(r) {
+      const obj = {};
+      for (const k in r) {
+        const v = r[k];
+        obj[k] = v instanceof Date
+          ? Utilities.formatDate(v, 'JST', "yyyy-MM-dd'T'HH:mm")
+          : v;
+      }
+      return obj;
+    });
     rows.sort(function(a, b) {
       return (b.published_at || '').localeCompare(a.published_at || '');
     });

@@ -28,7 +28,14 @@ global.SpreadsheetApp = {
 };
 
 global.DriveApp = {
-  getFileById: jest.fn(() => ({ addEditor: jest.fn() })),
+  getFileById:    jest.fn(() => ({ addEditor: jest.fn() })),
+  getFolderById:  jest.fn(),
+};
+
+global.PropertiesService = {
+  getScriptProperties: jest.fn(() => ({
+    getProperty: jest.fn(() => null),
+  })),
 };
 
 // ---- ソースファイルを依存順に読み込む（GAS グローバルスコープを再現）----
@@ -42,3 +49,4 @@ require(path.join(SRC, 'admin_import.js'));   // _mapRows, _upsertStudentsMaster
 require(path.join(SRC, 'admin_getData.js'));  // getAdminInitialData, getStudentList 等
 require(path.join(SRC, 'admin_save_students.js'));
 require(path.join(SRC, 'admin_save_exams.js'));
+require(path.join(SRC, 'upload_handler.js'));

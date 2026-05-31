@@ -50,8 +50,14 @@ function _nextUploadId(sheet) {
   return 'UH' + String(max + 1).padStart(3, '0');
 }
 
+// フォルダを取得または作成するヘルパー
+function _getOrCreateFolder(parentFolder, name) {
+  const iter = parentFolder.getFoldersByName(name);
+  return iter.hasNext() ? iter.next() : parentFolder.createFolder(name);
+}
+
 function _uploadFileToDrive(payload) {
-  const { student_id, grade, term_test_id, test_name, mime_type, base64_data, cram_id, thumbnail_b64 } = payload || {};
+  const { student_id, pronunciation, grade, term_test_id, test_name, mime_type, base64_data, cram_id, thumbnail_b64 } = payload || {};
 
   if (!student_id || !grade || !term_test_id || !test_name || !mime_type || !base64_data) {
     return { success: false, error: '必須パラメータが不足しています' };
@@ -67,24 +73,22 @@ function _uploadFileToDrive(payload) {
     return { success: false, error: 'アップロード先フォルダが設定されていません（UPLOAD_FOLDER_ID）' };
   }
 
-  let parentFolder;
+  let rootFolder;
   try {
-    parentFolder = DriveApp.getFolderById(folderId);
+    rootFolder = DriveApp.getFolderById(folderId);
   } catch (e) {
     return { success: false, error: 'アップロード先フォルダが見つかりません: ' + e.message };
   }
 
-  // student_id フォルダを取得 or 作成
-  let studentFolder;
-  const folderIter = parentFolder.getFoldersByName(student_id);
-  if (folderIter.hasNext()) {
-    studentFolder = folderIter.next();
-  } else {
-    studentFolder = parentFolder.createFolder(student_id);
-  }
+  // フォルダ階層: root/{cram_id}/{student_id}/
+  const parentLevel = cram_id
+    ? _getOrCreateFolder(rootFolder, String(cram_id))
+    : rootFolder;
+  const studentFolder = _getOrCreateFolder(parentLevel, String(student_id));
 
-  // ファイル名: student_id_grade_test_name.ext
-  const baseName = _sanitizeFileName(student_id) + '_'
+  // ファイル名: {読み（スペース削除）}_{学年}_{試験名}.ext
+  const readingName = String(pronunciation || student_id).replace(/\s+/g, '');
+  const baseName = _sanitizeFileName(readingName) + '_'
                  + _sanitizeFileName(grade) + '_'
                  + _sanitizeFileName(test_name);
   const fileName = baseName + '.' + ext;
@@ -132,3 +136,9 @@ function _uploadFileToDrive(payload) {
 function uploadFileToServer(payload) {
   return _uploadFileToDrive(payload);
 }
+
+if (typeof module !== 'undefined') Object.assign(global, {
+  _sanitizeFileName,
+  _uploadFileToDrive,
+  uploadFileToServer,
+});
