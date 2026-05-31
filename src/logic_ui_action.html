@@ -107,7 +107,8 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
             _originalValues[el.id] = el.checked;
           });
         }
-        _refreshDirtyState();
+        _inputCache = {};
+        _hideDirtyBar();
       } else {
         showMessage("保存エラー: " + response.error, "error");
       }

@@ -1282,14 +1282,19 @@
     bottom: calc(64px + max(env(safe-area-inset-bottom, 0px), 28px));
     left: 0;
     right: 0;
-    background: #fffbeb;
+    background: #fff;
     border-top: 2px solid #f59e0b;
     padding: 10px 16px;
-    z-index: 490;
+    z-index: 510;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 8px;
     box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+    transition: bottom 0.25s ease;
+  }
+  #dirty-bar.dirty-bar--nav-hidden {
+    bottom: max(env(safe-area-inset-bottom, 0px), 8px);
   }
   #dirty-bar.dirty-bar--visible {
     animation: dirty-bar-in 0.22s ease;

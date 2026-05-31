@@ -368,12 +368,11 @@ function renderApp(data) {
 
     listHtml += '</div>'; // ios-section-list
 
-    // フッター（保存ボタン）
+    // 保存ボタン（ダーティーバーから saveCurrentTab() で呼ばれるため DOM に残す）
     if ((exam.subjects || []).length > 0 || (exam.scores || []).length > 0) {
-      listHtml += '<div class="tab-footer-app">'
-        + '<button type="button" class="btn-save-app"'
+      listHtml += '<button type="button" class="btn-save-app" style="display:none"'
         + ' onclick="handleSave(\'' + s.student_id + '\',\'' + (exam.exam_id || '') + '\',\'' + (exam.pattern_id || '') + '\',\'' + (exam.term_test_id || '') + '\',\'' + (exam.year || '') + '\',\'' + displayKey + '\',this)">'
-        + '保存する</button></div>';
+        + '保存する</button>';
     }
 
     listHtml += '</div>'; // tab-panel
@@ -930,10 +929,16 @@ function _initBottomNavScroll() {
   var lastY = 0;
   main.addEventListener('scroll', function() {
     var y = main.scrollTop;
-    if (y > lastY && y > 40) {
+    var goingDown = y > lastY && y > 40;
+    if (goingDown) {
       nav.classList.add('bottom-nav-hidden');
     } else {
       nav.classList.remove('bottom-nav-hidden');
+    }
+    var bar = document.getElementById('dirty-bar');
+    if (bar) {
+      bar.style.bottom = '';
+      bar.classList.toggle('dirty-bar--nav-hidden', goingDown);
     }
     lastY = y;
   }, { passive: true });
