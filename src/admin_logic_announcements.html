@@ -1,0 +1,295 @@
+<script>
+var _anAnnouncements = [];
+var _anFetched       = false;
+var _anAddMode       = false;
+var _anEditId        = null;
+var _anBranches      = [];
+
+var _AN_CATEGORIES = [
+  { value: 'info',      label: 'お知らせ' },
+  { value: 'important', label: '重要' },
+  { value: 'notice',    label: '注意' }
+];
+
+function renderAnnouncementManager() {
+  _anAddMode  = false;
+  _anEditId   = null;
+  _anBranches = (window.masterData && window.masterData.branches) || [];
+  if (_anFetched) { _anRerender(); return; }
+  _anFetch();
+}
+
+function _anFetch() {
+  var content = document.getElementById('admin-content');
+  content.innerHTML = '<h3>お知らせ管理</h3><p style="color:#666;">読み込み中...</p>';
+  setLoading(true, 'お知らせ一覧を取得中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        _anAnnouncements = res.announcements || [];
+        _anFetched = true;
+        _anRerender();
+      } else {
+        showMessage((res && res.error) || '取得に失敗しました', 'error');
+        document.getElementById('admin-content').innerHTML = '<h3>お知らせ管理</h3>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .getAdminAnnouncements();
+}
+
+function _anCatLabel(cat) {
+  var found = _AN_CATEGORIES.find(function(c) { return c.value === cat; });
+  return found ? found.label : (cat || 'お知らせ');
+}
+
+function _anTargetLabel(targetCramId) {
+  if (!targetCramId) return '全校舎';
+  var branch = _anBranches.find(function(b) { return b.cram_id === targetCramId; });
+  return branch ? branch.branch_name + ' (' + targetCramId + ')' : targetCramId;
+}
+
+function _anEsc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _anCatOptions(selected) {
+  return _AN_CATEGORIES.map(function(c) {
+    return '<option value="' + c.value + '"' + (c.value === selected ? ' selected' : '') + '>' + c.label + '</option>';
+  }).join('');
+}
+
+function _anBranchOptions(selected) {
+  var opts = '<option value=""' + (!selected ? ' selected' : '') + '>全校舎</option>';
+  opts += _anBranches.map(function(b) {
+    return '<option value="' + _anEsc(b.cram_id) + '"' + (b.cram_id === selected ? ' selected' : '') + '>'
+      + _anEsc(b.branch_name) + ' (' + _anEsc(b.cram_id) + ')</option>';
+  }).join('');
+  return opts;
+}
+
+function _anRerender() {
+  var content = document.getElementById('admin-content');
+  var html = '<h3 style="margin-bottom:4px;">お知らせ管理</h3>';
+  html += '<p style="color:#666;margin-bottom:16px;">生徒アプリに表示するお知らせを管理します。</p>';
+
+  if (!_anAddMode) {
+    html += '<div style="margin-bottom:16px;">';
+    html += '<button class="btn-save-admin" onclick="_anStartAdd()">＋ 新規追加</button>';
+    html += '</div>';
+  }
+
+  // 追加フォーム
+  if (_anAddMode) {
+    html += _anFormHtml('add', null);
+  }
+
+  // 一覧テーブル
+  if (_anAnnouncements.length === 0) {
+    html += '<p style="padding:24px;text-align:center;color:#999;">お知らせはまだ登録されていません</p>';
+  } else {
+    html += '<div style="overflow-x:auto;">';
+    html += '<table class="db-table" style="width:100%;">';
+    html += '<thead><tr>'
+      + '<th>タイトル</th>'
+      + '<th>本文</th>'
+      + '<th>カテゴリ</th>'
+      + '<th>対象校舎</th>'
+      + '<th>公開日</th>'
+      + '<th>終了日</th>'
+      + '<th>状態</th>'
+      + '<th>操作</th>'
+      + '</tr></thead><tbody>';
+
+    _anAnnouncements.forEach(function(ann) {
+      var isActive = String(ann.is_active || '') === '1';
+      var statusBadge = isActive
+        ? '<span style="color:#34c759;font-weight:700;">表示中</span>'
+        : '<span style="color:#aaa;">非表示</span>';
+
+      if (_anEditId === ann.announcement_id) {
+        // インライン編集行
+        html += '<tr style="background:#f0f6ff;">';
+        html += '<td colspan="8" style="padding:12px;">';
+        html += _anFormHtml('edit', ann);
+        html += '</td></tr>';
+      } else {
+        var bodyPreview = (ann.body || '').replace(/\n/g, ' ').slice(0, 60);
+        if ((ann.body || '').length > 60) bodyPreview += '…';
+        html += '<tr>'
+          + '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _anEsc(ann.title) + '">'
+          + _anEsc(ann.title) + '</td>'
+          + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:0.88em;" title="' + _anEsc(ann.body || '') + '">'
+          + _anEsc(bodyPreview) + '</td>'
+          + '<td>' + _anCatLabel(ann.category) + '</td>'
+          + '<td>' + _anEsc(_anTargetLabel(ann.target_cram_id)) + '</td>'
+          + '<td>' + _anEsc(ann.published_at || '') + '</td>'
+          + '<td>' + _anEsc(ann.expires_at || '') + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '<td style="white-space:nowrap;">'
+          + '<button class="btn-save-admin" style="margin-right:4px;" data-id="' + _anEsc(ann.announcement_id) + '" onclick="_anStartEdit(this.dataset.id)">編集</button>'
+          + '<button class="btn-cancel-admin" data-id="' + _anEsc(ann.announcement_id) + '" onclick="_anDelete(this.dataset.id)">削除</button>'
+          + '</td>'
+          + '</tr>';
+      }
+    });
+
+    html += '</tbody></table></div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function _anFormHtml(mode, ann) {
+  var isAdd = mode === 'add';
+  var title       = isAdd ? '' : (ann.title || '');
+  var body        = isAdd ? '' : (ann.body || '');
+  var category    = isAdd ? 'info' : (ann.category || 'info');
+  var targetCram  = isAdd ? '' : (ann.target_cram_id || '');
+  var publishedAt = isAdd ? '' : (ann.published_at || '');
+  var expiresAt   = isAdd ? '' : (ann.expires_at || '');
+  var isActive    = isAdd ? true : (String(ann.is_active || '') === '1');
+  var pfx         = isAdd ? 'an_add' : 'an_edit';
+  var editId      = isAdd ? '' : (ann.announcement_id || '');
+  var submitFn    = isAdd ? '_anSubmitAdd()' : '_anSubmitEditFromEl(this)';
+  var cancelFn    = isAdd ? '_anCancelAdd()' : '_anCancelEdit()';
+
+  var html = '<div class="admin-genre-container" style="margin-bottom:16px;">';
+  html += '<h4 class="admin-genre-title">' + (isAdd ? 'お知らせを追加' : 'お知らせを編集') + '</h4>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:640px;">';
+
+  html += '<div style="grid-column:span 2;">';
+  html += '<label>タイトル <span style="color:#ff3b30;">*</span><br>'
+    + '<input type="text" id="' + pfx + '_title" value="' + _anEsc(title) + '" class="admin-input" style="width:100%;" placeholder="例: システムメンテナンスのお知らせ" /></label>';
+  html += '</div>';
+
+  html += '<div>';
+  html += '<label>カテゴリ<br><select id="' + pfx + '_category" class="admin-select" style="width:100%;">'
+    + _anCatOptions(category) + '</select></label>';
+  html += '</div>';
+
+  html += '<div>';
+  html += '<label>対象校舎<br><select id="' + pfx + '_target" class="admin-select" style="width:100%;">'
+    + _anBranchOptions(targetCram) + '</select></label>';
+  html += '</div>';
+
+  html += '<div>';
+  html += '<label>公開日<br><input type="date" id="' + pfx + '_published" value="' + _anEsc(publishedAt) + '" class="admin-input" style="width:100%;"></label>';
+  html += '</div>';
+
+  html += '<div>';
+  html += '<label>掲載終了日 <span style="color:#aaa;font-size:0.85em;">（空欄＝無期限）</span><br>'
+    + '<input type="date" id="' + pfx + '_expires" value="' + _anEsc(expiresAt) + '" class="admin-input" style="width:100%;"></label>';
+  html += '</div>';
+
+  html += '<div style="grid-column:span 2;">';
+  html += '<label>本文<br><textarea id="' + pfx + '_body" rows="4" class="admin-input" style="width:100%;resize:vertical;" placeholder="本文を入力してください">' + _anEsc(body) + '</textarea></label>';
+  html += '</div>';
+
+  html += '<div style="grid-column:span 2;">';
+  html += '<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">'
+    + '<input type="checkbox" id="' + pfx + '_active"' + (isActive ? ' checked' : '') + '> 表示する（is_active）</label>';
+  html += '</div>';
+
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;margin-top:12px;">';
+  html += '<button class="btn-save-admin" data-editid="' + _anEsc(editId) + '" onclick="' + submitFn + '">' + (isAdd ? '登録する' : '更新する') + '</button>';
+  html += '<button class="btn-cancel-admin" onclick="' + cancelFn + '">キャンセル</button>';
+  html += '</div></div>';
+  return html;
+}
+
+function _anStartAdd() { _anAddMode = true; _anEditId = null; _anRerender(); }
+function _anCancelAdd() { _anAddMode = false; _anRerender(); }
+function _anStartEdit(id) { _anEditId = id; _anAddMode = false; _anRerender(); }
+function _anCancelEdit() { _anEditId = null; _anRerender(); }
+
+function _anGetFormPayload(pfx) {
+  var get = function(id) { var el = document.getElementById(pfx + '_' + id); return el ? el.value.trim() : ''; };
+  return {
+    title:          get('title'),
+    body:           document.getElementById(pfx + '_body') ? document.getElementById(pfx + '_body').value : '',
+    category:       get('category'),
+    target_cram_id: get('target'),
+    published_at:   get('published') || '',
+    expires_at:     get('expires') || '',
+    is_active:      document.getElementById(pfx + '_active') ? (document.getElementById(pfx + '_active').checked ? '1' : '0') : '1'
+  };
+}
+
+function _anSubmitAdd() {
+  var payload = _anGetFormPayload('an_add');
+  if (!payload.title) { showMessage('タイトルを入力してください', 'error'); return; }
+  setLoading(true, 'お知らせを追加中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        _anAddMode = false;
+        _anFetched = false;
+        showMessage('お知らせを追加しました', 'success');
+        _anFetch();
+      } else {
+        showMessage((res && res.error) || '追加に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .addAnnouncement(payload);
+}
+
+function _anSubmitEditFromEl(btn) {
+  var annId = btn && btn.dataset && btn.dataset.editid ? btn.dataset.editid : _anEditId;
+  _anSubmitEdit(annId);
+}
+
+function _anSubmitEdit(annId) {
+  var payload = _anGetFormPayload('an_edit');
+  if (!payload.title) { showMessage('タイトルを入力してください', 'error'); return; }
+  setLoading(true, 'お知らせを更新中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        _anEditId = null;
+        _anFetched = false;
+        showMessage('お知らせを更新しました', 'success');
+        _anFetch();
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .updateAnnouncement(annId, payload);
+}
+
+function _anDelete(annId) {
+  if (!confirm('このお知らせを削除しますか？')) return;
+  setLoading(true, 'お知らせを削除中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        _anFetched = false;
+        showMessage('お知らせを削除しました', 'success');
+        _anFetch();
+      } else {
+        showMessage((res && res.error) || '削除に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .deleteAnnouncement(annId);
+}
+</script>

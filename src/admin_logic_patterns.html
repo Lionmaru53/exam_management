@@ -217,18 +217,7 @@ var _ptGenreColorMap    = {};   // genreName → { header, border, chip }
 var _ptDragSrcSchool    = null;
 var _showAddCoursePanel = false;
 
-/* ジャンル名ベースの色定義（LIFF 画面の getGenreColor と統一） */
-var _PT_GENRE_COLOR_DEF = {
-  '数学': { header: '#1d4ed8', border: '#93c5fd', chip: '#dbeafe' },
-  '英語': { header: '#c2410c', border: '#fdba74', chip: '#fed7aa' },
-  '国語': { header: '#15803d', border: '#6ee7b7', chip: '#bbf7d0' },
-  '理科': { header: '#be185d', border: '#f9a8d4', chip: '#fbcfe8' },
-  '社会': { header: '#a16207', border: '#fcd34d', chip: '#fde68a' },
-  '副教科': { header: '#374151', border: '#6b7280', chip: '#f3f4f6' },
-  '合計': { header: '#5b21b6', border: '#c4b5fd', chip: '#ede9fe' },
-  'その他': { header: '#475569', border: '#cbd5e1', chip: '#f8fafc' },
-};
-/* 上記以外のジャンル名への fallback パレット */
+/* 未定義ジャンルへの fallback パレット */
 var _PT_GENRE_PALETTE = [
   { header: '#6A1B9A', border: '#ce93d8', chip: '#f3e5f5' },
   { header: '#00695C', border: '#80cbc4', chip: '#e0f2f1' },
@@ -265,12 +254,14 @@ function renderPatternManager(data) {
   });
   _ptGenreOrder = genreSet.filter(function(g) { return g !== '未設定'; });
 
-  // ジャンルごとにカラーを割り当て（名前定義を優先、未定義は fallback パレット）
+  // ジャンルごとにカラーを割り当て（GENRE_COLORS を優先、未定義は fallback パレット）
   _ptGenreColorMap = {};
   var _fallbackIdx = 0;
+  var _gc = window.GENRE_COLORS || {};
   _ptGenreOrder.forEach(function(g) {
-    if (_PT_GENRE_COLOR_DEF[g]) {
-      _ptGenreColorMap[g] = _PT_GENRE_COLOR_DEF[g];
+    var def = _gc[g];
+    if (def) {
+      _ptGenreColorMap[g] = { header: def.dark, border: def.mid, chip: def.light };
     } else {
       _ptGenreColorMap[g] = _PT_GENRE_PALETTE[_fallbackIdx % _PT_GENRE_PALETTE.length];
       _fallbackIdx++;
@@ -311,8 +302,7 @@ function renderPatternManager(data) {
 
   var html = '<h3>学校別教科名・教科パターン管理</h3>';
   html += '<p class="pt-page-hint">'
-    + '<b>学校に配置されたチップをダブルクリックすると、学校ごとの表示名（例：「英語」→「英I」）に変更できます。</b><br>'
-    + 'できるだけ各学校の実際の教科名に合わせて設定してください。'
+    + '各学校のコースごとに、教科のパターン（組み合わせ）を管理できます。'
     + '</p>';
 
   // ツールバー
@@ -340,12 +330,9 @@ function renderPatternManager(data) {
 
   content.innerHTML = html;
 
-  // sticky pool の top = admin-top-bar の高さ
-  setTimeout(function() {
-    var topBar = document.getElementById('admin-top-bar');
-    var pool   = document.getElementById('pt-sticky-pool');
-    if (topBar && pool) pool.style.top = topBar.offsetHeight + 'px';
-  }, 0);
+  // #admin-content がスクロールコンテナなので top:0 で上端に固定
+  var pool = document.getElementById('pt-sticky-pool');
+  if (pool) pool.style.top = '0px';
 }
 
 /* ========== クロス表描画 ========== */
@@ -433,7 +420,7 @@ function _ptRenderCrossTable() {
           ' ondragend="_ptSchoolDragEnd()"' +
           ' ondragover="_ptSchoolDragOver(event,\'' + snEsc + '\')"' +
           ' ondrop="_ptSchoolDrop(event,\'' + snEsc + '\')">' +
-          '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span> ' + sn + '</td>';
+          '<span class="st-drag-handle" title="ドラッグして並び替え">⠿</span> ' + _shortSchoolName(sn) + '</td>';
       }
 
       html += '<td class="pt-row-label">' + courseLabel + '</td>';
@@ -730,7 +717,7 @@ function _ptRenderAddCoursePanel(allSchoolNames) {
     var snEsc = sn.replace(/"/g, '&quot;');
     html += '<label class="add-course-school-item">' +
       '<input type="checkbox" class="pat-school-cb" value="' + snEsc + '" />' +
-      '<span>' + sn + '</span></label>';
+      '<span>' + _shortSchoolName(sn) + '</span></label>';
   });
   if (allSchoolNames.length === 0) {
     html += '<span style="color:#aaa; font-size:0.85em;">学校名が登録されていません</span>';
@@ -799,6 +786,11 @@ function submitAddCourse() {
       .initializeDefaultPatterns(cramId, { school_name: schoolName, school_course: course });
   }
   processNext();
+}
+
+/* ========== エイリアス編集（未実装スタブ） ========== */
+function _ptStartAliasEdit(schoolName, subjectId) {
+  // 将来実装予定 (school_subject_aliases 編集)
 }
 
 /* ========== ユーティリティ ========== */

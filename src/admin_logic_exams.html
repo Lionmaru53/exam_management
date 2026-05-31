@@ -153,7 +153,7 @@ function _exBuildHtml(masterData) {
     var period = _exPeriodMap[key] || null;
 
     html += '<tr class="ex-gantt-row" id="ex-row-' + rowIdx + '">';
-    html += '<td class="ex-gantt-label ex-gantt-school-label">' + _exEsc(school) + '</td>';
+    html += '<td class="ex-gantt-label ex-gantt-school-label">' + _exEsc(_shortSchoolName(school)) + '</td>';
 
     dates.forEach(function(d) {
       var isFilled  = period && d >= period.startDate && d <= period.endDate;

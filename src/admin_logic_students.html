@@ -78,12 +78,14 @@
 let _stCachedStudents = [];
 let _stCachedCramId   = null;
 let _stShowInactive   = false;
-let _stSortField      = 'pronunciation';
+let _stSortField      = 'grade';
 let _stSortAsc        = true;
 let _stEditMode       = false;
 let _stEditField      = 'school_course';
 let _stFilterSchoolCourses = [];   // 「学校名/コース名」または「学校名」の配列
 let _stFilterGradeSubs     = [];   // 「学年/文理」または「学年」の配列
+var _stSearchQuery = '';
+var _stComposing   = false;
 
 const _ST_GRADE_ORDER = ['中1','中2','中3','高1','高2','高3'];
 function _stGradeRank(g) {
@@ -141,6 +143,11 @@ function _stSortStudents(arr) {
     let cmp;
     if (_stSortField === 'grade') {
       cmp = _stGradeRank(a.grade || '') - _stGradeRank(b.grade || '');
+      if (cmp === 0) {
+        const va = String(a.pronunciation || a.name || '').toLowerCase();
+        const vb = String(b.pronunciation || b.name || '').toLowerCase();
+        cmp = va.localeCompare(vb, 'ja');
+      }
     } else {
       const va = String(a[_stSortField] || '').toLowerCase();
       const vb = String(b[_stSortField] || '').toLowerCase();
@@ -163,7 +170,7 @@ function _stGetFilteredStudents() {
   let s = _stShowInactive ? _stCachedStudents : _stCachedStudents.filter(function(s) { return s.is_active; });
   if (_stFilterSchoolCourses.length > 0) {
     s = s.filter(function(x) {
-      var label = x.school_course ? (x.school_name + '/' + x.school_course) : (x.school_name || '');
+      var label = x.school_course ? (_shortSchoolName(x.school_name) + '/' + x.school_course) : (_shortSchoolName(x.school_name) || '');
       return _stFilterSchoolCourses.indexOf(label) >= 0;
     });
   }
@@ -173,6 +180,7 @@ function _stGetFilteredStudents() {
       return _stFilterGradeSubs.indexOf(gs) >= 0;
     });
   }
+  // 検索フィルタは _stApplySearchFilter() で DOM show/hide により処理する
   return s;
 }
 
@@ -193,6 +201,11 @@ function _stToggleInactive(checked) {
   _stRerender();
 }
 
+function _stOnSearch(val) {
+  _stSearchQuery = val;
+  _stApplySearchFilter();
+}
+
 // ---- メイン描画 ----
 
 function _stRerender() {
@@ -210,7 +223,7 @@ function _stRerender() {
   const _stScLabelSet = {};
   const _stScLabelList = [];
   allBase.forEach(function(s) {
-    const sn = s.school_name  || '';
+    const sn = _shortSchoolName(s.school_name  || '');
     const sc = s.school_course || '';
     const label = sc ? (sn + '/' + sc) : sn;
     if (label && !_stScLabelSet[label]) {
@@ -270,7 +283,10 @@ function _stRerender() {
   // 件数・無効表示トグル
   html += '<div class="st-filter-bar">'
         + '<span class="st-count">全 ' + _stCachedStudents.length + ' 名中 ' + filtered.length + ' 名表示</span>'
-        + '<label class="st-toggle"><input type="checkbox" onchange="_stToggleInactive(this.checked)"' + (_stShowInactive ? ' checked' : '') + '> 無効も表示</label>'
+        + '<input type="search" placeholder="氏名・読み・学校名で検索" value="' + _esc(_stSearchQuery) + '"'
+        + ' oncompositionstart="_stComposing=true" oncompositionend="_stComposing=false"'
+        + ' oninput="if(!_stComposing)_stOnSearch(this.value)" class="admin-input" style="width:220px;margin-left:auto;">'
+        + '<label class="st-toggle"><input type="checkbox" onchange="_stToggleInactive(this.checked)"' + (_stShowInactive ? ' checked' : '') + '> 退塾も表示</label>'
         + '</div>';
 
   html += '</div>'; // end slicer-bar
@@ -346,24 +362,27 @@ function _stRerender() {
         + '<th class="st-th-sort" onclick="_stSetSort(\'school_name\')">学校名' + _stSortIcon('school_name') + '</th>'
         + '<th class="st-th-sort" onclick="_stSetSort(\'grade\')">学年' + _stSortIcon('grade') + '</th>'
         + '<th class="st-th-sort" onclick="_stSetSort(\'school_course\')">コース' + _stSortIcon('school_course') + '</th>'
-        + '<th>文理</th>'
+        + '<th class="st-th-sort" onclick="_stSetSort(\'sub_course\')">文理' + _stSortIcon('sub_course') + '</th>'
         + '<th>状態</th>'
         + '</tr></thead><tbody>';
 
   sorted.forEach(function(s) {
     const statusBadge = s.is_active
-      ? '<span class="st-badge-active">有効</span>'
-      : '<span class="st-badge-inactive">無効</span>';
+      ? '<span class="st-badge-active">在席</span>'
+      : '<span class="st-badge-inactive">退塾</span>';
     const cbCell = _stEditMode
       ? '<td><input type="checkbox" class="st-cb" value="' + _esc(s.student_id) + '" /></td>'
       : '';
 
-    html += '<tr class="' + (s.is_active ? '' : 'st-row-inactive') + '">'
+    html += '<tr class="' + (s.is_active ? '' : 'st-row-inactive') + '"'
+          + ' data-st-name="' + _esc((s.name || '').toLowerCase()) + '"'
+          + ' data-st-kana="' + _esc((s.pronunciation || '').toLowerCase()) + '"'
+          + ' data-st-school="' + _esc((s.school_name || '').toLowerCase()) + '">'
           + cbCell
           + '<td class="td-mono">' + _esc(s.student_id) + '</td>'
           + '<td><span class="st-name">' + _esc(s.name) + '</span>'
           + (s.pronunciation ? '<span class="st-kana"> （' + _esc(s.pronunciation) + '）</span>' : '') + '</td>'
-          + '<td>' + _esc(s.school_name    || '—') + '</td>'
+          + '<td>' + _esc(_shortSchoolName(s.school_name) || '—') + '</td>'
           + '<td>' + _esc(s.grade          || '—') + '</td>'
           + '<td>' + _esc(s.school_course  || '—') + '</td>'
           + '<td>' + _esc(s.sub_course     || '—') + '</td>'
@@ -373,6 +392,25 @@ function _stRerender() {
 
   html += '</tbody></table>';
   content.innerHTML = html;
+  _stApplySearchFilter();
+}
+
+function _stApplySearchFilter() {
+  var q = _stSearchQuery.toLowerCase();
+  var rows = document.querySelectorAll('.st-table tbody tr');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var show = !q
+      || (row.dataset.stName   || '').includes(q)
+      || (row.dataset.stKana   || '').includes(q)
+      || (row.dataset.stSchool || '').includes(q);
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  var countEl = document.querySelector('.st-count');
+  if (countEl) {
+    countEl.textContent = '全 ' + _stCachedStudents.length + ' 名中 ' + visible + ' 名表示';
+  }
 }
 
 // ---- 編集モード ----

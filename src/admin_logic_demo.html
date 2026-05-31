@@ -1,0 +1,75 @@
+<style>
+/* ---- ヘッダーの左側ラッパー ---- */
+.admin-header-left-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* ---- デモボタン＋ドロップダウン ---- */
+.demo-btn-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.demo-trigger-btn {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 0.82em;
+  white-space: nowrap;
+}
+.demo-trigger-btn:hover { background: rgba(255,255,255,0.25); }
+.demo-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  min-width: 180px;
+  z-index: 8999;
+  overflow: hidden;
+}
+.demo-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.9em;
+  color: #333;
+}
+.demo-dropdown-item:last-child { border-bottom: none; }
+.demo-dropdown-item:hover { background: #f0f6ff; }
+</style>
+
+<script>
+function toggleDemoDropdown(event) {
+  event.stopPropagation();
+  var dd = document.getElementById('demo-dropdown');
+  if (!dd) return;
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', function() {
+  var dd = document.getElementById('demo-dropdown');
+  if (dd) dd.style.display = 'none';
+});
+
+window.openDemoScreen = function(type) {
+  var dd = document.getElementById('demo-dropdown');
+  if (dd) dd.style.display = 'none';
+  var baseUrl = window.masterData && window.masterData.gasWebAppUrl;
+  if (!baseUrl) { alert('URL が取得できませんでした。再読み込みしてください。'); return; }
+  window.open(baseUrl + '?demo=1&type=' + encodeURIComponent(type), '_blank');
+};
+</script>

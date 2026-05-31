@@ -35,9 +35,14 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
     const classRankVal = (crEl ? crEl.value : '').trim();
 
     if (scoreVal !== '') {
-      const n = Number(scoreVal);
-      if (!Number.isInteger(n) || n < 0 || n > 200) {
-        validationError = '点数は 0〜200 の整数で入力してください。';
+      const n        = Number(scoreVal);
+      const cellEl   = el.closest('.ios-cell');
+      const genre    = cellEl ? (cellEl.dataset.genre || '') : '';
+      const maxScore = genre === '合計' ? 2000 : 200;
+      if (!Number.isInteger(n) || n < 0 || n > maxScore) {
+        validationError = genre === '合計'
+          ? '合計の点数は 0〜2000 の整数で入力してください。'
+          : '点数は 0〜200 の整数で入力してください。';
         return;
       }
     }
@@ -78,6 +83,11 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
     return;
   }
 
+  if (window._appData && window._appData.demo) {
+    showMessage('デモモードのため、保存されません。', 'info');
+    return;
+  }
+
   button.disabled = true;
   setLoading(true, ['得点データを保存中...', 'シートに書き込み中...', 'もうしばらくお待ちください...']);
 
@@ -88,6 +98,16 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
       btn.disabled = false;
       if (response.success) {
         showMessage("正常に保存されました！", "success");
+        var savedPanel = document.querySelector('.tab-panel-app[data-tab-id="' + termTestId + '"]');
+        if (savedPanel) {
+          savedPanel.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+            _originalValues[el.id] = el.value;
+          });
+          savedPanel.querySelectorAll('[id^="nt_"]').forEach(function(el) {
+            _originalValues[el.id] = el.checked;
+          });
+        }
+        _refreshDirtyState();
       } else {
         showMessage("保存エラー: " + response.error, "error");
       }
@@ -164,8 +184,7 @@ function showBugConfirm(btn) {
     }
   };
 
-  var footer = document.getElementById('footer');
-  if (footer) footer.innerHTML = _renderBugReportSection();
+  _renderMenuContent();
 }
 
 /**
@@ -173,6 +192,10 @@ function showBugConfirm(btn) {
  */
 function submitBugConfirm(btn) {
   if (!window._bugConfirmData) return;
+  if (window._appData && window._appData.demo) {
+    showMessage('デモモードのため、送信されません。', 'info');
+    return;
+  }
   if (btn) btn.disabled = true;
   setLoading(true, '送信中...');
 
@@ -184,8 +207,9 @@ function submitBugConfirm(btn) {
       if (res.success) {
         window._bugConfirmData = null;
         window._bugReportOpen  = false;
-        var footer = document.getElementById('footer');
-        if (footer) footer.innerHTML = '<div class="bug-report-section"><p class="bug-report-sent">ご報告ありがとうございました。内容を確認いたします。</p></div>';
+        var el = document.getElementById('menu-panel-content');
+        if (el) el.innerHTML = '<div style="padding:24px 20px;text-align:center;"><p class="bug-report-sent" style="font-size:1rem;color:#1c1c1e;">ご報告ありがとうございました。<br>内容を確認いたします。</p></div>';
+        setTimeout(closeMenuPanel, 2000);
       } else {
         showMessage('送信エラー: ' + (res.error || ''), 'error');
       }
@@ -248,6 +272,7 @@ function _cacheInput(el) {
   var key = id.slice(prefixLen);
   if (!_inputCache[key]) _inputCache[key] = {};
   _inputCache[key][type] = el.value;
+  _refreshDirtyState();
 }
 
 function _cacheCheckbox(dk, sid, checked) {
@@ -285,6 +310,14 @@ function saveSubjectEdit(tabId, genreName, oldSubjectId) {
   var exam = (_appData && _appData.examTabs || []).find(function(t) { return t.term_test_id === tabId; });
   var patternId = exam ? exam.pattern_id : null;
   if (!patternId) { showMessage('パターンIDが見つかりません', 'error'); return; }
+
+  if (window._appData && window._appData.demo) {
+    showMessage('デモモードのため、科目変更は保存されません。', 'info');
+    _editSubjectInfo = null;
+    renderApp(_appData);
+    switchExamTab(tabId);
+    return;
+  }
 
   _editSubjectInfo = null;
   setLoading(true, '科目を保存中...');
@@ -324,6 +357,19 @@ function saveSubjectEdit(tabId, genreName, oldSubjectId) {
  * コース・文理の初回設定フローで確定が押されたときの処理
  */
 function handleCourseSubmit(lineUserId, schoolCourse, subCourse) {
+  if (window._appData && window._appData.demo) {
+    var updated = Object.assign({}, window._appData, {
+      needsCourse:    false,
+      needsSubCourse: false,
+      student: Object.assign({}, window._appData.student, {
+        school_course:      schoolCourse,
+        school_course_name: schoolCourse,
+        sub_course:         subCourse || ''
+      })
+    });
+    renderApp(updated);
+    return;
+  }
   setLoading(true, '設定を保存中...');
   google.script.run
     .withSuccessHandler(function(data) {
@@ -342,6 +388,14 @@ function handleCourseSubmit(lineUserId, schoolCourse, subCourse) {
  * 文理選択画面でボタンが押されたときの処理
  */
 function handleSubCourseSelect(lineUserId, subCourse) {
+  if (window._appData && window._appData.demo) {
+    var updated = Object.assign({}, window._appData, {
+      needsSubCourse: false,
+      student: Object.assign({}, window._appData.student, { sub_course: subCourse })
+    });
+    renderApp(updated);
+    return;
+  }
   setLoading(true, '設定を保存中...');
   google.script.run
     .withSuccessHandler(function(data) {
@@ -526,7 +580,7 @@ function openAnnouncementPanel() {
   // 開いた時点で全件既読にしてバッジを消す
   if (_appData && _appData.announcements) {
     _markAllAsRead(_appData.announcements);
-    var badge = document.querySelector('.ann-badge');
+    var badge = document.querySelector('#bnav-ann .ann-badge');
     if (badge) badge.remove();
   }
 }
@@ -538,5 +592,89 @@ function closeAnnouncementPanel() {
   _annPanelOpen = false;
   panel.classList.remove('ann-panel--open');
   if (overlay) overlay.classList.remove('ann-overlay--active');
+}
+
+// ---- メニューパネル開閉 ----
+
+var _menuPanelOpen = false;
+
+function toggleMenuPanel() {
+  if (_menuPanelOpen) {
+    closeMenuPanel();
+  } else {
+    openMenuPanel();
+  }
+}
+
+function openMenuPanel() {
+  _menuPanelOpen = true;
+  _bugReportOpen = false;
+  _bugConfirmData = null;
+  _renderMenuContent();
+  var panel   = document.getElementById('menu-panel');
+  var overlay = document.getElementById('menu-overlay');
+  if (panel)   panel.classList.add('menu-panel--open');
+  if (overlay) overlay.classList.add('menu-overlay--active');
+}
+
+function closeMenuPanel() {
+  _menuPanelOpen = false;
+  var panel   = document.getElementById('menu-panel');
+  var overlay = document.getElementById('menu-overlay');
+  if (panel)   panel.classList.remove('menu-panel--open');
+  if (overlay) overlay.classList.remove('menu-overlay--active');
+}
+
+function openBugReportFromMenu() {
+  _bugReportOpen = true;
+  _bugConfirmData = null;
+  _renderMenuContent();
+}
+
+function onAnnDismissChange(annId, checked) {
+  try {
+    var key = _annDismissLsKey();
+    var ids = _getDismissedIds();
+    if (checked) {
+      if (ids.indexOf(annId) === -1) ids.push(annId);
+      if (_appData && _appData.announcements) _markAllAsRead(_appData.announcements);
+      var badge = document.querySelector('#bnav-ann .ann-badge');
+      if (badge) badge.remove();
+    } else {
+      ids = ids.filter(function(id) { return id !== annId; });
+    }
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch(e) {}
+}
+
+function cancelEdits() {
+  document.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+    if (_originalValues.hasOwnProperty(el.id)) {
+      el.value = _originalValues[el.id];
+      el.disabled = false;
+      el.style.opacity = '';
+    }
+  });
+  document.querySelectorAll('[id^="nt_"]').forEach(function(el) {
+    if (_originalValues.hasOwnProperty(el.id)) {
+      el.checked = _originalValues[el.id];
+      var suffix = el.id.slice(3);
+      ['s_', 'gr_', 'cr_'].forEach(function(prefix) {
+        var inp = document.getElementById(prefix + suffix);
+        if (!inp) return;
+        inp.disabled = el.checked;
+        inp.style.opacity = el.checked ? '0.4' : '';
+      });
+    }
+  });
+  _inputCache = {};
+  _hideDirtyBar();
+}
+
+function saveCurrentTab() {
+  var panel = document.querySelector('.tab-panel-app[data-tab-id="' + _currentTabId + '"]');
+  if (!panel) return;
+  var btn = panel.querySelector('.btn-save-app');
+  if (btn) btn.click();
 }
 </script>

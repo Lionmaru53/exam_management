@@ -1,3 +1,8 @@
+/** アプリバージョン（機能変更時に更新） */
+const APP_VERSION = '0.1.0';
+/** GASデプロイ番号（clasp push → git tag v? と連動して更新） */
+const GAS_BUILD   = 'v1';
+
 /**
  * 生徒向けアプリ / 管理画面 の振り分け
  */
@@ -6,8 +11,10 @@ function doGet(e) {
 
   // 管理画面
   if (params.page === 'admin') {
-    return HtmlService.createTemplateFromFile('admin_index')
-      .evaluate()
+    const tmplAdmin = HtmlService.createTemplateFromFile('admin_index');
+    tmplAdmin.appVersion = APP_VERSION;
+    tmplAdmin.gasBuild   = GAS_BUILD;
+    return tmplAdmin.evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setTitle('成績管理システム - 管理者用')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -24,13 +31,37 @@ function doGet(e) {
     }
   }
 
+  // デモモード：?demo=1[&type=first_g1|first_g2|returning]
+  if (params.demo === '1') {
+    const demoType = params.type || 'returning';
+    try {
+      const data = getDemoInitialData(demoType);
+      const tmpl = HtmlService.createTemplateFromFile('index_app');
+      tmpl.appData    = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+      tmpl.isDemoMode = true;
+      tmpl.appVersion = APP_VERSION;
+      tmpl.gasBuild   = GAS_BUILD;
+      return tmpl.evaluate()
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+        .setTitle('定期テスト得点確認 [デモ]')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    } catch (err) {
+      return HtmlService.createHtmlOutput(
+        `<p style="color:red;padding:20px;">デモエラー: ${err.toString()}</p>`
+      ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
+  }
+
   // 生徒アプリ：GitHub Pages で userId 取得後リダイレクトされてくる
   if (params.userId) {
     try {
       const data = getInitialData(params.userId);
       const tmpl = HtmlService.createTemplateFromFile('index_app');
       // </script> を壊す < > を split/join でエスケープ（regex を使わない）
-      tmpl.appData = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+      tmpl.appData    = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+      tmpl.isDemoMode = false;
+      tmpl.appVersion = APP_VERSION;
+      tmpl.gasBuild   = GAS_BUILD;
       return tmpl.evaluate()
         .addMetaTag('viewport', 'width=device-width, initial-scale=1')
         .setTitle('定期テスト得点確認')
@@ -179,9 +210,10 @@ function _devInputPage(email) {
  * 開発者モード用: 管理画面の HTML 文字列を返す
  */
 function getAdminPageHtml() {
-  return HtmlService.createTemplateFromFile('admin_index')
-    .evaluate()
-    .getContent();
+  const tmpl = HtmlService.createTemplateFromFile('admin_index');
+  tmpl.appVersion = APP_VERSION;
+  tmpl.gasBuild   = GAS_BUILD;
+  return tmpl.evaluate().getContent();
 }
 
 /**
@@ -190,7 +222,8 @@ function getAdminPageHtml() {
 function getStudentAppHtml(userId) {
   const data = getInitialData(userId);
   const tmpl = HtmlService.createTemplateFromFile('index_app');
-  tmpl.appData = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+  tmpl.appData    = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
+  tmpl.isDemoMode = false;
   return tmpl.evaluate().getContent();
 }
 

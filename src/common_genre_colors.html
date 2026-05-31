@@ -1,0 +1,19 @@
+<script>
+/**
+ * ジャンル色の一元定義。ここを変えると admin_logic_scores / admin_logic_patterns / logic_ui_render の
+ * 3か所すべてに反映される。
+ *   dark  : 見出し・テキスト用の濃い色
+ *   mid   : ボーダー・アクセント用の中間色
+ *   light : 背景チップ用の薄い色（他の箇所では alpha を重ねてさらに薄く使う）
+ */
+window.GENRE_COLORS = {
+  '数学':   { dark: '#1d4ed8', mid: '#93c5fd', light: '#dbeafe' },
+  '英語':   { dark: '#c2410c', mid: '#fdba74', light: '#fed7aa' },
+  '国語':   { dark: '#15803d', mid: '#6ee7b7', light: '#bbf7d0' },
+  '理科':   { dark: '#be185d', mid: '#f9a8d4', light: '#fbcfe8' },
+  '社会':   { dark: '#a16207', mid: '#fcd34d', light: '#fde68a' },
+  '副教科': { dark: '#374151', mid: '#6b7280', light: '#f3f4f6' },
+  '合計':   { dark: '#5b21b6', mid: '#c4b5fd', light: '#ede9fe' },
+  'その他': { dark: '#475569', mid: '#cbd5e1', light: '#f8fafc' },
+};
+</script>

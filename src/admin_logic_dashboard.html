@@ -46,6 +46,14 @@ function _dbRenderGuide() {
     {
       num: '', section: 'branches', title: '校舎管理',
       desc: '校舎の追加・スプレッドシートとの紐づけを管理します。新しい校舎を追加する際もここから行います。'
+    },
+    {
+      num: '', section: 'bugReports', title: '不具合報告',
+      desc: '生徒アプリから送信された不具合報告を確認します。種別・詳細を一覧で閲覧できます。'
+    },
+    {
+      num: '', section: 'subjectMaster', title: '科目管理',
+      desc: '教科マスター（subjects_master）を管理します。教科の追加・編集・削除が行えます。'
     }
   ];
 
@@ -60,6 +68,7 @@ function _dbRenderGuide() {
 
   if (ctx.role === 'master') {
     html += '<h4 class="db-section-label">マスター専用</h4>';
+    html += '<div id="db-bug-banner" style="margin-bottom:12px;"></div>';
     html += '<div class="db-guide-grid">';
     masterGuides.forEach(function(g) {
       html += _dbGuideCard(g);
@@ -83,13 +92,24 @@ function _dbGuideCard(g) {
 function _dbLoadLogs() {
   google.script.run
     .withSuccessHandler(function(res) {
-      var el = document.getElementById('db-log-section');
-      if (!el) return;
+      var el     = document.getElementById('db-log-section');
+      var banner = document.getElementById('db-bug-banner');
       if (res && res.success) {
         _dbLogData = res.recentAccesses || [];
-        el.innerHTML = _dbRenderLogTable(_dbLogData);
+        if (el) el.innerHTML = _dbRenderLogTable(_dbLogData);
+        // 不具合件数バナー
+        if (banner) {
+          var cnt = res.bugCount || 0;
+          if (cnt > 0) {
+            banner.innerHTML = '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 16px;color:#856404;cursor:pointer;" onclick="loadSection(\'bugReports\')">'
+              + '不具合が <strong>' + cnt + '</strong> 件あります — クリックして確認</div>';
+          } else {
+            banner.innerHTML = '<div style="background:#d1e7dd;border:1px solid #a3cfbb;border-radius:6px;padding:10px 16px;color:#0a3622;">'
+              + '不具合の報告はありません</div>';
+          }
+        }
       } else {
-        el.innerHTML = '<p class="db-error">' + ((res && res.error) || 'ログの取得に失敗しました') + '</p>';
+        if (el) el.innerHTML = '<p class="db-error">' + ((res && res.error) || 'ログの取得に失敗しました') + '</p>';
       }
     })
     .withFailureHandler(function() {

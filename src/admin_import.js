@@ -72,9 +72,11 @@ function importStudentData(cramId, sheetRows) {
     const childSS = getChildSS(cramId);
     const result  = _upsertStudentsMaster(childSS, students);
     _upsertStudentsBranch(childSS, students);
+    _deactivateStudentsBranch(childSS, result.inactiveIds);
 
     writeAuditLog(ctx, 'import_students', { cram_id: cramId, count: students.length }, 'success');
-    return { success: true, added: result.added, updated: result.updated, skipped };
+    return { success: true, added: result.added, updated: result.updated,
+             deactivated: result.deactivated, skipped };
 
   } catch (e) {
     console.error('importStudentData error:', e);
@@ -105,12 +107,10 @@ function _mapRows(rawHeaders, rows, cramId) {
 
     students.push({
       student_id:    studentId,
-      name:          (raw['_last_name'] || '') + (raw['_first_name'] || ''),
-      pronunciation: (raw['_last_kana'] || '') + (raw['_first_kana'] || ''),
+      name:          [raw['_last_name'], raw['_first_name']].filter(Boolean).join(' '),
+      pronunciation: [raw['_last_kana'], raw['_first_kana']].filter(Boolean).join(' '),
       cram_id:       cramId,
       school_name:   raw['school_name'] || '',
-      school_course: '',
-      sub_course:    '',
       grade:         raw['grade'] || '',
       is_active:     true
     });
@@ -133,10 +133,11 @@ function _upsertStudentsMaster(ss, students) {
   var headers = data[0];
   var idCol   = headers.indexOf('student_id');
 
+  // existingMap: sid → { rowNum: 1-indexed行番号, rowData: 行の値配列 }
   var existingMap = {};
   for (var i = 1; i < data.length; i++) {
     var sid = String(data[i][idCol] || '').trim();
-    if (sid) existingMap[sid] = i + 1;
+    if (sid) existingMap[sid] = { rowNum: i + 1, rowData: data[i] };
   }
 
   var newRows = [];
@@ -144,14 +145,20 @@ function _upsertStudentsMaster(ss, students) {
 
   students.forEach(function (student) {
     var sid = String(student.student_id).trim();
-    var row = headers.map(function (h) {
-      return student[h] !== undefined ? student[h] : '';
-    });
 
     if (existingMap[sid]) {
-      sheet.getRange(existingMap[sid], 1, 1, row.length).setValues([row]);
+      // 既存行を更新: undefined フィールドは既存値を保持（school_course, sub_course など）
+      var existingRow = existingMap[sid].rowData;
+      var row = headers.map(function (h, i) {
+        return student[h] !== undefined ? student[h] : existingRow[i];
+      });
+      sheet.getRange(existingMap[sid].rowNum, 1, 1, row.length).setValues([row]);
       updated++;
     } else {
+      // 新規行: undefined フィールドは空文字
+      var row = headers.map(function (h) {
+        return student[h] !== undefined ? student[h] : '';
+      });
       newRows.push(row);
     }
   });
@@ -160,7 +167,25 @@ function _upsertStudentsMaster(ss, students) {
     sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
   }
 
-  return { added: newRows.length, updated: updated };
+  // インポートに含まれない既存生徒を非在籍化
+  var importedIdMap = {};
+  students.forEach(function (s) {
+    importedIdMap[String(s.student_id).trim()] = true;
+  });
+  var isActiveCol = headers.indexOf('is_active');
+  var deactivated = 0;
+  var inactiveIds = [];
+  if (isActiveCol >= 0) {
+    Object.keys(existingMap).forEach(function (sid) {
+      if (!importedIdMap[sid]) {
+        sheet.getRange(existingMap[sid].rowNum, isActiveCol + 1).setValue(false);
+        inactiveIds.push(sid);
+        deactivated++;
+      }
+    });
+  }
+
+  return { added: newRows.length, updated: updated, deactivated: deactivated, inactiveIds: inactiveIds };
 }
 
 function _importMultiBranch(rawHeaders, dataRows) {
@@ -177,7 +202,7 @@ function _importMultiBranch(rawHeaders, dataRows) {
     groups[cid].push(row);
   });
 
-  var totalAdded = 0, totalUpdated = 0, totalSkipped = 0;
+  var totalAdded = 0, totalUpdated = 0, totalSkipped = 0, totalDeactivated = 0;
   var warnings = [];
 
   Object.keys(groups).forEach(function (cid) {
@@ -190,8 +215,10 @@ function _importMultiBranch(rawHeaders, dataRows) {
       var childSS = getChildSS(cid);
       var result  = _upsertStudentsMaster(childSS, mapped.students);
       _upsertStudentsBranch(childSS, mapped.students);
-      totalAdded   += result.added;
-      totalUpdated += result.updated;
+      _deactivateStudentsBranch(childSS, result.inactiveIds);
+      totalAdded        += result.added;
+      totalUpdated      += result.updated;
+      totalDeactivated  += result.deactivated;
       totalSkipped += mapped.skipped;
     } catch (e) {
       warnings.push(cid + ': ' + e.message);
@@ -200,12 +227,13 @@ function _importMultiBranch(rawHeaders, dataRows) {
   });
 
   return {
-    success:  true,
-    added:    totalAdded,
-    updated:  totalUpdated,
-    skipped:  totalSkipped,
-    total:    totalAdded + totalUpdated,
-    warnings: warnings,
+    success:     true,
+    added:       totalAdded,
+    updated:     totalUpdated,
+    deactivated: totalDeactivated,
+    skipped:     totalSkipped,
+    total:       totalAdded + totalUpdated,
+    warnings:    warnings,
   };
 }
 
@@ -238,10 +266,29 @@ function _upsertStudentsBranch(ss, students) {
   }
 }
 
+function _deactivateStudentsBranch(ss, inactiveIds) {
+  if (!inactiveIds || inactiveIds.length === 0) return;
+  var sheet = ss.getSheetByName('students_branch');
+  if (!sheet) return;
+  var data       = sheet.getDataRange().getValues();
+  var headers    = data[0];
+  var idCol      = headers.indexOf('student_id');
+  var isActiveCol = headers.indexOf('is_active');
+  if (idCol < 0 || isActiveCol < 0) return;
+  var inactiveSet = {};
+  inactiveIds.forEach(function (id) { inactiveSet[id] = true; });
+  for (var i = 1; i < data.length; i++) {
+    var sid = String(data[i][idCol] || '').trim();
+    if (inactiveSet[sid]) {
+      sheet.getRange(i + 1, isActiveCol + 1).setValue(false);
+    }
+  }
+}
+
 // Node.js（Jest）でテストできるよう関数を global に公開する
 if (typeof module !== 'undefined') Object.assign(global, {
   STUDENT_COLUMN_MAP, STUDENTS_MASTER_HEADERS,
   importStudentData,
   _mapRows, _importMultiBranch, _upsertStudentsMaster, _upsertStudentsBranch,
-  _ensureStudentsMasterSheet,
+  _deactivateStudentsBranch, _ensureStudentsMasterSheet,
 });

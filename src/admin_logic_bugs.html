@@ -1,0 +1,144 @@
+<script>
+var _bgReports = [];
+var _bgFetched  = false;
+var _bgFilter   = 'unresolved'; // 'all' | 'unresolved' | 種別文字列
+
+var BG_TYPES = ['表示名が違う', '科目が足りない', '保存した点数が消えた', 'テスト名・試験区分がおかしい', 'その他'];
+
+// ---- エントリーポイント ----
+function renderBugReportManager() {
+  if (_bgFetched) { _bgRerender(); return; }
+  _bgFetch();
+}
+
+function _bgFetch() {
+  var content = document.getElementById('admin-content');
+  content.innerHTML = '<p style="padding:32px;color:#666;">不具合報告を読み込み中...</p>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        _bgReports = res.reports || [];
+        _bgFetched = true;
+        _bgRerender();
+      } else {
+        showMessage((res && res.error) || '取得に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .getBugReports();
+}
+
+function _bgRerender() {
+  var content = document.getElementById('admin-content');
+
+  var unresolvedCount = _bgReports.filter(function(r) { return String(r.is_resolved) !== '1'; }).length;
+
+  var filtered = _bgReports.filter(function(r) {
+    if (_bgFilter === 'unresolved') return String(r.is_resolved) !== '1';
+    if (_bgFilter === 'resolved')   return String(r.is_resolved) === '1';
+    if (_bgFilter)                  return r.report_type === _bgFilter;
+    return true;
+  });
+
+  var html = '<h3 style="margin-bottom:4px;">不具合報告</h3>';
+  html += '<p style="color:#666;margin-bottom:16px;">生徒アプリから送信された不具合報告一覧。</p>';
+
+  // 件数バナー
+  html += '<div style="margin-bottom:16px;padding:10px 16px;background:#f8f9fa;border-radius:6px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+  html += '<span>全 <strong>' + _bgReports.length + '</strong> 件</span>';
+  if (unresolvedCount > 0) {
+    html += '<span style="color:#856404;">未解決: <strong>' + unresolvedCount + '</strong> 件</span>';
+  } else {
+    html += '<span style="color:#0a3622;">未解決なし</span>';
+  }
+  html += '</div>';
+
+  // フィルタボタン
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">';
+  var filterDefs = [
+    { key: 'unresolved', label: '未解決' },
+    { key: 'resolved',   label: '解決済み' },
+    { key: '',           label: '全て' },
+  ].concat(BG_TYPES.map(function(t) { return { key: t, label: t }; }));
+
+  filterDefs.forEach(function(f) {
+    var active = _bgFilter === f.key;
+    html += '<button onclick="_bgSetFilter(\'' + _bgEsc(f.key) + '\')" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:' + (active ? '#333' : '#fff') + ';color:' + (active ? '#fff' : '#333') + ';cursor:pointer;">' + _bgEsc(f.label) + '</button>';
+  });
+  html += '</div>';
+
+  // テーブル
+  if (filtered.length === 0) {
+    html += '<p style="padding:32px;text-align:center;color:#999;">該当する不具合報告はありません</p>';
+  } else {
+    html += '<div style="overflow-x:auto;">';
+    html += '<table class="db-table" style="width:100%;border-collapse:collapse;">';
+    html += '<thead><tr>';
+    html += '<th style="white-space:nowrap;">日時</th>';
+    html += '<th>生徒名</th>';
+    html += '<th>学校</th>';
+    html += '<th>学年</th>';
+    html += '<th>種別</th>';
+    html += '<th>詳細</th>';
+    html += '<th>状態</th>';
+    html += '</tr></thead><tbody>';
+    filtered.forEach(function(r) {
+      var isResolved = String(r.is_resolved) === '1';
+      var rowStyle   = isResolved ? 'color:#999;' : '';
+      html += '<tr style="border-bottom:1px solid #eee;' + rowStyle + '">';
+      html += '<td style="white-space:nowrap;">' + _bgEsc(r.timestamp || '') + '</td>';
+      html += '<td>' + _bgEsc(r.student_name || '—') + '</td>';
+      html += '<td>' + _bgEsc(r.school_name || '—') + '</td>';
+      html += '<td>' + _bgEsc(r.grade || '—') + '</td>';
+      html += '<td><span style="display:inline-block;padding:2px 8px;background:#fff3cd;border-radius:4px;font-size:0.85em;">' + _bgEsc(r.report_type || '') + '</span></td>';
+      html += '<td style="white-space:pre-wrap;max-width:360px;">' + _bgEsc(r.detail || '') + '</td>';
+      if (isResolved) {
+        html += '<td style="white-space:nowrap;">'
+          + '<span style="color:#28a745;font-size:0.85em;">✓ 解決済み</span> '
+          + '<button onclick="_bgToggleResolve(\'' + _bgEsc(r.report_id) + '\',false)" style="padding:2px 8px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.8em;">戻す</button>'
+          + '</td>';
+      } else {
+        html += '<td style="white-space:nowrap;">'
+          + '<button onclick="_bgToggleResolve(\'' + _bgEsc(r.report_id) + '\',true)" style="padding:2px 10px;background:#28a745;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">解決済みにする</button>'
+          + '</td>';
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function _bgSetFilter(type) {
+  _bgFilter = type;
+  _bgRerender();
+}
+
+function _bgToggleResolve(reportId, resolved) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        // ローカルキャッシュを更新してから再描画
+        var target = _bgReports.find(function(r) { return r.report_id === reportId; });
+        if (target) target.is_resolved = resolved ? '1' : '';
+        _bgRerender();
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .resolveBugReport(reportId, resolved);
+}
+
+function _bgEsc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+window.renderBugReportManager = renderBugReportManager;
+</script>

@@ -17,15 +17,26 @@
 
   <div id="admin-top-bar">
     <div id="admin-header" class="admin-header">
-      <div class="admin-header-left admin-header-home" onclick="loadSection('dashboard')" title="ダッシュボードへ">
-        <div class="admin-header-logo" id="admin-header-logo">
-          <img src="https://www.wasedazemi.com/assets/img/logo-white.svg" alt="ロゴ">
+      <div class="admin-header-left-wrap">
+        <div class="admin-header-left admin-header-home" onclick="loadSection('dashboard')" title="ダッシュボードへ">
+          <div class="admin-header-logo" id="admin-header-logo">
+            <img src="https://www.wasedazemi.com/assets/img/logo-white.svg" alt="ロゴ">
+          </div>
+          <span class="admin-header-title">定期テスト回収システム</span>
         </div>
-        <span class="admin-header-title">定期テスト回収システム</span>
+        <div class="demo-btn-wrap" id="demo-btn-wrap">
+          <button class="demo-trigger-btn" onclick="toggleDemoDropdown(event)">生徒入力画面デモ ▾</button>
+          <div class="demo-dropdown" id="demo-dropdown" style="display:none;">
+            <button class="demo-dropdown-item" onclick="openDemoScreen('first_g1')">初回画面（高1）</button>
+            <button class="demo-dropdown-item" onclick="openDemoScreen('first_g2')">初回画面（高2）</button>
+            <button class="demo-dropdown-item" onclick="openDemoScreen('returning')">2回目以降画面</button>
+          </div>
+        </div>
       </div>
       <div class="admin-header-right">
         <div id="admin-header-name" class="admin-header-name"></div>
         <div id="admin-header-email" class="admin-header-email"></div>
+        <span class="admin-version-badge"><?!= appVersion ?> <span class="admin-build-tag">(build <?!= gasBuild.replace('v','') ?>)</span></span>
       </div>
     </div>
     <nav class="admin-nav" id="admin-nav"></nav>
@@ -43,15 +54,37 @@
     <div class="modal-card"></div>
   </div>
 
+  <div id="sc-student-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)_scCloseStudentModal()">
+    <div class="modal-card" style="max-width:860px;width:95vw;max-height:90vh;display:flex;flex-direction:column;padding:0;overflow:hidden;">
+      <div id="sc-student-modal-header" style="padding:16px 20px;border-bottom:1px solid #e5e5ea;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <strong id="sc-student-modal-title" style="font-size:1rem;"></strong>
+        <button onclick="_scCloseStudentModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#8e8e93;padding:0 4px;">×</button>
+      </div>
+      <div style="display:flex;flex:1;overflow:hidden;">
+        <div id="sc-student-modal-left" style="flex:1;overflow-y:auto;padding:16px;border-right:1px solid #e5e5ea;"></div>
+        <div id="sc-student-modal-right" style="width:280px;flex-shrink:0;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px;overflow-y:auto;"></div>
+      </div>
+      <div style="padding:12px 20px;border-top:1px solid #e5e5ea;display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;">
+        <button class="btn-cancel-admin" onclick="_scCloseStudentModal()">キャンセル</button>
+        <button class="btn-save-admin" onclick="_scSaveStudentModal()">保存する</button>
+      </div>
+    </div>
+  </div>
+
   <?!= include('common_showMessage'); ?>
+  <?!= include('common_genre_colors'); ?>
   <?!= include('admin_logic_dashboard'); ?>
   <?!= include('admin_logic_exams'); ?>
   <?!= include('admin_logic_patterns'); ?>
   <?!= include('admin_logic_import'); ?>
   <?!= include('admin_logic_admin_users'); ?>
   <?!= include('admin_logic_branches'); ?>
+  <?!= include('admin_logic_bugs'); ?>
+  <?!= include('admin_logic_subject_master'); ?>
+  <?!= include('admin_logic_announcements'); ?>
   <?!= include('admin_logic_students'); ?>
   <?!= include('admin_logic_scores'); ?>
+  <?!= include('admin_logic_demo'); ?>
 
   <script>
     window.masterData     = {};
@@ -92,11 +125,12 @@
     // ---- ナビゲーション ----
     function _renderNav(role) {
       const tabs = [
-        { section: 'students', label: '①生徒一覧' },
-        { section: 'scores',   label: '②得点一覧' },
-        { section: 'patterns', label: '③試験管理' },
-        { section: 'exams',    label: '④日程管理' },
-        { section: 'import',   label: '⑤生徒インポート' }
+        { section: 'dashboard', label: 'トップ' },
+        { section: 'students',  label: '①生徒一覧' },
+        { section: 'scores',    label: '②得点一覧' },
+        { section: 'patterns',  label: '③試験管理' },
+        { section: 'exams',     label: '④日程管理' },
+        { section: 'import',    label: '⑤生徒インポート' }
       ];
       const nav = document.getElementById('admin-nav');
       let navHtml = '<div class="admin-nav-row">'
@@ -107,8 +141,11 @@
         + '</div>';
       if (role === 'master') {
         const masterTabs = [
-          { section: 'adminUsers', label: '管理者管理' },
-          { section: 'branches',   label: '校舎管理' }
+          { section: 'announcements', label: 'お知らせ管理' },
+          { section: 'bugReports',    label: '不具合報告' },
+          { section: 'adminUsers',    label: '管理者管理' },
+          { section: 'branches',      label: '校舎管理' },
+          { section: 'subjectMaster', label: '科目管理' }
         ];
         navHtml += '<div class="admin-nav-row admin-nav-row--sub">'
           + masterTabs.map(t =>
@@ -190,7 +227,7 @@
 
     // ---- セクション切り替え ----
     window.loadSection = function (section) {
-      const valid = ['students', 'scores', 'patterns', 'exams', 'import', 'adminUsers', 'branches', 'dashboard'];
+      const valid = ['students', 'scores', 'patterns', 'exams', 'import', 'adminUsers', 'branches', 'dashboard', 'bugReports', 'subjectMaster', 'announcements'];
       window.currentSection = valid.includes(section) ? section : 'students';
 
       const overlay = document.getElementById('loading-overlay');
@@ -219,10 +256,18 @@
         scores:     function () { window.renderScoreManager(); },
         students:   function () { window.renderStudentManager(); },
         import:     function () { window.renderImportManager(); },
-        adminUsers: function () { window.renderAdminUserManager(); },
-        branches:   function () { window.renderBranchManager(); }
+        adminUsers:    function () { window.renderAdminUserManager(); },
+        branches:      function () { window.renderBranchManager(); },
+        bugReports:    function () { window.renderBugReportManager(); },
+        subjectMaster: function () { window.renderSubjectMasterManager(); },
+        announcements: function () { window.renderAnnouncementManager(); }
       };
       (renderers[section] || renderers.students)();
+    };
+
+    // ---- 学校名表示ヘルパー（「高等学校」「高校」サフィックスを除去）----
+    window._shortSchoolName = function (name) {
+      return (name || '').replace(/(高等学校|高校)$/, '').trim();
     };
 
     // ---- 教科表示名ヘルパー ----

@@ -77,6 +77,7 @@ function getAdminInitialData(targetCramId) {
       results.examPeriods            = [];
       results.schoolSettings         = [];
     }
+    results.gasWebAppUrl = ScriptApp.getService().getUrl();
     return results;
   } catch (e) {
     console.error(e);
@@ -509,7 +510,124 @@ function getDashboardData() {
       return copy;
     });
 
-    return { success: true, recentAccesses: formatted };
+    const bugSheet = ss.getSheetByName('bug_reports');
+    const bugCount = bugSheet && bugSheet.getLastRow() > 1 ? bugSheet.getLastRow() - 1 : 0;
+
+    return { success: true, recentAccesses: formatted, bugCount: bugCount };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * 不具合報告一覧を返す（master のみ）。
+ * @returns {{ success: boolean, reports?: object[], error?: string }}
+ */
+function getBugReports() {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('bug_reports');
+    if (!sheet || sheet.getLastRow() <= 1) return { success: true, reports: [] };
+    const rows = stringifyDates(getRowsData(sheet));
+    rows.reverse(); // 最新順
+    return { success: true, reports: rows };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * 不具合報告の解決済みフラグを切り替える（master のみ）。
+ * @param {string} reportId  - 対象の report_id
+ * @param {boolean} resolved - true = 解決済み、false = 未解決
+ */
+function resolveBugReport(reportId, resolved) {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('bug_reports');
+    if (!sheet) return { success: false, error: 'bug_reports シートが見つかりません' };
+    const rows = getRowsData(sheet);
+    const idx  = rows.findIndex(r => String(r.report_id || '').trim() === String(reportId || '').trim());
+    if (idx < 0) return { success: false, error: '対象の報告が見つかりません' };
+    const rowNum = idx + 2; // 1-indexed + header
+    // is_resolved は 9列目
+    sheet.getRange(rowNum, 9).setValue(resolved ? '1' : '');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * subjects_master に教科を追加する（master のみ）。
+ * @param {{ subject_id, subject_name, genre_id, grade }} payload
+ */
+function addSubject(payload) {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = parentSS.getSheetByName('subjects_master');
+    if (!sheet) throw new Error('subjects_master シートが見つかりません');
+    const rows = getRowsData(sheet);
+    if (rows.some(r => String(r.subject_id || '').trim() === String(payload.subject_id || '').trim())) {
+      return { success: false, error: '教科ID "' + payload.subject_id + '" は既に使用されています' };
+    }
+    if (!payload.subject_id || !payload.subject_name || !payload.genre_id) {
+      return { success: false, error: '教科ID・教科名・ジャンルは必須です' };
+    }
+    sheet.appendRow([payload.subject_id, payload.subject_name, payload.genre_id, payload.grade || '', '']);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * subjects_master の既存行を更新する（master のみ）。
+ * subject_id は変更不可（PK）。
+ * @param {{ subject_id, subject_name, genre_id, grade }} payload
+ */
+function updateSubject(payload) {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = parentSS.getSheetByName('subjects_master');
+    if (!sheet) throw new Error('subjects_master シートが見つかりません');
+    const rows = getRowsData(sheet);
+    const idx = rows.findIndex(r => String(r.subject_id || '').trim() === String(payload.subject_id || '').trim());
+    if (idx < 0) return { success: false, error: '対象の教科が見つかりません' };
+    const rowNum = idx + 2; // 1-indexed + header
+    sheet.getRange(rowNum, 2).setValue(payload.subject_name);
+    sheet.getRange(rowNum, 3).setValue(payload.genre_id);
+    sheet.getRange(rowNum, 4).setValue(payload.grade || '');
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * subjects_master から教科を削除する（master のみ）。
+ * @param {string} subjectId
+ */
+function deleteSubject(subjectId) {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = parentSS.getSheetByName('subjects_master');
+    if (!sheet) throw new Error('subjects_master シートが見つかりません');
+    const rows = getRowsData(sheet);
+    const idx = rows.findIndex(r => String(r.subject_id || '').trim() === String(subjectId || '').trim());
+    if (idx < 0) return { success: false, error: '対象の教科が見つかりません' };
+    sheet.deleteRow(idx + 2);
+    return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -573,10 +691,31 @@ function getAdminScores(targetCramId, termTestId, year) {
         update_at:  String(s.update_at || ''),
       }));
 
+    // upload_history シートから当該 term_test_id の提出履歴を取得
+    var uploads = [];
+    try {
+      const uploadSheet = childSS.getSheetByName('upload_history');
+      if (uploadSheet && uploadSheet.getLastRow() > 1) {
+        uploads = getRowsData(uploadSheet)
+          .filter(function(r) { return String(r.term_test_id || '').trim() === termTestId; })
+          .map(function(r) {
+            return {
+              student_id:    String(r.student_id    || '').trim(),
+              term_test_id:  String(r.term_test_id  || '').trim(),
+              thumbnail_b64: String(r.thumbnail_b64 || ''),
+              file_url:      String(r.file_url       || '')
+            };
+          });
+      }
+    } catch (_uploadErr) {
+      // upload_history シートがない場合は無視
+    }
+
     return {
       success: true,
       scores,
       students,
+      uploads,
       termTestId,
       year: yearFilter,
     };
@@ -1141,9 +1280,187 @@ function migrateNormalizeCourseNames() {
   return results;
 }
 
+/**
+ * お知らせ一覧取得（master のみ）
+ */
+function getAdminAnnouncements() {
+  try {
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('announcements');
+    if (!sheet || sheet.getLastRow() <= 1) return { success: true, announcements: [] };
+    const rows = stringifyDates(getRowsData(sheet));
+    rows.sort(function(a, b) {
+      return (b.published_at || '').localeCompare(a.published_at || '');
+    });
+    return { success: true, announcements: rows };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * お知らせ追加（master のみ）
+ */
+function addAnnouncement(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    if (!payload || !String(payload.title || '').trim()) {
+      return { success: false, error: 'タイトルは必須です' };
+    }
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('announcements');
+    if (!sheet) return { success: false, error: 'announcements シートが見つかりません' };
+    const annId = 'ANN' + Utilities.getUuid().replace(/-/g, '').substring(0, 10).toUpperCase();
+    sheet.appendRow([
+      annId,
+      String(payload.title        || '').trim(),
+      String(payload.body         || ''),
+      String(payload.category     || 'info'),
+      String(payload.target_cram_id || ''),
+      payload.published_at ? new Date(payload.published_at) : '',
+      payload.expires_at   ? new Date(payload.expires_at)   : '',
+      payload.is_active === false || payload.is_active === '0' ? '' : '1'
+    ]);
+    writeAuditLog(ctx, 'add_announcement', { announcement_id: annId, title: payload.title }, 'success');
+    return { success: true, announcement_id: annId };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * お知らせ更新（master のみ）
+ */
+function updateAnnouncement(announcementId, payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('announcements');
+    if (!sheet) return { success: false, error: 'announcements シートが見つかりません' };
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idCol   = headers.indexOf('announcement_id');
+    if (idCol < 0) return { success: false, error: 'announcement_id 列が見つかりません' };
+    const colMap = {};
+    headers.forEach(function(h, i) { colMap[h] = i + 1; });
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idCol] || '').trim() !== String(announcementId || '').trim()) continue;
+      const rowNum = i + 1;
+      const set = function(col, val) {
+        if (colMap[col]) sheet.getRange(rowNum, colMap[col]).setValue(val);
+      };
+      if (payload.title         !== undefined) set('title',         String(payload.title || '').trim());
+      if (payload.body          !== undefined) set('body',          String(payload.body || ''));
+      if (payload.category      !== undefined) set('category',      String(payload.category || 'info'));
+      if (payload.target_cram_id !== undefined) set('target_cram_id', String(payload.target_cram_id || ''));
+      if (payload.published_at  !== undefined) set('published_at',  payload.published_at ? new Date(payload.published_at) : '');
+      if (payload.expires_at    !== undefined) set('expires_at',    payload.expires_at   ? new Date(payload.expires_at)   : '');
+      if (payload.is_active     !== undefined) set('is_active',     payload.is_active === false || payload.is_active === '0' ? '' : '1');
+      writeAuditLog(ctx, 'update_announcement', { announcement_id: announcementId }, 'success');
+      return { success: true };
+    }
+    return { success: false, error: '対象のお知らせが見つかりません' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * お知らせ削除（master のみ）
+ */
+function deleteAnnouncement(announcementId) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx = getAdminContext();
+    if (ctx.role !== 'master') return { success: false, error: 'アクセス権限がありません' };
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('announcements');
+    if (!sheet) return { success: false, error: 'announcements シートが見つかりません' };
+    const data  = sheet.getDataRange().getValues();
+    const idCol = data[0].indexOf('announcement_id');
+    if (idCol < 0) return { success: false, error: 'announcement_id 列が見つかりません' };
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idCol] || '').trim() !== String(announcementId || '').trim()) continue;
+      sheet.deleteRow(i + 1);
+      writeAuditLog(ctx, 'delete_announcement', { announcement_id: announcementId }, 'success');
+      return { success: true };
+    }
+    return { success: false, error: '対象のお知らせが見つかりません' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * スコアの科目IDを変更する（管理者向け）。
+ * scores_data の subject_id 列を直接更新する。
+ *
+ * @param {{ cramId: string, scoreId: string, newSubjectId: string }} payload
+ * @returns {{ success: boolean, error?: string }}
+ */
+function changeScoreSubject(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const ctx    = getAdminContext();
+    const cramId = String(payload.cramId || '').trim();
+    if (!cramId) return { success: false, error: '校舎IDが指定されていません' };
+
+    const childSS = getChildSS(cramId);
+    const sheet   = childSS.getSheetByName('scores_data');
+    if (!sheet) return { success: false, error: 'scores_data シートが見つかりません' };
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const scoreIdCol   = headers.indexOf('score_id');
+    const subjectIdCol = headers.indexOf('subject_id');
+    if (scoreIdCol < 0 || subjectIdCol < 0) {
+      return { success: false, error: 'score_id または subject_id 列が見つかりません' };
+    }
+
+    const targetScoreId   = String(payload.scoreId     || '').trim();
+    const newSubjectId    = String(payload.newSubjectId || '').trim();
+    if (!targetScoreId || !newSubjectId) {
+      return { success: false, error: 'scoreId と newSubjectId は必須です' };
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][scoreIdCol] || '').trim() !== targetScoreId) continue;
+      sheet.getRange(i + 1, subjectIdCol + 1).setValue(newSubjectId);
+      writeAuditLog(ctx, 'change_score_subject',
+        { score_id: targetScoreId, new_subject_id: newSubjectId }, 'success');
+      return { success: true };
+    }
+
+    return { success: false, error: '対象のスコアが見つかりません' };
+  } catch (e) {
+    return { success: false, error: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 if (typeof module !== 'undefined') Object.assign(global, {
   getAdminInitialData, getStudentList, getDashboardData,
-  getAdminScores, updateAdminScore, createAdminScore,
+  getBugReports,
+  addSubject, updateSubject, deleteSubject,
+  getAdminScores, updateAdminScore, createAdminScore, changeScoreSubject,
+  getAdminAnnouncements, addAnnouncement, updateAnnouncement, deleteAnnouncement,
   migrateScoresAddTermTestId,
   migrateScoresAddGrade,
   migrateScoresAddYear,

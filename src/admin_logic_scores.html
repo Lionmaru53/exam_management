@@ -7,13 +7,17 @@ var _scSelectedTermTestId = '';
 var _scSelectedYear       = '';     // 選択中の年度（空=全年度）
 var _scFilterSchoolCourses = [];    // 選択中の「学校/コース」ラベルの配列
 var _scFilterGradeSubs     = [];    // 選択中の「学年/文理」の配列
-var _scSortField           = 'name'; // 'name' | 'score_<subject_id>'
+var _scSortField           = null;   // null=デフォルト多段 | 'name' | 'score_<subject_id>'
 var _scSortAsc             = true;
 var _scDisplayMode        = 'score'; // 'score' | 'class_rank' | 'grade_rank'
 var _scScoreData          = null;   // { scores, students }
 var _scLastCramId         = null;   // キャッシュ有効性チェック用
 var _scCellStore          = [];     // [{scoreId,studentName,...}] クリック参照用
 var _scCurrentDetailIdx   = -1;     // モーダル用（XSS回避のため HTML 非埋め込み）
+var _scSearchQuery   = '';
+var _scComposing     = false;
+var _scUploadsMap    = {};
+var _scActiveSubjects = [];
 
 // =====================================================================
 // エントリーポイント
@@ -37,7 +41,7 @@ window.renderScoreManager = function () {
   if (_scLastCramId !== _cramId) {
     _scFilterSchoolCourses = [];
     _scFilterGradeSubs     = [];
-    _scSortField           = 'name';
+    _scSortField           = null;
     _scSortAsc             = true;
     _scLastCramId          = _cramId;
     _scScoreData           = null;
@@ -84,6 +88,9 @@ window.renderScoreManager = function () {
     + '<option value="class_rank"' + (_scDisplayMode === 'class_rank' ? ' selected' : '') + '>クラス順位</option>'
     + '<option value="grade_rank"' + (_scDisplayMode === 'grade_rank' ? ' selected' : '') + '>学年順位</option>'
     + '</select>';
+  toolbarHtml += '<input type="search" placeholder="氏名・読み・学校名で検索" value="' + _scEsc(_scSearchQuery) + '"'
+    + ' oncompositionstart="_scComposing=true" oncompositionend="_scComposing=false"'
+    + ' oninput="if(!_scComposing)_scOnSearch(this.value)" class="admin-input" style="width:220px;margin-left:4px;">';
   toolbarHtml += '</div>';
 
   content.innerHTML = '<h3>④得点一覧</h3>' + toolbarHtml
@@ -128,6 +135,11 @@ function _scFetchAndRender() {
         return;
       }
       _scScoreData = res;
+      // uploadsMap を構築
+      _scUploadsMap = {};
+      (res.uploads || []).forEach(function(u) {
+        _scUploadsMap[u.student_id] = u;
+      });
 
       _scRerender();
     })
@@ -235,7 +247,7 @@ function _scRerender() {
   var scLabelSet = {};
   var scLabelList = [];
   students.forEach(function (s) {
-    var sn = s.school_name  || '';
+    var sn = _shortSchoolName(s.school_name  || '');
     var sc = s.school_course || '';
     var label = sc ? (sn + '/' + sc) : sn;
     if (label && !scLabelSet[label]) {
@@ -296,7 +308,7 @@ function _scRerender() {
   // ── B. フィルタリング ──────────────────────────────────────────
   var filteredStudents = students.filter(function (s) {
     if (_scFilterSchoolCourses.length > 0) {
-      var sn    = s.school_name  || '';
+      var sn    = _shortSchoolName(s.school_name  || '');
       var sc    = s.school_course || '';
       var label = sc ? (sn + '/' + sc) : sn;
       if (_scFilterSchoolCourses.indexOf(label) < 0) return false;
@@ -309,6 +321,16 @@ function _scRerender() {
     }
     return true;
   });
+
+  // 検索クエリフィルタ
+  if (_scSearchQuery) {
+    var q = _scSearchQuery.toLowerCase();
+    filteredStudents = filteredStudents.filter(function(s) {
+      return (s.name         || '').toLowerCase().includes(q)
+          || (s.pronunciation || '').toLowerCase().includes(q)
+          || (s.school_name   || '').toLowerCase().includes(q);
+    });
+  }
 
   // 件数表示
   var countHtml = '<p class="sc-count-msg">全 ' + students.length + ' 名中 ' + filteredStudents.length + ' 名表示</p>';
@@ -365,6 +387,9 @@ function _scRerender() {
     return (ai < 0 ? 9999 : ai) - (bi < 0 ? 9999 : bi);
   });
 
+  // 現在の試験区分の科目一覧を保存（モーダル用）
+  _scActiveSubjects = unionSubjectList;
+
   // ── D. ソート ─────────────────────────────────────────────────
   var sortedStudents = _scSortStudents(filteredStudents, scoreMap);
 
@@ -390,6 +415,7 @@ function _scRerender() {
   html += '<th class="sc-th-fixed">文理</th>';
   html += '<th class="sc-th-name sc-th-sort" onclick="_scSetSort(\'name\')">'
         + '氏名' + _scSortIcon('name') + '</th>';
+  html += '<th class="sc-th-fixed" title="成績表画像の提出">成績表</th>';
   unionSubjectList.forEach(function (subj) {
     var headerBg    = _scGetGenreHeaderColor(subj.genre_name);
     var orphanClass = subj.orphaned ? ' sc-th-orphaned' : '';
@@ -403,15 +429,66 @@ function _scRerender() {
 
   // tbody
   html += '<tbody>';
+
+  var showAvgRows = (_scSortField === null);
+  var prevGroupKey = null;
+  var groupBuf = [];
+
+  // グループ平均行を html に追記する内部ヘルパー
+  function _scRenderGroupAvgRow(groupStudents) {
+    if (groupStudents.length === 0) return;
+    var first = groupStudents[0];
+    html += '<tr class="sc-avg-row">';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(_shortSchoolName(first.school_name) || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.grade         || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.sub_course    || '') + '</td>';
+    html += '<td class="sc-td-name sc-avg-label">' + groupStudents.length + '名 平均</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed"></td>';
+    unionSubjectList.forEach(function (subj) {
+      var vals = [];
+      groupStudents.forEach(function (stu) {
+        var sc = scoreMap[stu.student_id + '||' + subj.subject_id] || null;
+        var v  = sc ? _scGetCellValue(sc, _scDisplayMode) : null;
+        if (v !== null && v !== 'absent' && v !== '' && v !== undefined) {
+          var n = Number(v);
+          if (!isNaN(n)) vals.push(n);
+        }
+      });
+      var cellBg = _scGetGenreColor(subj.genre_name);
+      if (vals.length === 0) {
+        html += '<td class="sc-cell sc-avg-cell" style="background-color:' + cellBg + '">—</td>';
+      } else {
+        var avg = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+        html += '<td class="sc-cell sc-avg-cell" style="background-color:' + cellBg + '">'
+              + avg.toFixed(1) + '</td>';
+      }
+    });
+    html += '</tr>';
+  }
+
   sortedStudents.forEach(function (student) {
-    html += '<tr>';
-    html += '<td class="sc-td-fixed">' + _scEsc(student.school_name  || '') + '</td>';
+    if (showAvgRows) {
+      var gKey = [student.school_name||'', student.school_course||'', student.grade||'', student.sub_course||''].join('||');
+      if (prevGroupKey !== null && gKey !== prevGroupKey) {
+        _scRenderGroupAvgRow(groupBuf);
+        groupBuf = [];
+      }
+      prevGroupKey = gKey;
+      groupBuf.push(student);
+    }
+
+    var hasScore    = !!studentHasAnyScore[student.student_id];
+    var hasPhoto    = !!_scUploadsMap[student.student_id];
+    var rowClickable = hasScore || hasPhoto;
+    html += '<tr' + (rowClickable ? ' style="cursor:pointer;" onclick="_scOpenStudentModal(\'' + _scEscAttr(student.student_id) + '\')"' : '') + '>';
+    html += '<td class="sc-td-fixed">' + _scEsc(_shortSchoolName(student.school_name) || '') + '</td>';
     html += '<td class="sc-td-fixed">' + _scEsc(student.school_course || '') + '</td>';
     html += '<td class="sc-td-fixed">' + _scEsc(student.grade        || '') + '</td>';
     html += '<td class="sc-td-fixed">' + _scEsc(student.sub_course   || '') + '</td>';
     html += '<td class="sc-td-name">'  + _scEsc(student.name         || '') + '</td>';
-
-    var hasScore = !!studentHasAnyScore[student.student_id];
+    html += '<td class="sc-td-fixed" style="text-align:center;color:#34c759;">'
+          + (hasPhoto ? '✔' : '') + '</td>';
 
     unionSubjectList.forEach(function (subj) {
       var key      = student.student_id + '||' + subj.subject_id;
@@ -420,23 +497,16 @@ function _scRerender() {
       var cellVal  = _scGetCellValue(scoreObj, _scDisplayMode);
 
       if (scoreObj && (scoreObj.score !== null || scoreObj.not_taken)) {
-        var idx = _scCellStore.length;
-        _scCellStore.push(_scMakeCellEntry(scoreObj, student, subj));
         if (scoreObj.not_taken) {
-          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
-                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '">'
                 + '<span class="sc-badge-absent">欠</span></td>';
         } else {
-          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '"'
-                + ' onclick="_scOpenDetail(' + idx + ')" title="クリックで詳細・編集">'
+          html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '">'
                 + _scEsc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
                 + '</td>';
         }
-      } else if (hasScore) {
-        var idx = _scCellStore.length;
-        _scCellStore.push(_scMakeCellEntry(null, student, subj));
-        html += '<td class="sc-cell sc-cell-editable" style="background-color:' + cellBg + '"'
-              + ' onclick="_scOpenDetail(' + idx + ')" title="クリックして登録">—</td>';
+      } else if (hasScore || rowClickable) {
+        html += '<td class="sc-cell sc-cell-editable" style="background-color:' + cellBg + '">—</td>';
       } else {
         html += '<td class="sc-cell sc-cell-empty" style="background-color:' + cellBg + '">—</td>';
       }
@@ -444,6 +514,10 @@ function _scRerender() {
 
     html += '</tr>';
   });
+
+  // 最後のグループをフラッシュ
+  if (showAvgRows) _scRenderGroupAvgRow(groupBuf);
+
   html += '</tbody></table></div>';
 
   area.innerHTML = html;
@@ -452,6 +526,13 @@ function _scRerender() {
 // =====================================================================
 // スライサー・ソート補助関数
 // =====================================================================
+
+function _scOnSearch(val) {
+  _scSearchQuery = val;
+  _scRerender();
+  var el = document.querySelector('input[oninput*="_scOnSearch"]');
+  if (el) { el.focus(); var n = el.value.length; el.setSelectionRange(n, n); }
+}
 
 /**
  * 「学校/コース」チップのトグル
@@ -480,8 +561,13 @@ function _scToggleGradeSub(gs) {
  * @param {string} field - 'name' | 'score_<subject_id>'
  */
 function _scSetSort(field) {
-  if (_scSortField === field) { _scSortAsc = !_scSortAsc; }
-  else { _scSortField = field; _scSortAsc = true; }
+  if (_scSortField === field) {
+    _scSortAsc = !_scSortAsc;
+  } else {
+    _scSortField = field;
+    // 氏名列は昇順スタート、得点列は降順スタート
+    _scSortAsc = (field === 'name');
+  }
   _scRerender();
 }
 
@@ -497,6 +583,12 @@ function _scSortIcon(field) {
     : '<span class="sc-sort-icon sc-sort-active">▼</span>';
 }
 
+const _SC_GRADE_ORDER = ['中1','中2','中3','高1','高2','高3'];
+function _scGradeRank(g) {
+  var i = _SC_GRADE_ORDER.indexOf(g);
+  return i >= 0 ? i : 99;
+}
+
 /**
  * 生徒配列をソートして返す
  * @param {Array} arr - 生徒オブジェクト配列
@@ -504,28 +596,61 @@ function _scSortIcon(field) {
  * @returns {Array} ソート済み配列
  */
 function _scSortStudents(arr, scoreMap) {
+  // デフォルト多段ソート用のコース登録順マップを1回だけ構築
+  var courseOrderMap = {};
+  var _settings = (window.masterData && window.masterData.schoolSettings) || [];
+  _settings.forEach(function(s, i) {
+    var c = s.school_course || '';
+    if (!(c in courseOrderMap)) courseOrderMap[c] = i;
+  });
+
   return arr.slice().sort(function (a, b) {
-    var cmp;
+    // ── デフォルト多段ソート（学年→学校名→コース登録順→氏名）
+    if (_scSortField === null) {
+      var cmp = _scGradeRank(a.grade || '') - _scGradeRank(b.grade || '');
+      if (cmp !== 0) return cmp;
+      cmp = (a.school_name || '').localeCompare(b.school_name || '', 'ja');
+      if (cmp !== 0) return cmp;
+      var ca = courseOrderMap[a.school_course || ''];
+      var cb = courseOrderMap[b.school_course || ''];
+      if (ca === undefined) ca = 9999;
+      if (cb === undefined) cb = 9999;
+      cmp = ca - cb;
+      if (cmp !== 0) return cmp;
+      var va = a.pronunciation || a.name || '';
+      var vb = b.pronunciation || b.name || '';
+      return va.localeCompare(vb, 'ja');
+    }
+
+    // ── 氏名ソート
     if (_scSortField === 'name') {
       var va = a.pronunciation || a.name || '';
       var vb = b.pronunciation || b.name || '';
-      cmp = va.localeCompare(vb, 'ja');
-    } else if (_scSortField && _scSortField.indexOf('score_') === 0) {
+      var cmp = va.localeCompare(vb, 'ja');
+      return _scSortAsc ? cmp : -cmp;
+    }
+
+    // ── 得点ソート
+    if (_scSortField && _scSortField.indexOf('score_') === 0) {
       var sid = _scSortField.slice(6);
       var sa  = scoreMap[a.student_id + '||' + sid];
       var sb  = scoreMap[b.student_id + '||' + sid];
       var _va = sa ? _scGetCellValue(sa, _scDisplayMode) : null;
       var _vb = sb ? _scGetCellValue(sb, _scDisplayMode) : null;
-      var va  = (_va === null || _va === 'absent') ? null : _va;
-      var vb  = (_vb === null || _vb === 'absent') ? null : _vb;
-      if (va === null && vb === null) cmp = 0;
-      else if (va === null)           cmp = 1;
-      else if (vb === null)           cmp = -1;
-      else                            cmp = Number(va) - Number(vb);
-    } else {
-      cmp = 0;
+      var na  = (_va === null || _va === 'absent') ? null : _va;
+      var nb  = (_vb === null || _vb === 'absent') ? null : _vb;
+      // ランク: 0=数値あり, 1=NULLデータ(エントリあり・値なし), 2=データIDなし(エントリ自体なし)
+      var rankA = (sa == null) ? 2 : (na === null ? 1 : 0);
+      var rankB = (sb == null) ? 2 : (nb === null ? 1 : 0);
+      if (rankA !== rankB) return rankA - rankB;  // null系は方向不変で常に末尾
+      if (rankA === 0) {
+        var numCmp = Number(na) - Number(nb);
+        return _scSortAsc ? numCmp : -numCmp;
+      }
+      return 0;
     }
-    return _scSortAsc ? cmp : -cmp;
+
+    return 0;
   });
 }
 
@@ -556,6 +681,294 @@ function _scGetCellValue(scoreObj, mode) {
   if (mode === 'grade_rank') return scoreObj.grade_rank;
   return scoreObj.score;
 }
+
+// =====================================================================
+// 生徒別得点モーダル（全科目一括編集）
+// =====================================================================
+var _scModalStudentId = null;
+var _scModalRows      = [];   // [{subjectId, scoreId, origSubjectId, ...}]
+var _scPhotoExpanded  = false;
+
+window._scOpenStudentModal = function(studentId) {
+  if (!_scScoreData) return;
+  _scModalStudentId = studentId;
+  _scPhotoExpanded  = false;
+  _scModalRows      = [];
+
+  var students = _scScoreData.students || [];
+  var scores   = _scScoreData.scores   || [];
+  var student  = students.find(function(s) { return s.student_id === studentId; });
+  if (!student) return;
+
+  var termTestId = _scSelectedTermTestId;
+  var year       = (_scScoreData && _scScoreData.year) || _scSelectedYear;
+  var allSubjects = (window.masterData && window.masterData.subjects) || [];
+
+  // 当該生徒のスコアマップ（subject_id → score）
+  var studentScores = {};
+  scores.forEach(function(sc) {
+    if (sc.student_id === studentId && sc.term_test_id === termTestId) {
+      studentScores[sc.subject_id] = sc;
+    }
+  });
+
+  // _scActiveSubjects をベースに行を作成（モーダルの科目リスト）
+  var activeSubjIds = {};
+  _scActiveSubjects.forEach(function(subj) { activeSubjIds[subj.subject_id] = subj; });
+
+  // 追加: 当該生徒のスコアにある教科で activeSubjects にないもの
+  Object.keys(studentScores).forEach(function(sid) {
+    if (!activeSubjIds[sid]) {
+      activeSubjIds[sid] = { subject_id: sid, displayName: sid, genre_name: 'その他' };
+    }
+  });
+
+  Object.keys(activeSubjIds).forEach(function(sid) {
+    var subj = activeSubjIds[sid];
+    var sc   = studentScores[sid] || null;
+    _scModalRows.push({
+      subjectId:     sid,
+      origSubjectId: sid,
+      displayName:   subj.displayName,
+      genre_name:    subj.genre_name || 'その他',
+      scoreId:       sc ? (sc.score_id || '')       : '',
+      score:         sc ? (sc.score      !== null ? String(sc.score)      : '') : '',
+      gradeRank:     sc ? (sc.grade_rank !== null ? String(sc.grade_rank) : '') : '',
+      classRank:     sc ? (sc.class_rank !== null ? String(sc.class_rank) : '') : '',
+      notTaken:      sc ? !!sc.not_taken : false,
+      termTestId:    termTestId,
+      year:          year,
+      grade:         student.grade || '',
+    });
+  });
+
+  // タイトル
+  var termTest = ((window.masterData && window.masterData.termTests) || []).find(function(t) {
+    return t.term_test_id === termTestId;
+  });
+  var testName = termTest ? (termTest.test_name || termTestId) : termTestId;
+  var titleEl  = document.getElementById('sc-student-modal-title');
+  if (titleEl) titleEl.textContent = student.name + '　' + testName;
+
+  // 左列: 科目 × 得点フォーム（ジャンルごとにセクション分割）
+  var leftEl = document.getElementById('sc-student-modal-left');
+  if (leftEl) {
+    var studentGrade = student.grade || '';
+
+    // ジャンル順を masterData の subjects 順序から構築
+    var genreOrder = {};
+    var _gIdx = 0;
+    allSubjects.forEach(function(s) {
+      var gn = s.genre_name || 'その他';
+      if (!(gn in genreOrder)) genreOrder[gn] = _gIdx++;
+    });
+
+    // _scModalRows をジャンル順でソート
+    var sortedRows = _scModalRows.slice().sort(function(a, b) {
+      var ag = genreOrder[a.genre_name] !== undefined ? genreOrder[a.genre_name] : 9999;
+      var bg = genreOrder[b.genre_name] !== undefined ? genreOrder[b.genre_name] : 9999;
+      return ag - bg;
+    });
+
+    // index を元の _scModalRows に対応させるため Map を作成
+    var rowIndexBySubjectId = {};
+    _scModalRows.forEach(function(row, i) { rowIndexBySubjectId[row.subjectId] = i; });
+
+    var tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:0.88rem;">';
+    tableHtml += '<thead><tr style="background:#f2f2f7;">'
+      + '<th style="padding:6px 8px;text-align:left;">科目</th>'
+      + '<th style="padding:6px 8px;text-align:center;width:70px;">得点</th>'
+      + '<th style="padding:6px 8px;text-align:center;width:70px;">学年順位</th>'
+      + '<th style="padding:6px 8px;text-align:center;width:70px;">ｸﾗｽ順位</th>'
+      + '<th style="padding:6px 8px;text-align:center;width:48px;">欠試</th>'
+      + '</tr></thead><tbody>';
+
+    var prevGenre = null;
+    sortedRows.forEach(function(row) {
+      var i        = rowIndexBySubjectId[row.subjectId];
+      var genre    = row.genre_name || 'その他';
+      var genreBg  = _scGetGenreHeaderColor(genre);
+
+      // ジャンルが変わったらセクションヘッダーを挿入
+      if (genre !== prevGenre) {
+        prevGenre = genre;
+        tableHtml += '<tr style="background:' + genreBg + ';">'
+          + '<td colspan="5" style="padding:5px 8px;font-size:0.82em;font-weight:700;color:#fff;">'
+          + _scEsc(genre) + '</td></tr>';
+      }
+
+      // 科目変更ドロップダウン: 同ジャンルかつ生徒の学年に対応する科目のみ
+      var subjectOptions = '<option value="">（変更しない）</option>';
+      var sameGenreSubjects = allSubjects.filter(function(s) {
+        var sGenre = s.genre_name || 'その他';
+        var sGrade = s.grade || '';
+        return sGenre === genre
+          && (!sGrade || sGrade === studentGrade);
+      });
+      sameGenreSubjects.forEach(function(s) {
+        subjectOptions += '<option value="' + _scEsc(s.subject_id) + '">' + _scEsc(s.subject_name) + '</option>';
+      });
+
+      tableHtml += '<tr style="border-bottom:1px solid #f0f0f0;">'
+        + '<td style="padding:6px 4px;">'
+        +   '<div style="font-size:0.82em;font-weight:600;margin-bottom:2px;">' + _scEsc(row.displayName) + '</div>'
+        +   '<select data-row="' + i + '" data-field="subjectId" onchange="_scModalRowChange(this)"'
+        +   ' style="font-size:0.78em;width:100%;padding:2px;">'
+        +   subjectOptions
+        +   '</select>'
+        + '</td>'
+        + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="score"'
+        +   ' value="' + _scEsc(row.score) + '" min="0" max="2000"'
+        +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
+        + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="gradeRank"'
+        +   ' value="' + _scEsc(row.gradeRank) + '" min="1"'
+        +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
+        + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="classRank"'
+        +   ' value="' + _scEsc(row.classRank) + '" min="1"'
+        +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
+        + '<td style="padding:4px;text-align:center;"><input type="checkbox" data-row="' + i + '" data-field="notTaken"'
+        +   (row.notTaken ? ' checked' : '') + ' onchange="_scModalRowChange(this)"></td>'
+        + '</tr>';
+    });
+
+    tableHtml += '</tbody></table>';
+    leftEl.innerHTML = tableHtml;
+  }
+
+  // 右列: 写真
+  var rightEl = document.getElementById('sc-student-modal-right');
+  if (rightEl) {
+    var upload = _scUploadsMap[studentId];
+    if (upload && upload.thumbnail_b64) {
+      var imgSrc = upload.thumbnail_b64.startsWith('data:')
+        ? upload.thumbnail_b64
+        : 'data:image/jpeg;base64,' + upload.thumbnail_b64;
+      rightEl.innerHTML = '<p style="margin:0;font-size:0.82rem;color:#8e8e93;">成績表画像</p>'
+        + '<img id="sc-modal-photo-img" src="' + imgSrc + '" alt="成績表" '
+        +   'style="max-width:100%;max-height:200px;object-fit:contain;border-radius:8px;cursor:pointer;border:1px solid #e5e5ea;"'
+        +   ' onclick="_scTogglePhotoExpand()" title="クリックで拡大">'
+        + '<button onclick="_scTogglePhotoExpand()" style="font-size:0.78rem;background:none;border:none;cursor:pointer;color:#4a7fc1;">拡大表示</button>';
+    } else {
+      rightEl.innerHTML = '<p style="color:#aaa;font-size:0.85rem;text-align:center;margin-top:24px;">成績表の提出なし</p>';
+    }
+  }
+
+  var modal = document.getElementById('sc-student-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window._scCloseStudentModal = function() {
+  var modal = document.getElementById('sc-student-modal');
+  if (modal) modal.style.display = 'none';
+  _scModalStudentId = null;
+  _scModalRows = [];
+};
+
+window._scModalRowChange = function(el) {
+  var rowIdx = parseInt(el.dataset.row, 10);
+  var field  = el.dataset.field;
+  if (!_scModalRows[rowIdx]) return;
+  if (field === 'notTaken') {
+    _scModalRows[rowIdx].notTaken = el.checked;
+  } else if (field === 'subjectId') {
+    if (el.value) _scModalRows[rowIdx].subjectId = el.value;
+  } else {
+    _scModalRows[rowIdx][field] = el.value;
+  }
+};
+
+window._scTogglePhotoExpand = function() {
+  _scPhotoExpanded = !_scPhotoExpanded;
+  var img = document.getElementById('sc-modal-photo-img');
+  var right = document.getElementById('sc-student-modal-right');
+  if (img) {
+    img.style.maxHeight = _scPhotoExpanded ? '65vh' : '200px';
+    img.style.maxWidth  = _scPhotoExpanded ? '100%' : '100%';
+  }
+  if (right) {
+    right.style.width = _scPhotoExpanded ? '420px' : '280px';
+  }
+};
+
+window._scSaveStudentModal = function() {
+  if (!_scModalStudentId) return;
+  var cramId = window.selectedCramId;
+  if (!cramId) { showMessage('校舎を選択してください', 'error'); return; }
+
+  var rows = _scModalRows;
+  if (rows.length === 0) { _scCloseStudentModal(); return; }
+
+  setLoading(true, '得点を保存中...');
+
+  var total    = rows.length;
+  var done     = 0;
+  var hasError = false;
+
+  rows.forEach(function(row) {
+    var actualSubjectId = row.subjectId;  // 変更後 or 元のsubjectId
+    var subjectChanged  = actualSubjectId !== row.origSubjectId;
+
+    var afterScoreSave = function() {
+      done++;
+      if (done >= total) {
+        setLoading(false);
+        if (!hasError) {
+          showMessage('保存しました', 'success');
+          _scCloseStudentModal();
+          _scFetchAndRender();
+        }
+      }
+    };
+
+    var doScoreSave = function(subjectIdToUse) {
+      var payload = {
+        cramId:     cramId,
+        scoreId:    row.scoreId,
+        studentId:  _scModalStudentId,
+        subjectId:  subjectIdToUse,
+        termTestId: row.termTestId,
+        year:       row.year,
+        grade:      row.grade,
+        score:      row.score,
+        gradeRank:  row.gradeRank || null,
+        classRank:  row.classRank || null,
+        notTaken:   row.notTaken,
+      };
+      var fn = row.scoreId ? 'updateAdminScore' : 'createAdminScore';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            hasError = true;
+            showMessage((res && res.error) || '保存エラー', 'error');
+          }
+          afterScoreSave();
+        })
+        .withFailureHandler(function(err) {
+          hasError = true;
+          showMessage('エラー: ' + (err && err.message ? err.message : String(err)), 'error');
+          afterScoreSave();
+        })
+        [fn](payload);
+    };
+
+    if (subjectChanged && row.scoreId) {
+      // 科目変更あり → まず科目を変更してからスコアを更新
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success) {
+            row.scoreId = res.new_score_id || row.scoreId;
+          }
+          doScoreSave(actualSubjectId);
+        })
+        .withFailureHandler(function() {
+          doScoreSave(actualSubjectId);
+        })
+        .changeScoreSubject({ cramId: cramId, scoreId: row.scoreId, newSubjectId: actualSubjectId });
+    } else {
+      doScoreSave(actualSubjectId);
+    }
+  });
+};
 
 // =====================================================================
 // スコア詳細モーダル
@@ -659,35 +1072,17 @@ window._scSaveDetail = function () {
 // =====================================================================
 // 補助：ジャンル色（ユーザー画面の logic_ui_render.html と同じパレット）
 // =====================================================================
-var _scGenrePalette = {
-  '数学': '#dbeafe',
-  '英語': '#fed7aa',
-  '国語': '#bbf7d0',
-  '理科': '#fbcfe8',
-  '社会': '#fde68a',
-  '副教科': '#f3f4f6',
-  '合計': '#ede9fe',
-  'その他': '#f8fafc'
-};
-var _scGenreHeaderPalette = {
-  '数学': '#1d4ed8',
-  '英語': '#c2410c',
-  '国語': '#15803d',
-  '理科': '#be185d',
-  '社会': '#a16207',
-  '副教科': '#374151',
-  '合計': '#5b21b6',
-  'その他': '#475569'
-};
 function _scGetGenreColor(genreName) {
-  var hex = _scGenrePalette[genreName] || _scGenrePalette['その他'];
+  var gc  = (window.GENRE_COLORS || {})[genreName] || (window.GENRE_COLORS || {})['その他'] || {};
+  var hex = gc.light || '#f8fafc';
   var r = parseInt(hex.slice(1, 3), 16);
   var g = parseInt(hex.slice(3, 5), 16);
   var b = parseInt(hex.slice(5, 7), 16);
   return 'rgba(' + r + ',' + g + ',' + b + ',0.15)';
 }
 function _scGetGenreHeaderColor(genreName) {
-  return _scGenreHeaderPalette[genreName] || _scGenreHeaderPalette['その他'];
+  var gc = (window.GENRE_COLORS || {})[genreName] || (window.GENRE_COLORS || {})['その他'] || {};
+  return gc.dark || '#475569';
 }
 
 // =====================================================================
@@ -788,7 +1183,7 @@ function _scRenderUnresolvedList(items) {
 
     // 生徒情報を「名前（学校・学年・コース）」形式でフォーマット
     var studentTexts = (item.students || []).map(function(s) {
-      var detail = [s.school_name, s.grade, s.school_course].filter(Boolean).join('・');
+      var detail = [_shortSchoolName(s.school_name), s.grade, s.school_course].filter(Boolean).join('・');
       return s.name + (detail ? '（' + detail + '）' : '');
     });
 
@@ -1168,4 +1563,27 @@ function _scResolveOther(rawName, selectId) {
   cursor: pointer;
 }
 .sc-btn-approve:hover { background: #1b5e20; }
+
+/* ---- グループ平均行 ---- */
+.sc-avg-row td {
+  border-top: 3px double #7a9cc0;
+  border-bottom: 2px solid #4a7aaa;
+  font-size: 0.88em;
+}
+.sc-avg-fixed {
+  font-weight: bold;
+  color: #2a3f6a;
+}
+.sc-avg-label {
+  font-weight: bold;
+  color: #2a3f6a;
+  text-align: right;
+  padding-right: 8px;
+  font-style: italic;
+}
+.sc-avg-cell {
+  font-weight: bold;
+  text-align: center;
+  color: #1a2f5a;
+}
 </style>

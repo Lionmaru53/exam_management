@@ -27,8 +27,8 @@ describe('_mapRows', () => {
   test('姓+名 が結合されて name になる', () => {
     const rows   = [['S003', '佐藤', '次郎', 'さとう', 'じろう', '', '']];
     const { students } = _mapRows(headers, rows, 'C001');
-    expect(students[0].name).toBe('佐藤次郎');
-    expect(students[0].pronunciation).toBe('さとうじろう');
+    expect(students[0].name).toBe('佐藤 次郎');
+    expect(students[0].pronunciation).toBe('さとう じろう');
   });
 
   test('マッピング外の列は無視される', () => {
@@ -49,6 +49,13 @@ describe('_mapRows', () => {
     const rows = [['S001', '田中', '花子', '', '', '', '']];
     const { skipped } = _mapRows(headers, rows, 'C001');
     expect(skipped).toBe(0);
+  });
+
+  test('school_course と sub_course はオブジェクトに含まれない', () => {
+    const rows = [['S001', '山田', '太郎', 'やまだ', 'たろう', 'A高校', '2']];
+    const { students } = _mapRows(headers, rows, 'C001');
+    expect(students[0]).not.toHaveProperty('school_course');
+    expect(students[0]).not.toHaveProperty('sub_course');
   });
 
   describe('校舎列フィルタ', () => {
@@ -130,6 +137,63 @@ describe('_upsertStudentsMaster', () => {
     const result = _upsertStudentsMaster(fakeSS, updated);
     expect(result.added).toBe(0);
     expect(result.updated).toBe(1);
+  });
+
+  test('更新時に school_course と sub_course は既存値を保持する', () => {
+    const existing = [{
+      student_id: 'S001', name: '旧名前', pronunciation: '', cram_id: 'C001',
+      school_name: 'A高校', school_course: '理系', sub_course: '理系', grade: '1',
+      is_active: true,
+    }];
+    const { _sheet, ...fakeSS } = makeStudentsSS(existing);
+    // school_course と sub_course を持たない student オブジェクト（_mapRows の新動作を模倣）
+    const imported = [{
+      student_id: 'S001', name: '新名前', pronunciation: '', cram_id: 'C001',
+      school_name: 'B高校', grade: '2', is_active: true,
+    }];
+    _upsertStudentsMaster(fakeSS, imported);
+    // getRange(2, 1, 1, ...) の呼び出し（行2=データ1行目の更新）を探す
+    const callIdx = _sheet.getRange.mock.calls.findIndex(
+      args => args[0] === 2 && args[1] === 1
+    );
+    expect(callIdx).toBeGreaterThanOrEqual(0);
+    const setValuesSpy = _sheet.getRange.mock.results[callIdx].value.setValues;
+    expect(setValuesSpy).toHaveBeenCalledTimes(1);
+    const writtenRow = setValuesSpy.mock.calls[0][0][0]; // [[...row...]][0]
+    const headerArr = STUDENTS_MASTER_HEADERS;
+    expect(writtenRow[headerArr.indexOf('school_course')]).toBe('理系');
+    expect(writtenRow[headerArr.indexOf('sub_course')]).toBe('理系');
+  });
+
+  test('インポートにない管理番号の is_active が false になる', () => {
+    const existing = [
+      { student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
+        school_name: 'A高校', school_course: '', sub_course: '', grade: '1', is_active: true },
+      { student_id: 'S002', name: '佐藤花子', pronunciation: '', cram_id: 'C001',
+        school_name: 'B高校', school_course: '', sub_course: '', grade: '2', is_active: true },
+    ];
+    const { _sheet, ...fakeSS } = makeStudentsSS(existing);
+    // S001 のみインポート（S002 は含まれない）
+    const result = _upsertStudentsMaster(fakeSS, [
+      { student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
+        school_name: 'A高校', grade: '1', is_active: true },
+    ]);
+    expect(result.deactivated).toBe(1);
+    expect(result.inactiveIds).toContain('S002');
+  });
+
+  test('全員インポートされた場合は deactivated が 0', () => {
+    const existing = [
+      { student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
+        school_name: 'A高校', school_course: '', sub_course: '', grade: '1', is_active: true },
+    ];
+    const { _sheet, ...fakeSS } = makeStudentsSS(existing);
+    const result = _upsertStudentsMaster(fakeSS, [
+      { student_id: 'S001', name: '山田太郎', pronunciation: '', cram_id: 'C001',
+        school_name: 'A高校', grade: '1', is_active: true },
+    ]);
+    expect(result.deactivated).toBe(0);
+    expect(result.inactiveIds).toHaveLength(0);
   });
 
 });

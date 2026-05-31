@@ -1,0 +1,226 @@
+<script>
+var _smSubjects = [];
+var _smFetched   = false;
+var _smFilter    = 'all'; // 'all' | 'normal' | 'temp'
+var _smStore     = [];
+var _smEditId    = null;
+var _smAddMode   = false;
+
+// ---- エントリーポイント ----
+function renderSubjectMasterManager() {
+  // subjects は masterData に含まれているので再フェッチ不要
+  _smSubjects = (window.masterData && window.masterData.subjects) || [];
+  _smFetched  = true;
+  _smRerender();
+}
+
+function _smRerender() {
+  var content = document.getElementById('admin-content');
+  var genres  = (window.masterData && window.masterData.genres) || [];
+
+  var filtered = _smSubjects.filter(function(s) {
+    if (_smFilter === 'temp')   return String(s.is_temp) === '1';
+    if (_smFilter === 'normal') return String(s.is_temp) !== '1';
+    return true;
+  });
+
+  var html = '<h3 style="margin-bottom:4px;">科目管理</h3>';
+  html += '<p style="color:#666;margin-bottom:16px;">教科マスター（subjects_master）の管理。教科の追加・編集・削除が行えます。</p>';
+
+  // フィルタ + 追加ボタン
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">';
+  ['all', 'normal', 'temp'].forEach(function(f) {
+    var label = f === 'all' ? '全て（' + _smSubjects.length + '）' : f === 'normal' ? '通常教科' : '仮教科';
+    var active = _smFilter === f;
+    html += '<button onclick="_smSetFilter(\'' + f + '\')" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:' + (active ? '#333' : '#fff') + ';color:' + (active ? '#fff' : '#333') + ';cursor:pointer;">' + label + '</button>';
+  });
+  html += '<div style="flex:1;"></div>';
+  html += '<button onclick="_smToggleAdd()" style="padding:6px 16px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;">' + (_smAddMode ? 'キャンセル' : '＋ 新規追加') + '</button>';
+  html += '</div>';
+
+  // 新規追加フォーム
+  if (_smAddMode) {
+    html += '<div style="background:#f8f9fa;border:1px solid #e0e0e0;border-radius:6px;padding:16px;margin-bottom:16px;">';
+    html += '<h4 style="margin:0 0 12px;">新規教科追加</h4>';
+    html += '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">';
+    html += '<div><label style="display:block;font-size:0.85em;margin-bottom:4px;">教科ID（必須）</label><input id="sm_add_id" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;width:120px;" placeholder="例: SUB201"></div>';
+    html += '<div><label style="display:block;font-size:0.85em;margin-bottom:4px;">教科名（必須）</label><input id="sm_add_name" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;width:160px;" placeholder="例: 数学II"></div>';
+    html += '<div><label style="display:block;font-size:0.85em;margin-bottom:4px;">ジャンル（必須）</label><select id="sm_add_genre" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;"><option value="">— 選択 —</option>';
+    genres.forEach(function(g) {
+      html += '<option value="' + _smEsc(g.genre_id) + '">' + _smEsc(g.genre_name) + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div><label style="display:block;font-size:0.85em;margin-bottom:4px;">学年</label><select id="sm_add_grade" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;"><option value="">全学年</option><option value="高1">高1</option><option value="高2">高2</option><option value="高3">高3</option></select></div>';
+    html += '<button onclick="_smSubmitAdd()" style="padding:6px 20px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;">追加</button>';
+    html += '</div></div>';
+  }
+
+  // テーブル
+  _smStore = [];
+  if (filtered.length === 0) {
+    html += '<p style="padding:32px;text-align:center;color:#999;">該当する教科がありません</p>';
+  } else {
+    html += '<div style="overflow-x:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:0.9em;">';
+    html += '<thead><tr style="background:#f8f9fa;">';
+    html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e0e0e0;">教科ID</th>';
+    html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e0e0e0;">教科名</th>';
+    html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e0e0e0;">ジャンル</th>';
+    html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e0e0e0;">学年</th>';
+    html += '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e0e0e0;">状態</th>';
+    html += '<th style="padding:8px 12px;border-bottom:2px solid #e0e0e0;"></th>';
+    html += '</tr></thead><tbody>';
+
+    filtered.forEach(function(s) {
+      var idx  = _smStore.length;
+      _smStore.push({ subject_id: s.subject_id });
+      var isTemp    = String(s.is_temp) === '1';
+      var isEditing = _smEditId === s.subject_id;
+      var rowBg     = isTemp ? '#fffbf0' : '';
+
+      html += '<tr style="border-bottom:1px solid #eee;background:' + rowBg + ';">';
+      html += '<td style="padding:8px 12px;font-family:monospace;">' + _smEsc(s.subject_id) + '</td>';
+
+      if (isEditing) {
+        // 編集モード
+        html += '<td style="padding:6px 8px;"><input id="sm_edit_name_' + idx + '" value="' + _smEsc(s.subject_name) + '" style="padding:4px 8px;border:1px solid #1a73e8;border-radius:4px;width:150px;"></td>';
+        html += '<td style="padding:6px 8px;"><select id="sm_edit_genre_' + idx + '" style="padding:4px 8px;border:1px solid #1a73e8;border-radius:4px;">';
+        genres.forEach(function(g) {
+          var sel = String(g.genre_id) === String(s.genre_id) ? ' selected' : '';
+          html += '<option value="' + _smEsc(g.genre_id) + '"' + sel + '>' + _smEsc(g.genre_name) + '</option>';
+        });
+        html += '</select></td>';
+        html += '<td style="padding:6px 8px;"><select id="sm_edit_grade_' + idx + '" style="padding:4px 8px;border:1px solid #1a73e8;border-radius:4px;"><option value="">全学年</option>';
+        ['高1', '高2', '高3'].forEach(function(g) {
+          var sel = s.grade === g ? ' selected' : '';
+          html += '<option value="' + g + '"' + sel + '>' + g + '</option>';
+        });
+        html += '</select></td>';
+        html += '<td style="padding:6px 8px;">' + (isTemp ? '<span style="padding:2px 8px;background:#ffc107;border-radius:4px;font-size:0.8em;">仮</span>' : '<span style="color:#28a745;font-size:0.85em;">通常</span>') + '</td>';
+        html += '<td style="padding:6px 8px;white-space:nowrap;">';
+        html += '<button onclick="_smSubmitEdit(' + idx + ')" style="padding:4px 12px;background:#1a73e8;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:4px;">保存</button>';
+        html += '<button onclick="_smCancelEdit()" style="padding:4px 12px;background:#fff;border:1px solid #ccc;border-radius:4px;cursor:pointer;">キャンセル</button>';
+        html += '</td>';
+      } else {
+        html += '<td style="padding:8px 12px;">' + _smEsc(s.subject_name) + '</td>';
+        html += '<td style="padding:8px 12px;">' + _smEsc(s.genre_name || s.genre_id || '—') + '</td>';
+        html += '<td style="padding:8px 12px;">' + _smEsc(s.grade || '全学年') + '</td>';
+        html += '<td style="padding:8px 12px;">' + (isTemp ? '<span style="padding:2px 8px;background:#ffc107;border-radius:4px;font-size:0.8em;">仮</span>' : '<span style="color:#28a745;font-size:0.85em;">通常</span>') + '</td>';
+        html += '<td style="padding:8px 12px;white-space:nowrap;">';
+        html += '<button onclick="_smStartEdit(\'' + _smEsc(s.subject_id) + '\')" style="padding:3px 10px;background:#fff;border:1px solid #ccc;border-radius:4px;cursor:pointer;margin-right:4px;">編集</button>';
+        html += '<button onclick="_smDelete(\'' + _smEsc(s.subject_id) + '\',\'' + _smEsc(s.subject_name) + '\')" style="padding:3px 10px;background:#fff;border:1px solid #dc3545;color:#dc3545;border-radius:4px;cursor:pointer;">削除</button>';
+        html += '</td>';
+      }
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+  }
+
+  content.innerHTML = html;
+}
+
+function _smSetFilter(f) {
+  _smFilter  = f;
+  _smEditId  = null;
+  _smAddMode = false;
+  _smRerender();
+}
+
+function _smToggleAdd() {
+  _smAddMode = !_smAddMode;
+  _smEditId  = null;
+  _smRerender();
+}
+
+function _smSubmitAdd() {
+  var sid   = (document.getElementById('sm_add_id')    || {}).value || '';
+  var sname = (document.getElementById('sm_add_name')  || {}).value || '';
+  var gid   = (document.getElementById('sm_add_genre') || {}).value || '';
+  var grade = (document.getElementById('sm_add_grade') || {}).value || '';
+  if (!sid.trim() || !sname.trim() || !gid) { showMessage('教科ID・教科名・ジャンルは必須です', 'error'); return; }
+  setLoading(true, '追加中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('教科を追加しました', 'success');
+        _smAddMode  = false;
+        _smFetched  = false;
+        window.refreshMasterData(function() { renderSubjectMasterManager(); });
+      } else {
+        showMessage((res && res.error) || '追加に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .addSubject({ subject_id: sid.trim(), subject_name: sname.trim(), genre_id: gid, grade: grade });
+}
+
+function _smStartEdit(subjectId) {
+  _smEditId  = subjectId;
+  _smAddMode = false;
+  _smRerender();
+}
+
+function _smCancelEdit() {
+  _smEditId = null;
+  _smRerender();
+}
+
+function _smSubmitEdit(idx) {
+  var subjectId = _smStore[idx] && _smStore[idx].subject_id;
+  if (!subjectId) return;
+  var sname = (document.getElementById('sm_edit_name_'  + idx) || {}).value || '';
+  var gid   = (document.getElementById('sm_edit_genre_' + idx) || {}).value || '';
+  var grade = (document.getElementById('sm_edit_grade_' + idx) || {}).value || '';
+  if (!sname.trim() || !gid) { showMessage('教科名・ジャンルは必須です', 'error'); return; }
+  setLoading(true, '更新中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('教科を更新しました', 'success');
+        _smEditId   = null;
+        _smFetched  = false;
+        window.refreshMasterData(function() { renderSubjectMasterManager(); });
+      } else {
+        showMessage((res && res.error) || '更新に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .updateSubject({ subject_id: subjectId, subject_name: sname.trim(), genre_id: gid, grade: grade });
+}
+
+function _smDelete(subjectId, subjectName) {
+  if (!confirm('「' + subjectName + '」（' + subjectId + '）を削除しますか？\n※ 試験パターンに設定されている場合は影響が出る可能性があります。')) return;
+  setLoading(true, '削除中...');
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(false);
+      if (res && res.success) {
+        showMessage('教科を削除しました', 'success');
+        _smFetched  = false;
+        window.refreshMasterData(function() { renderSubjectMasterManager(); });
+      } else {
+        showMessage((res && res.error) || '削除に失敗しました', 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setLoading(false);
+      showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
+    })
+    .deleteSubject(subjectId);
+}
+
+function _smEsc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+window.renderSubjectMasterManager = renderSubjectMasterManager;
+</script>

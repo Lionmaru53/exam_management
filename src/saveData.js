@@ -382,9 +382,9 @@ function submitBugReport(payload) {
     let sheet = ss.getSheetByName('bug_reports');
     if (!sheet) {
       sheet = ss.insertSheet('bug_reports');
-      sheet.getRange(1, 1, 1, 8).setValues([[
+      sheet.getRange(1, 1, 1, 9).setValues([[
         'report_id', 'timestamp', 'student_id', 'student_name',
-        'school_name', 'grade', 'report_type', 'detail'
+        'school_name', 'grade', 'report_type', 'detail', 'is_resolved'
       ]]);
     }
 
@@ -398,6 +398,7 @@ function submitBugReport(payload) {
       String(payload.grade        || '').trim(),
       String(payload.report_type  || '').trim(),
       String(payload.detail       || '').trim(),
+      '',  // is_resolved: 未解決
     ]);
 
     return JSON.stringify({ success: true });

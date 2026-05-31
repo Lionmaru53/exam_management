@@ -8,6 +8,7 @@ var _currentExamTabs = [];
 var _bugReportOpen   = false;
 var _bugConfirmData  = null;
 var _appData         = null;
+var _originalValues  = {};
 var _currentTabId    = null;
 var _currentAvailableSubjects = [];
 
@@ -27,26 +28,13 @@ var _genreOrder       = null;  // string[] | null。null = masterGenreOrder を�
 var _subjectOrder     = {};    // { [genreName]: subject_id[] } ユーザー定義順
 var _orderPrefsLoaded = false; // localStorage ロード済みフラグ
 
-function hexToRgba(hex, alpha = 0.1) {
+function getGenreColor(genreName, alpha = 0.08) {
+  const gc  = (window.GENRE_COLORS || {})[genreName] || (window.GENRE_COLORS || {})['その他'] || {};
+  const hex = gc.light || '#f8fafc';
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function getGenreColor(genreName, alpha = 0.08) {
-  const palette = {
-    '数学': '#dbeafe',
-    '英語': '#fed7aa',
-    '国語': '#bbf7d0',
-    '理科': '#fbcfe8',
-    '社会': '#fde68a',
-    '副教科': '#f3f4f6',
-    '合計': '#ede9fe',
-    'その他': '#f8fafc'
-  };
-  const hex = palette[genreName] || '#f8fafc';
-  return hexToRgba(hex, alpha);
 }
 
 // ---- ローディングオーバーレイ ----
@@ -118,18 +106,10 @@ function renderApp(data) {
   const infoItems = [s.school_name, s.school_course_name, s.grade, s.sub_course].filter(Boolean);
   const infoText  = infoItems.join('　');
 
-  const _annUnreadCount = _getUnreadCount(data.announcements || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
       <div class="header-top-row">
         <h2 class="app-title">定期テスト得点入力フォーム</h2>
-        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
-          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          ${_annUnreadCount > 0 ? `<span class="ann-badge">${_annUnreadCount > 9 ? '9+' : _annUnreadCount}</span>` : ''}
-        </button>
       </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${infoText})</span></p>
     </div>
@@ -144,7 +124,7 @@ function renderApp(data) {
   }
 
   let listHtml = `
-    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「保存する」を押してください。(分かる部分だけでOK)<br>※受けていない科目には「未受験」にチェックを入れてください。<br>${_PENCIL_ICON_HTML}ボタンで受けた教科に合わせて科目を変更できます。変更内容は次回以降も保持されます。表示がおかしい場合は下のフォームからご報告ください。</p>
+    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「保存する」を押してください。(分かる部分だけでOK)<br>※受けていない科目には「未受験」にチェックを入れてください。<br>${_PENCIL_ICON_HTML}ボタンで受けた教科に合わせて科目を変更できます。変更内容は次回以降も保持されます。表示がおかしい場合は右下の「メニュー」からご報告ください。</p>
     <div class="subject-tab-wrap">
       <div class="exam-select-wrap">
         <select class="exam-select" onchange="switchExamTab(this.value)">
@@ -402,17 +382,31 @@ function renderApp(data) {
   listHtml += '</div></div>';
 
   document.getElementById('subject-list').innerHTML = listHtml;
-  document.getElementById('footer').innerHTML = _renderBugReportSection();
 
   if (examTabs.length > 0 && !_currentTabId) {
     switchExamTab(examTabs[0].term_test_id);
   }
 
+  var isFirstRender = Object.keys(_originalValues).length === 0;
+  if (isFirstRender) {
+    _captureOriginalValues();
+    _hideDirtyBar();
+  }
   _initBottomNavScroll();
 
   _renderAnnouncementPanel(data.announcements || []);
-  if (_annUnreadCount > 0 && !_annPanelOpen) {
-    setTimeout(function() { openAnnouncementPanel(); }, 200);
+  _updateAnnBadge(data.announcements || []);
+  // お知らせの自動開封は初回ロード時のみ（科目編集などの再レンダーでは開かない）
+  if (!isFirstRender) return;
+  var annUnreadCount    = _getUnreadCount(data.announcements || []);
+  var importantToShow   = (data.announcements || []).filter(function(ann) {
+    return ann.category === 'important' && !_isDismissed(ann.id);
+  });
+  if ((annUnreadCount > 0 || importantToShow.length > 0) && !_annPanelOpen) {
+    setTimeout(function() {
+      openAnnouncementPanel();
+      importantToShow.forEach(function(ann) { _expandAnnCard(ann.id); });
+    }, 200);
   }
 }
 
@@ -452,6 +446,92 @@ function _bugExamOptions() {
     opts += '<option>' + (tab.test_name || tab.term_test_id || '') + '</option>';
   });
   return opts;
+}
+
+function _renderMenuContent() {
+  var el = document.getElementById('menu-panel-content');
+  if (!el) return;
+  if (_bugReportOpen) {
+    el.innerHTML = _renderBugReportInPanel();
+  } else {
+    var buildNum = (window._GAS_BUILD || '').replace('v', '');
+    var verText  = (window._APP_VERSION || '')
+      + (buildNum ? ' (build ' + buildNum + ')' : '');
+    el.innerHTML = '<ul class="menu-list">'
+      + '<li class="menu-list-item"><button onclick="openBugReportFromMenu()">'
+      + '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>'
+      + '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
+      + '</svg>'
+      + '不具合を報告する</button></li>'
+      + '</ul>'
+      + '<p style="margin:0;padding:8px 16px 12px;font-size:0.72rem;color:#aaa;text-align:right;">'
+      + verText + '</p>';
+  }
+}
+
+function _renderBugReportInPanel() {
+  var html = '<div class="bug-report-form" style="padding:12px 16px 24px;">';
+  html += '<button class="bug-confirm-back" style="margin-bottom:12px;" onclick="backFromBugConfirm()">'
+        + '&#8592; メニューに戻る</button>';
+
+  if (_bugConfirmData !== null) {
+    // 確認画面
+    html += '<p class="bug-confirm-title">以下の内容で報告しますか？</p>';
+    html += '<dl class="bug-confirm-dl">';
+    html += '<dt>種別</dt><dd>' + _escHtml(_bugConfirmData.reportType) + '</dd>';
+    if (_bugConfirmData.prefix) {
+      html += '<dt>内容</dt><dd>' + _escHtml(_bugConfirmData.prefix) + '</dd>';
+    }
+    if (_bugConfirmData.rawDetail) {
+      html += '<dt>詳細</dt><dd>' + _escHtml(_bugConfirmData.rawDetail) + '</dd>';
+    }
+    html += '</dl>';
+    html += '<div class="bug-confirm-btns">'
+          + '<button class="bug-report-submit" onclick="submitBugConfirm(this)">送信する</button>'
+          + '<button class="bug-confirm-back" onclick="backFromBugConfirm()">戻る</button>'
+          + '</div>';
+  } else {
+    // 入力フォーム
+    html += '<p class="bug-report-desc">表示内容に誤りがある場合など、お気づきの点をご報告ください。</p>';
+    var bugTypes = ['表示名が違う', '科目が足りない', '保存した点数が消えた', 'テスト名・試験区分がおかしい', 'その他'];
+    html += '<div class="bug-report-types">';
+    bugTypes.forEach(function(type, i) {
+      html += '<label class="bug-report-type-label">'
+            + '<input type="radio" name="bug_type" value="' + type + '"'
+            + (i === 0 ? ' checked' : '')
+            + ' onchange="onBugTypeChange(this.value)" /> '
+            + type + '</label>';
+    });
+    html += '</div>';
+    html += '<div id="bug-aux-name" class="bug-aux-row">'
+          + '<select id="bug-name-wrong">' + _bugSubjectOptions() + '</select>'
+          + '<span class="bug-aux-sep">は</span>'
+          + '<input type="text" id="bug-name-correct" placeholder="正しい表示名" />'
+          + '<span class="bug-aux-sep">が正しい</span>'
+          + '</div>';
+    html += '<div id="bug-aux-subject" class="bug-aux-row" style="display:none;">'
+          + '<select id="bug-subject-genre">' + _bugGenreOptions() + '</select>'
+          + '<input type="text" id="bug-subject-name" placeholder="科目名（例: 数学ⅠA）" />'
+          + '<span class="bug-aux-sep">が足りない</span>'
+          + '</div>';
+    html += '<div id="bug-aux-score" class="bug-aux-row" style="display:none;">'
+          + '<select id="bug-score-exam">' + _bugExamOptions() + '</select>'
+          + '<select id="bug-score-subject">' + _bugSubjectOptions() + '</select>'
+          + '</div>';
+    html += '<div id="bug-aux-testname" class="bug-aux-row" style="display:none;">'
+          + '<input type="text" id="bug-testname-wrong" placeholder="表示されているテスト名" />'
+          + '<span class="bug-aux-sep">は</span>'
+          + '<input type="text" id="bug-testname-correct" placeholder="正しいテスト名（わかれば）" />'
+          + '<span class="bug-aux-sep">が正しい</span>'
+          + '</div>';
+    html += '<textarea id="bug-detail" class="bug-report-textarea"'
+          + ' placeholder="詳しい内容があれば入力してください（任意）" rows="3"></textarea>';
+    html += '<button class="bug-report-submit" id="bug-submit-btn" onclick="showBugConfirm(this)">確認する</button>';
+  }
+
+  html += '</div>';
+  return html;
 }
 
 function _renderBugReportSection() {
@@ -563,15 +643,14 @@ function onBugTypeChange(type) {
 
 function backFromBugConfirm() {
   _bugConfirmData = null;
-  var footer = document.getElementById('footer');
-  if (footer) footer.innerHTML = _renderBugReportSection();
+  _bugReportOpen = false;
+  _renderMenuContent();
 }
 
 function toggleBugReport() {
   _bugReportOpen = !_bugReportOpen;
   _bugConfirmData = null;
-  var footer = document.getElementById('footer');
-  if (footer) footer.innerHTML = _renderBugReportSection();
+  _renderMenuContent();
 }
 
 function _renderErrorHtml(data) {
@@ -615,18 +694,10 @@ function renderCourseInput(data) {
   const s       = data.student;
   const courses = Array.isArray(data.availableCourses) ? data.availableCourses : [];
 
-  const _courseAnnUnread = _getUnreadCount((_appData && _appData.announcements) || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
       <div class="header-top-row">
         <h2 class="app-title">定期テスト得点入力フォーム</h2>
-        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
-          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          ${_courseAnnUnread > 0 ? `<span class="ann-badge">${_courseAnnUnread > 9 ? '9+' : _courseAnnUnread}</span>` : ''}
-        </button>
       </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${s.school_name}　${s.grade})</span></p>
     </div>
@@ -656,6 +727,7 @@ function renderCourseInput(data) {
     `</div></div>`;
 
   document.getElementById('footer').innerHTML = '';
+  _updateAnnBadge((_appData && _appData.announcements) || []);
 }
 
 function _courseOtherToggle() {
@@ -744,18 +816,10 @@ var _subCourseData = null;
 function renderSubCourseSelect(data) {
   _subCourseData = data;
   const s = data.student;
-  const _subAnnUnread = _getUnreadCount((_appData && _appData.announcements) || []);
   document.getElementById('header').innerHTML = `
     <div class="exam-header-container-app">
       <div class="header-top-row">
         <h2 class="app-title">定期テスト得点入力フォーム</h2>
-        <button class="ann-bell-btn" onclick="toggleAnnouncementPanel()" aria-label="お知らせ">
-          <svg class="ann-bell-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          ${_subAnnUnread > 0 ? `<span class="ann-badge">${_subAnnUnread > 9 ? '9+' : _subAnnUnread}</span>` : ''}
-        </button>
       </div>
       <p class="student-name-app">${s.name} さん <span class="student-info-app">(${s.school_name}　${s.grade})</span></p>
     </div>
@@ -772,6 +836,7 @@ function renderSubCourseSelect(data) {
     `<button class="sub-course-btn sub-course-btn-confirm" onclick="_subCourseNext()">次へ</button>` +
     `</div></div>`;
   document.getElementById('footer').innerHTML = '';
+  _updateAnnBadge((_appData && _appData.announcements) || []);
 }
 
 function _subCourseNext() {
@@ -791,6 +856,49 @@ function _subCourseConfirm(subCourse) {
     `</div></div>`;
 }
 
+function _captureOriginalValues() {
+  _originalValues = {};
+  document.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+    _originalValues[el.id] = el.value;
+  });
+  document.querySelectorAll('[id^="nt_"]').forEach(function(el) {
+    _originalValues[el.id] = el.checked;
+  });
+}
+
+function _refreshDirtyState() {
+  var dirty = false;
+  var inputs = document.querySelectorAll('.score-input, .rank-input');
+  for (var i = 0; i < inputs.length; i++) {
+    if (_originalValues.hasOwnProperty(inputs[i].id) && inputs[i].value !== _originalValues[inputs[i].id]) {
+      dirty = true; break;
+    }
+  }
+  if (!dirty) {
+    var cbs = document.querySelectorAll('[id^="nt_"]');
+    for (var i = 0; i < cbs.length; i++) {
+      if (_originalValues.hasOwnProperty(cbs[i].id) && cbs[i].checked !== _originalValues[cbs[i].id]) {
+        dirty = true; break;
+      }
+    }
+  }
+  if (dirty) { _showDirtyBar(); } else { _hideDirtyBar(); }
+}
+
+function _showDirtyBar() {
+  var bar = document.getElementById('dirty-bar');
+  if (!bar || bar.style.display === 'flex') return;
+  bar.style.display = 'flex';
+  bar.classList.add('dirty-bar--visible');
+}
+
+function _hideDirtyBar() {
+  var bar = document.getElementById('dirty-bar');
+  if (!bar) return;
+  bar.classList.remove('dirty-bar--visible');
+  bar.style.display = 'none';
+}
+
 function toggleNotTaken(displayKey, subjectId, isChecked) {
   _cacheCheckbox(displayKey, subjectId, isChecked);
   var scoreEl = document.getElementById('s_'  + displayKey + '_' + subjectId);
@@ -801,6 +909,7 @@ function toggleNotTaken(displayKey, subjectId, isChecked) {
     el.disabled      = isChecked;
     el.style.opacity = isChecked ? '0.4' : '';
   });
+  _refreshDirtyState();
 }
 
 function switchExamTab(tabId) {
@@ -1060,11 +1169,27 @@ function _annLsKey() {
   return 'ann_read_' + sid;
 }
 
+function _annDismissLsKey() {
+  var sid = (_currentStudent && _currentStudent.student_id) || 'unknown';
+  return 'ann_dismissed_' + sid;
+}
+
 function _getReadIds() {
   try {
     var raw = localStorage.getItem(_annLsKey());
     return raw ? JSON.parse(raw) : [];
   } catch (e) { return []; }
+}
+
+function _getDismissedIds() {
+  try {
+    var raw = localStorage.getItem(_annDismissLsKey());
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) { return []; }
+}
+
+function _isDismissed(id) {
+  return _getDismissedIds().indexOf(id) !== -1;
 }
 
 function _markAllAsRead(announcements) {
@@ -1079,6 +1204,22 @@ function _getUnreadCount(announcements) {
   return (announcements || []).filter(function(a) {
     return readIds.indexOf(a.id) === -1;
   }).length;
+}
+
+function _updateAnnBadge(announcements) {
+  var btn = document.getElementById('bnav-ann');
+  if (!btn) return;
+  var wrap = btn.querySelector('.bnav-icon-wrap');
+  if (!wrap) return;
+  var existing = wrap.querySelector('.ann-badge');
+  if (existing) existing.remove();
+  var count = _getUnreadCount(announcements || []);
+  if (count > 0) {
+    var badge = document.createElement('span');
+    badge.className = 'ann-badge';
+    badge.textContent = count > 9 ? '9+' : String(count);
+    wrap.appendChild(badge);
+  }
 }
 
 function _annCategoryLabel(cat) {
@@ -1097,18 +1238,49 @@ function _renderAnnouncementPanel(announcements) {
 
   var readIds = _getReadIds();
   list.innerHTML = announcements.map(function(ann) {
-    var isUnread = readIds.indexOf(ann.id) === -1;
-    var catClass = 'ann-card--' + (ann.category || 'info');
-    var bodyHtml = _escHtml(ann.body).replace(/\n/g, '<br>');
-    return '<div class="ann-card ' + catClass + (isUnread ? ' ann-card--unread' : '') + '">'
+    var isUnread    = readIds.indexOf(ann.id) === -1;
+    var isDismissed = _isDismissed(ann.id);
+    var catClass    = 'ann-card--' + (ann.category || 'info');
+    var bodyHtml    = _escHtml(ann.body).replace(/\n/g, '<br>');
+    var dismissHtml = ann.category === 'important'
+      ? '<label class="ann-dismiss-label" onclick="event.stopPropagation()">'
+        + '<input type="checkbox" onchange="onAnnDismissChange(\'' + _escHtml(ann.id) + '\',this.checked)"'
+        + (isDismissed ? ' checked' : '') + '>'
+        + '次回から表示しない</label>'
+      : '';
+    return '<div class="ann-card ' + catClass + (isUnread ? ' ann-card--unread' : '') + '"'
+      + ' id="ann-card-' + _escHtml(ann.id) + '"'
+      + ' onclick="toggleAnnCard(this)">'
       + '<div class="ann-card-header">'
       + (isUnread ? '<span class="ann-unread-dot"></span>' : '')
       + '<span class="ann-card-category ' + catClass + '-label">' + _annCategoryLabel(ann.category) + '</span>'
-      + '<span class="ann-card-date">' + _escHtml(ann.published_at || '') + '</span>'
+      + '<span class="ann-card-chevron">▼</span>'
       + '</div>'
       + '<p class="ann-card-title">' + _escHtml(ann.title) + '</p>'
+      + '<div class="ann-card-detail">'
+      + '<p class="ann-card-date">' + _escHtml(ann.published_at || '') + '</p>'
       + '<p class="ann-card-body">' + bodyHtml + '</p>'
+      + dismissHtml
+      + '</div>'
       + '</div>';
   }).join('');
+}
+
+function toggleAnnCard(cardEl) {
+  var detail  = cardEl.querySelector('.ann-card-detail');
+  var chevron = cardEl.querySelector('.ann-card-chevron');
+  if (!detail) return;
+  var isOpen = detail.style.display === 'block';
+  detail.style.display = isOpen ? 'none' : 'block';
+  if (chevron) chevron.textContent = isOpen ? '▼' : '▲';
+}
+
+function _expandAnnCard(annId) {
+  var cardEl = document.getElementById('ann-card-' + annId);
+  if (!cardEl) return;
+  var detail  = cardEl.querySelector('.ann-card-detail');
+  var chevron = cardEl.querySelector('.ann-card-chevron');
+  if (detail)  detail.style.display = 'block';
+  if (chevron) chevron.textContent = '▲';
 }
 </script>
