@@ -345,6 +345,28 @@ LINE ID とのひも付けは親 SS の `student_index` で管理するため、
 
 ---
 
+### `school_averages`
+生徒が報告した学校の学年平均点。upsert で管理する。
+
+| 列 | 列名 | 説明 |
+|----|------|------|
+| 1 | `school_name` | 学校名（`students_master` 参照） |
+| 2 | `school_course` | コース名（`students_master` 参照） |
+| 3 | `grade` | 学年（`高1` / `高2` / `高3` / `中1` 等） |
+| 4 | `sub_course` | 文理区分（`文系` / `理系` / 空文字） |
+| 5 | `term_test_id` | 試験区分 ID（`term_tests_master` 参照・親 SS） |
+| 6 | `year` | 年度（4桁整数） |
+| 7 | `subject_id` | 科目 ID（`subjects_master` 参照・親 SS） |
+| 8 | `grade_avg` | 学年平均点（小数第1位まで） |
+| 9 | `updated_at` | 最終更新日時（ISO 文字列） |
+| 10 | `updated_by` | 更新した生徒の `student_id` |
+
+**主キー**: なし（複合ユニーク）  
+**upsert キー**: `(school_name, school_course, grade, sub_course, term_test_id, year, subject_id)`  
+**備考**: 同一グループの生徒が複数入力した場合は最新の `updated_at` を優先して参照する。シートが存在しない場合は `_getOrCreateSchoolAveragesSheet()` が自動生成する。
+
+---
+
 ## ER 図（簡略）
 
 ```
@@ -366,6 +388,8 @@ exam_patterns ──────────── pattern_subjects ─── su
     ↑ pattern_id                ↑ subject_id
 scores_data ─── student_id ──── students_master
             └── term_test_id ── term_tests_master（親SS）
+school_averages ─── term_test_id ── term_tests_master（親SS）
+                └── subject_id  ── subjects_master（親SS）
 ```
 
 ---

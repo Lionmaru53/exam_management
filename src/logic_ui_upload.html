@@ -358,6 +358,12 @@ function _doUpload(btn) {
             thumbnail_b64: payload.thumbnail_b64 || null
           };
         }
+        _updatePhotoNavBadge();
+        var shortcutBtn = document.getElementById('upload-shortcut-btn');
+        if (shortcutBtn) {
+          shortcutBtn.classList.add('upload-shortcut-btn--done');
+          setTimeout(function() { shortcutBtn.classList.remove('upload-shortcut-btn--done'); }, 2000);
+        }
         if (_currentView === 'photos') _renderPhotosPage();
         showMessage('アップロードしました', 'success');
       } else {
@@ -422,7 +428,7 @@ function _renderPhotosPage() {
         + '</button>';
     }
 
-    html += '<div class="photo-card">'
+    html += '<div class="photo-card' + (uf ? '' : ' photo-card--pending') + '">'
       + '<div class="photo-card-title">' + name + '</div>'
       + bodyHtml
       + '</div>';
@@ -448,6 +454,27 @@ function bottomNavGoScores() {
 }
 
 /* ---- ユーティリティ ---- */
+function _updatePhotoNavBadge() {
+  var badge = document.getElementById('photo-nav-badge');
+  if (!badge) return;
+  var tabs  = (_appData && _appData.examTabs) || [];
+  var today = new Date().toISOString().slice(0, 10);
+  var count = tabs.filter(function(t) {
+    return t.end_date && t.end_date < today && !t.uploadedFile;
+  }).length;
+  if (count > 0) {
+    badge.textContent = count > 9 ? '9+' : String(count);
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function _uploadFromScores() {
+  if (!_currentTabId) return;
+  _pickCameraForTab(_currentTabId);
+}
+
 function _getUploadTestName() {
   var tabs  = (_appData && _appData.examTabs) || [];
   var tabId = _currentTabId || (tabs[0] && tabs[0].term_test_id);

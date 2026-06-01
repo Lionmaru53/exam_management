@@ -31,8 +31,10 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
     const scoreVal     = el.value.trim();
     const grEl         = panel.querySelector('#gr_' + displayKey + '_' + subId);
     const crEl         = panel.querySelector('#cr_' + displayKey + '_' + subId);
+    const gaEl         = panel.querySelector('#ga_' + displayKey + '_' + subId);
     const gradeRankVal = (grEl ? grEl.value : '').trim();
     const classRankVal = (crEl ? crEl.value : '').trim();
+    const gradeAvgVal  = (gaEl ? gaEl.value : '').trim();
 
     if (scoreVal !== '') {
       const n        = Number(scoreVal);
@@ -61,12 +63,20 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
         return;
       }
     }
+    if (gradeAvgVal !== '') {
+      const n = Number(gradeAvgVal);
+      if (isNaN(n) || n < 0 || n > 999) {
+        validationError = '学年均は 0〜999 の数値で入力してください。';
+        return;
+      }
+    }
 
     const entry = {
       subject_id: subId,
       score:      scoreVal,
       grade_rank: gradeRankVal,
       class_rank: classRankVal,
+      grade_avg:  gradeAvgVal,
       not_taken:  false
     };
     if (subId === 'OTHER') {
@@ -100,7 +110,7 @@ function handleSave(studentId, examId, patternId, termTestId, year, displayKey, 
         showMessage("正常に保存されました！", "success");
         var savedPanel = document.querySelector('.tab-panel-app[data-tab-id="' + termTestId + '"]');
         if (savedPanel) {
-          savedPanel.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+          savedPanel.querySelectorAll('.score-input, .rank-input, .avg-input').forEach(function(el) {
             _originalValues[el.id] = el.value;
           });
           savedPanel.querySelectorAll('[id^="nt_"]').forEach(function(el) {
@@ -649,7 +659,7 @@ function onAnnDismissChange(annId, checked) {
 }
 
 function cancelEdits() {
-  document.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+  document.querySelectorAll('.score-input, .rank-input, .avg-input').forEach(function(el) {
     if (_originalValues.hasOwnProperty(el.id)) {
       el.value = _originalValues[el.id];
       el.disabled = false;

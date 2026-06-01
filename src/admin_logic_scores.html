@@ -156,8 +156,9 @@ function _scRerender() {
   var area = document.getElementById('sc-table-area');
   if (!area || !_scScoreData) return;
 
-  var students        = _scScoreData.students       || [];
-  var scores          = _scScoreData.scores          || [];
+  var students        = _scScoreData.students        || [];
+  var scores          = _scScoreData.scores           || [];
+  var schoolAverages  = _scScoreData.schoolAverages   || [];
   var patterns        = (window.masterData && window.masterData.patterns)        || [];
   var patternSubjects = (window.masterData && window.masterData.patternSubjects) || [];
   var subjects        = (window.masterData && window.masterData.subjects)        || [];
@@ -175,6 +176,18 @@ function _scRerender() {
     var existing = scoreMap[key];
     if (!existing || sc.update_at >= existing.update_at) {
       scoreMap[key] = sc;
+    }
+  });
+
+  // ── 学校平均マップ構築 ────────────────────────────────────────────
+  // キー: "school_name||school_course||grade||sub_course" → subject_id → grade_avg
+  var schoolAvgMap = {};
+  schoolAverages.forEach(function(r) {
+    var gk = [r.school_name, r.school_course, r.grade, r.sub_course].join('||');
+    if (!schoolAvgMap[gk]) schoolAvgMap[gk] = {};
+    var existing = schoolAvgMap[gk][r.subject_id];
+    if (!existing || r.updated_at >= existing.updated_at) {
+      schoolAvgMap[gk][r.subject_id] = r;
     }
   });
 
@@ -467,11 +480,40 @@ function _scRerender() {
     html += '</tr>';
   }
 
+  // 学校平均行を html に追記する内部ヘルパー
+  function _scRenderSchoolAvgRow(first) {
+    var gk = [first.school_name||'', first.school_course||'', first.grade||'', first.sub_course||''].join('||');
+    var avgBySubject = schoolAvgMap[gk] || {};
+    var hasAny = unionSubjectList.some(function(subj) {
+      return avgBySubject[subj.subject_id] && avgBySubject[subj.subject_id].grade_avg != null;
+    });
+    if (!hasAny) return;
+    html += '<tr class="sc-school-avg-row">';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(_shortSchoolName(first.school_name) || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.grade         || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.sub_course    || '') + '</td>';
+    html += '<td class="sc-td-name sc-school-avg-label">学校平均</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed"></td>';
+    unionSubjectList.forEach(function(subj) {
+      var cellBg = _scGetGenreColor(subj.genre_name);
+      var rec = avgBySubject[subj.subject_id];
+      if (rec && rec.grade_avg != null) {
+        html += '<td class="sc-cell sc-school-avg-cell" style="background-color:' + cellBg + '">'
+              + Number(rec.grade_avg).toFixed(1) + '</td>';
+      } else {
+        html += '<td class="sc-cell sc-school-avg-cell" style="background-color:' + cellBg + '">—</td>';
+      }
+    });
+    html += '</tr>';
+  }
+
   sortedStudents.forEach(function (student) {
     if (showAvgRows) {
       var gKey = [student.school_name||'', student.school_course||'', student.grade||'', student.sub_course||''].join('||');
       if (prevGroupKey !== null && gKey !== prevGroupKey) {
         _scRenderGroupAvgRow(groupBuf);
+        _scRenderSchoolAvgRow(groupBuf[0]);
         groupBuf = [];
       }
       prevGroupKey = gKey;
@@ -516,7 +558,10 @@ function _scRerender() {
   });
 
   // 最後のグループをフラッシュ
-  if (showAvgRows) _scRenderGroupAvgRow(groupBuf);
+  if (showAvgRows && groupBuf.length > 0) {
+    _scRenderGroupAvgRow(groupBuf);
+    _scRenderSchoolAvgRow(groupBuf[0]);
+  }
 
   html += '</tbody></table></div>';
 
@@ -1585,5 +1630,27 @@ function _scResolveOther(rawName, selectId) {
   font-weight: bold;
   text-align: center;
   color: #1a2f5a;
+}
+.sc-school-avg-row td {
+  border-top: 2px dashed #a0b8d8;
+  border-bottom: 1px solid #c8d8ee;
+  font-size: 0.85em;
+  background-color: #f0f4fa;
+}
+.sc-school-avg-fixed {
+  font-weight: 600;
+  color: #2a4a7a;
+}
+.sc-school-avg-label {
+  font-weight: bold;
+  color: #2a4a7a;
+  text-align: right;
+  padding-right: 8px;
+  font-style: italic;
+}
+.sc-school-avg-cell {
+  font-weight: 600;
+  text-align: center;
+  color: #1a3a6a;
 }
 </style>

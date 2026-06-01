@@ -800,6 +800,9 @@
     color: var(--ios-label);
     margin-bottom: 8px;
   }
+  .ios-cell-label--muted {
+    color: var(--ios-tertiary);
+  }
 
   .ios-cell-label-row {
     display: flex;
@@ -837,7 +840,7 @@
 
   .ios-cell-inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr 0.75fr;
     gap: 6px;
   }
 
@@ -851,7 +854,8 @@
 
   .ios-input-wrap input[type="text"] {
     width: 100%;
-    padding: 7px 4px;
+    height: 34px;
+    padding: 0 4px;
     border: 1px solid var(--ios-separator);
     border-radius: 6px;
     font-size: 14px;
@@ -860,11 +864,14 @@
     background: var(--ios-bg);
   }
 
+  .ios-input-avg span { font-size: .65rem; }
+  .ios-input-avg input[type="text"] { font-size: 12px; color: var(--ios-secondary); border-style: dashed; padding: 0 2px; }
+
   .ios-nt-wrap {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: .85rem;
+    font-size: .75rem;
     color: var(--ios-label);
     margin-left: auto;
     white-space: nowrap;
@@ -1279,7 +1286,7 @@
   #dirty-bar {
     display: none;
     position: fixed;
-    bottom: calc(64px + max(env(safe-area-inset-bottom, 0px), 28px));
+    bottom: var(--bnav-h, 64px);
     left: 0;
     right: 0;
     background: #fff;
@@ -1294,7 +1301,7 @@
     transition: bottom 0.25s ease;
   }
   #dirty-bar.dirty-bar--nav-hidden {
-    bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+    bottom: env(safe-area-inset-bottom, 0px);
   }
   #dirty-bar.dirty-bar--visible {
     animation: dirty-bar-in 0.22s ease;
@@ -1410,7 +1417,7 @@
 
   .menu-panel {
     position: fixed;
-    bottom: max(env(safe-area-inset-bottom, 0px), 28px);
+    bottom: 0;
     left: 0;
     right: 0;
     max-height: 60vh;
@@ -1474,6 +1481,7 @@
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
   }
   .menu-list {
     list-style: none;
@@ -1609,5 +1617,68 @@
     justify-content: space-between;
     gap: 8px;
     margin-top: 6px;
+  }
+
+  /* ---- 未提出カード強調 ---- */
+  .photo-card--pending {
+    border-left: 3px solid #ff9500;
+  }
+  .photo-card--pending .photo-card-upload-btn {
+    background: #fff8ee;
+    color: #e07000;
+    border: 1px dashed #ff9500;
+  }
+
+  /* ---- 写真ナビバッジ ---- */
+  .photo-nav-badge {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    background: #ff9500;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-sizing: border-box;
+    border: 1.5px solid #fff;
+  }
+
+  /* ---- 試験選択行（ドロップダウン + カメラボタン） ---- */
+  .exam-select-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .exam-select-row .exam-select-wrap {
+    flex: 1;
+    margin-bottom: 0;
+  }
+  .upload-shortcut-btn {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    background: #f2f2f7;
+    border: none;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4a7fc1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .upload-shortcut-btn:active { background: #e5e5ea; }
+  .upload-shortcut-btn--done {
+    background: #d4f5e0;
+    color: #34c759;
+    transition: background 0.3s, color 0.3s;
   }
 </style>

@@ -122,18 +122,24 @@ function saveAllScores(payload) {
     if (!termTestId) throw new Error('term_test_id が指定されていません');
     const yearAtSave = String(payload.year || '').trim();
 
-    // 保存時点の学年を students_master から取得（年度別集計で必要）
-    let gradeAtSave = '';
+    // 保存時点の学年・学校情報を students_master から取得（年度別集計・学校平均保存で必要）
+    let gradeAtSave = '', schoolNameAtSave = '', schoolCourseAtSave = '', subCourseAtSave = '';
     const stuSheet = ss.getSheetByName('students_master');
     if (stuSheet) {
       const stuData    = stuSheet.getDataRange().getValues();
       const stuHeaders = stuData[0].map(h => String(h).trim());
       const stuSidCol  = stuHeaders.indexOf('student_id');
       const stuGrCol   = stuHeaders.indexOf('grade');
+      const stuSnCol   = stuHeaders.indexOf('school_name');
+      const stuScCol   = stuHeaders.indexOf('school_course');
+      const stuSubCol  = stuHeaders.indexOf('sub_course');
       if (stuSidCol >= 0 && stuGrCol >= 0) {
         for (let i = 1; i < stuData.length; i++) {
           if (String(stuData[i][stuSidCol] || '').trim() === String(payload.student_id).trim()) {
-            gradeAtSave = String(stuData[i][stuGrCol] || '').trim();
+            gradeAtSave      = String(stuData[i][stuGrCol]  || '').trim();
+            schoolNameAtSave = stuSnCol  >= 0 ? String(stuData[i][stuSnCol]  || '').trim() : '';
+            schoolCourseAtSave = stuScCol >= 0 ? String(stuData[i][stuScCol] || '').trim() : '';
+            subCourseAtSave  = stuSubCol >= 0 ? String(stuData[i][stuSubCol] || '').trim() : '';
             break;
           }
         }
@@ -248,12 +254,77 @@ function saveAllScores(payload) {
       }
     });
 
+    // school_averages への upsert（grade_avg が指定されたエントリのみ）
+    const avgEntries = payload.scores.filter(s => s.grade_avg !== '' && s.grade_avg != null);
+    if (avgEntries.length > 0 && schoolNameAtSave && gradeAtSave) {
+      const avgSheet = _getOrCreateSchoolAveragesSheet(ss);
+      const avgData    = avgSheet.getDataRange().getValues();
+      const avgHeaders = avgData[0].map(h => String(h).trim());
+      const aSnCol  = avgHeaders.indexOf('school_name');
+      const aScCol  = avgHeaders.indexOf('school_course');
+      const aGrCol  = avgHeaders.indexOf('grade');
+      const aSubCCol = avgHeaders.indexOf('sub_course');
+      const aTtCol  = avgHeaders.indexOf('term_test_id');
+      const aYrCol  = avgHeaders.indexOf('year');
+      const aSiCol  = avgHeaders.indexOf('subject_id');
+      const aAvgCol = avgHeaders.indexOf('grade_avg');
+      const aUaCol  = avgHeaders.indexOf('updated_at');
+      const aUbCol  = avgHeaders.indexOf('updated_by');
+
+      avgEntries.forEach(entry => {
+        const subjectId = entry.subject_id === 'OTHER' ? '' : entry.subject_id;
+        if (!subjectId) return;
+        const avgVal = parseFloat(entry.grade_avg);
+        if (isNaN(avgVal)) return;
+
+        let existRowIdx = -1;
+        for (let i = 1; i < avgData.length; i++) {
+          if (String(avgData[i][aSnCol]  || '') === schoolNameAtSave   &&
+              String(avgData[i][aScCol]  || '') === schoolCourseAtSave &&
+              String(avgData[i][aGrCol]  || '') === gradeAtSave        &&
+              String(avgData[i][aSubCCol]|| '') === subCourseAtSave    &&
+              String(avgData[i][aTtCol]  || '') === termTestId         &&
+              String(avgData[i][aYrCol]  || '') === yearAtSave         &&
+              String(avgData[i][aSiCol]  || '') === subjectId) {
+            existRowIdx = i + 1;
+            break;
+          }
+        }
+
+        const rowVals = [
+          schoolNameAtSave, schoolCourseAtSave, gradeAtSave, subCourseAtSave,
+          termTestId, yearAtSave, subjectId,
+          avgVal, new Date(), payload.student_id
+        ];
+
+        if (existRowIdx > 0) {
+          avgSheet.getRange(existRowIdx, aAvgCol + 1).setValue(avgVal);
+          avgSheet.getRange(existRowIdx, aUaCol  + 1).setValue(new Date());
+          avgSheet.getRange(existRowIdx, aUbCol  + 1).setValue(payload.student_id);
+        } else {
+          avgSheet.appendRow(rowVals);
+        }
+      });
+    }
+
     return JSON.stringify({ success: true });
   } catch (e) {
     return JSON.stringify({ error: e.toString() });
   } finally {
     lock.releaseLock();
   }
+}
+
+function _getOrCreateSchoolAveragesSheet(ss) {
+  let sheet = ss.getSheetByName('school_averages');
+  if (!sheet) {
+    sheet = ss.insertSheet('school_averages');
+    sheet.appendRow([
+      'school_name', 'school_course', 'grade', 'sub_course',
+      'term_test_id', 'year', 'subject_id', 'grade_avg', 'updated_at', 'updated_by'
+    ]);
+  }
+  return sheet;
 }
 
 /**

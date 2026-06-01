@@ -124,10 +124,15 @@ function renderApp(data) {
   }
 
   let listHtml = `
-    <p class="usage-hint">テストの点数と学年・クラスの順位を入力して、「保存する」を押してください。(分かる部分だけでOK)<br>※受けていない科目には「未受験」にチェックを入れてください。<br>${_PENCIL_ICON_HTML}ボタンで受けた教科に合わせて科目を変更できます。変更内容は次回以降も保持されます。表示がおかしい場合は右下の「メニュー」からご報告ください。</p>
+    <ul class="usage-hint">
+      <li>点数と学年・クラス順位を入力して「保存する」を押してください（分かる部分だけでOK）</li>
+      <li>受けていない・未実施の科目は「未実施・未受験」にチェック</li>
+      <li>${_PENCIL_ICON_HTML}で科目の追加・変更ができます</li>
+    </ul>
     <div class="subject-tab-wrap">
-      <div class="exam-select-wrap">
-        <select class="exam-select" onchange="switchExamTab(this.value)">
+      <div class="exam-select-row">
+        <div class="exam-select-wrap">
+          <select class="exam-select" onchange="switchExamTab(this.value)">
   `;
 
   examTabs.forEach(exam => {
@@ -135,7 +140,13 @@ function renderApp(data) {
     listHtml += `<option value="${tabId}">${exam.test_name}</option>`;
   });
 
-  listHtml += '</select></div><div class="tab-content">';
+  listHtml += '</select></div>'
+    + '<button class="upload-shortcut-btn" id="upload-shortcut-btn" onclick="_uploadFromScores()" title="成績表画像をアップロード">'
+    + '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>'
+    + '<circle cx="12" cy="13" r="4"/></svg>'
+    + '</button>'
+    + '</div><div class="tab-content">';
 
   examTabs.forEach((exam, examIndex) => {
     const tabId      = exam.term_test_id;
@@ -217,6 +228,7 @@ function renderApp(data) {
         // ==== 通常モード（科目ごとに編集チェック） ====
         rows.forEach(function(sub) {
           const sc         = (exam.scores || []).find(function(x) { return x.subject_id === sub.subject_id; }) || {};
+          const sa         = (exam.schoolAverages || []).find(function(x) { return x.subject_id === sub.subject_id; }) || {};
           const isExcluded = !!sub.excluded;
           const sid        = sub.subject_id;
           const dk         = displayKey;
@@ -225,6 +237,7 @@ function renderApp(data) {
           const scoreVal   = isExcluded ? '' : (cached.score      !== undefined ? cached.score      : (sc.score      != null ? sc.score      : ''));
           const grVal      = isExcluded ? '' : (cached.grade_rank !== undefined ? cached.grade_rank : (sc.grade_rank != null ? sc.grade_rank : ''));
           const crVal      = isExcluded ? '' : (cached.class_rank !== undefined ? cached.class_rank : (sc.class_rank != null ? sc.class_rank : ''));
+          const gaVal      = isExcluded ? '' : (cached.grade_avg  !== undefined ? cached.grade_avg  : (sa.grade_avg  != null ? sa.grade_avg  : ''));
           const disabledAttr = isNotTaken ? ' disabled style="opacity:0.4;"' : '';
 
           const subDisplayName = sid === 'OTHER'
@@ -274,7 +287,7 @@ function renderApp(data) {
                 + ' data-drag-sid="' + _escHtml(sid) + '"'
                 + ' ontouchstart="onDragHandleTouch(event,this)">≡</span>';
             }
-            listHtml += '<span class="ios-cell-label">' + subDisplayName;
+            listHtml += '<span class="ios-cell-label' + (isNotTaken ? ' ios-cell-label--muted' : '') + '">' + subDisplayName;
             if (sid === 'OTHER') {
               listHtml += '<input type="hidden" id="rn_' + dk + '_OTHER" value="' + _escHtml(sub.raw_subject_name || '') + '">';
               listHtml += '<input type="hidden" id="gn_' + dk + '_OTHER" value="' + _escHtml(sub.genre_name || '') + '">';
@@ -292,12 +305,12 @@ function renderApp(data) {
                 + '<input type="checkbox" id="nt_' + dk + '_' + sid + '"'
                 + (isNotTaken ? ' checked' : '')
                 + ' onchange="toggleNotTaken(\'' + dk + '\',\'' + sid + '\',this.checked)">'
-                + ' <span>未受験</span></label>';
+                + ' <span>未実施・未受験</span></label>';
             }
             listHtml += '</div>';
 
             if (isExcluded) {
-              listHtml += '<div class="ios-cell-inputs"><span class="badge-excluded" style="grid-column:span 3;">未実施</span></div>';
+              listHtml += '<div class="ios-cell-inputs"><span class="badge-excluded" style="grid-column:span 4;">未実施</span></div>';
             } else {
               listHtml += '<div class="ios-cell-inputs">';
               listHtml += '<label class="ios-input-wrap"><span>点数</span>'
@@ -317,6 +330,12 @@ function renderApp(data) {
                 + ' id="cr_' + dk + '_' + sid + '" value="' + crVal + '"'
                 + ' placeholder="順位" maxlength="4"'
                 + ' oninput="this.value=this.value.replace(/[^0-9]/g,\'\');_cacheInput(this)"'
+                + disabledAttr + '></label>';
+              listHtml += '<label class="ios-input-wrap ios-input-avg"><span>学年平均</span>'
+                + '<input type="text" inputmode="decimal" class="avg-input"'
+                + ' id="ga_' + dk + '_' + sid + '" value="' + gaVal + '"'
+                + ' placeholder="平均" maxlength="5"'
+                + ' oninput="this.value=this.value.replace(/[^0-9.]/g,\'\');_cacheInput(this)"'
                 + disabledAttr + '></label>';
               listHtml += '</div>';
             }
@@ -395,6 +414,7 @@ function renderApp(data) {
 
   _renderAnnouncementPanel(data.announcements || []);
   _updateAnnBadge(data.announcements || []);
+  _updatePhotoNavBadge();
   // お知らせの自動開封は初回ロード時のみ（科目編集などの再レンダーでは開かない）
   if (!isFirstRender) return;
   var annUnreadCount    = _getUnreadCount(data.announcements || []);
@@ -857,7 +877,7 @@ function _subCourseConfirm(subCourse) {
 
 function _captureOriginalValues() {
   _originalValues = {};
-  document.querySelectorAll('.score-input, .rank-input').forEach(function(el) {
+  document.querySelectorAll('.score-input, .rank-input, .avg-input').forEach(function(el) {
     _originalValues[el.id] = el.value;
   });
   document.querySelectorAll('[id^="nt_"]').forEach(function(el) {
@@ -867,7 +887,7 @@ function _captureOriginalValues() {
 
 function _refreshDirtyState() {
   var dirty = false;
-  var inputs = document.querySelectorAll('.score-input, .rank-input');
+  var inputs = document.querySelectorAll('.score-input, .rank-input, .avg-input');
   for (var i = 0; i < inputs.length; i++) {
     if (_originalValues.hasOwnProperty(inputs[i].id) && inputs[i].value !== _originalValues[inputs[i].id]) {
       dirty = true; break;
@@ -903,11 +923,16 @@ function toggleNotTaken(displayKey, subjectId, isChecked) {
   var scoreEl = document.getElementById('s_'  + displayKey + '_' + subjectId);
   var grEl    = document.getElementById('gr_' + displayKey + '_' + subjectId);
   var crEl    = document.getElementById('cr_' + displayKey + '_' + subjectId);
-  [scoreEl, grEl, crEl].forEach(function(el) {
+  var gaEl    = document.getElementById('ga_' + displayKey + '_' + subjectId);
+  [scoreEl, grEl, crEl, gaEl].forEach(function(el) {
     if (!el) return;
     el.disabled      = isChecked;
     el.style.opacity = isChecked ? '0.4' : '';
   });
+  var ntEl    = document.getElementById('nt_' + displayKey + '_' + subjectId);
+  var cellEl  = ntEl ? ntEl.closest('.ios-cell') : null;
+  var labelEl = cellEl ? cellEl.querySelector('.ios-cell-label') : null;
+  if (labelEl) labelEl.classList.toggle('ios-cell-label--muted', isChecked);
   _refreshDirtyState();
 }
 
@@ -926,6 +951,7 @@ function _initBottomNavScroll() {
   var main = document.getElementById('subject-list');
   var nav  = document.getElementById('bottom-nav');
   if (!main || !nav) return;
+  document.documentElement.style.setProperty('--bnav-h', nav.getBoundingClientRect().height + 'px');
   var lastY = 0;
   main.addEventListener('scroll', function() {
     var y = main.scrollTop;
@@ -937,7 +963,6 @@ function _initBottomNavScroll() {
     }
     var bar = document.getElementById('dirty-bar');
     if (bar) {
-      bar.style.bottom = '';
       bar.classList.toggle('dirty-bar--nav-hidden', goingDown);
     }
     lastY = y;
