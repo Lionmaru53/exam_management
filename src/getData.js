@@ -1,12 +1,12 @@
 const LIFF_ACCESS_LOG_SHEET = 'liff_access_log';
 
-function _writeLiffLog(parentSS, lineUserId, result, studentId, cramId, studentName) {
+function _writeLiffLog(parentSS, lineUserId, result, studentId, cramId, studentName, channelId, lineDisplayName) {
   try {
     let sheet = parentSS.getSheetByName(LIFF_ACCESS_LOG_SHEET);
     if (!sheet) {
       sheet = parentSS.insertSheet(LIFF_ACCESS_LOG_SHEET);
-      sheet.getRange(1, 1, 1, 6).setValues([[
-        'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name'
+      sheet.getRange(1, 1, 1, 8).setValues([[
+        'timestamp', 'line_user_id', 'result', 'student_id', 'cram_id', 'student_name', 'channel_id', 'line_display_name'
       ]]);
     }
     sheet.appendRow([
@@ -15,7 +15,9 @@ function _writeLiffLog(parentSS, lineUserId, result, studentId, cramId, studentN
       String(result || ''),
       String(studentId || ''),
       String(cramId || ''),
-      String(studentName || '')
+      String(studentName || ''),
+      String(channelId || ''),
+      String(lineDisplayName || '')
     ]);
   } catch (e) {
     console.warn('liff_access_log 書き込み失敗:', e.message);
@@ -33,14 +35,14 @@ function _writeLiffLog(parentSS, lineUserId, result, studentId, cramId, studentN
  * 子 SS から読むもの: students_master / exam_patterns / exam_schedule /
  *                     pattern_subjects / scores_data / school_course_master
  */
-function getInitialData(lineUserId) {
+function getInitialData(lineUserId, channelId, lineDisplayName, parentSS) {
   try {
-    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+    if (!parentSS) parentSS = SpreadsheetApp.getActiveSpreadsheet();
 
     // 1. student_index で line_user_id → cram_id を解決
     const idxSheet = parentSS.getSheetByName('student_index');
     if (!idxSheet) {
-      _writeLiffLog(parentSS, lineUserId, '生徒未登録_1');
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_1', '', '', '', channelId, lineDisplayName);
       return { error: 'システムエラーが発生しました。管理者にお問い合わせください。', errorCode: 'SYSTEM_ERROR' };
     }
 
@@ -49,13 +51,13 @@ function getInitialData(lineUserId) {
       String(r.line_user_id || '').trim() === String(lineUserId).trim()
     );
     if (!idxEntry) {
-      _writeLiffLog(parentSS, lineUserId, '生徒未登録_2');
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_2', '', '', '', channelId, lineDisplayName);
       return { error: 'このLINEアカウントは登録されていません。', errorCode: 'NOT_LINKED' };
     }
 
     const cramId = String(idxEntry.cram_id || '').trim();
     if (!cramId) {
-      _writeLiffLog(parentSS, lineUserId, '生徒未登録_3');
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_3', '', '', '', channelId, lineDisplayName);
       return { error: '校舎情報が設定されていません。管理者にお問い合わせください。', errorCode: 'NO_BRANCH' };
     }
 
@@ -70,7 +72,7 @@ function getInitialData(lineUserId) {
       String(row.student_id || '').trim() === studentId
     );
     if (!studentRaw) {
-      _writeLiffLog(parentSS, lineUserId, '生徒未登録_4', '', cramId);
+      _writeLiffLog(parentSS, lineUserId, '生徒未登録_4', '', cramId, '', channelId, lineDisplayName);
       return { error: '生徒情報が見つかりません。管理者にお問い合わせください。', errorCode: 'STUDENT_NOT_FOUND' };
     }
 
@@ -263,7 +265,7 @@ function getInitialData(lineUserId) {
     // パターンがある（教科が表示できる）タブを優先して選択
     const currentExam = examTabs.find(t => t.hasPattern) || examTabs[0] || null;
 
-    _writeLiffLog(parentSS, lineUserId, 'success', student.student_id, cramId, student.name);
+    _writeLiffLog(parentSS, lineUserId, 'success', student.student_id, cramId, student.name, channelId, lineDisplayName);
 
     // 未設定項目のチェック（コース未設定が優先）
     const grade       = String(student.grade        || '').trim();
@@ -327,9 +329,7 @@ function getInitialData(lineUserId) {
     });
 
   } catch (e) {
-    try {
-      _writeLiffLog(SpreadsheetApp.getActiveSpreadsheet(), lineUserId, 'error: ' + e.message);
-    } catch (_) {}
+    _writeLiffLog(parentSS, lineUserId, 'error: ' + e.message, '', '', '', channelId, lineDisplayName);
     return { error: 'GAS実行エラー: ' + e.toString() };
   }
 }
@@ -402,4 +402,4 @@ function getSubjectsForEdit(studentId, patternId) {
   }
 }
 
-if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData, getSubjectsForEdit });
+if (typeof module !== 'undefined') Object.assign(global, { stringifyDates, getInitialData, getSubjectsForEdit, _writeLiffLog });

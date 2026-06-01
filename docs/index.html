@@ -71,8 +71,14 @@
 
       // ログイン済み（LINE アプリ内 / LIFF URL 経由の外部ブラウザ、どちらも共通）
       document.getElementById('msg').textContent = 'データを読み込み中...';
-      var profile = await liff.getProfile();
-      window.location.href = GAS_URL + '?userId=' + encodeURIComponent(profile.userId);
+      var profile   = await liff.getProfile();
+      var idToken   = liff.getIDToken();
+      var channelId = LIFF_ID.split('-')[0];
+      window.location.href = GAS_URL
+        + '?userId='       + encodeURIComponent(profile.userId)
+        + '&idToken='      + encodeURIComponent(idToken)
+        + '&channelId='    + encodeURIComponent(channelId)
+        + '&displayName='  + encodeURIComponent(profile.displayName || '');
 
     } catch (err) {
       showError('エラー: ' + err.message);

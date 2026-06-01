@@ -131,7 +131,7 @@ function _dbRenderLogTable(accesses) {
   html += '<div style="overflow-x:auto;">';
   html += '<table class="db-table">';
   html += '<thead><tr>';
-  html += '<th>日時</th><th>生徒名</th><th>校舎</th><th>結果</th>';
+  html += '<th>日時</th><th>生徒名(SS)</th><th>LINEニックネーム</th><th>校舎</th><th>結果</th>';
   html += '</tr></thead><tbody>';
 
   accesses.forEach(function(row) {
@@ -141,6 +141,7 @@ function _dbRenderLogTable(accesses) {
     html += '<tr>';
     html += '<td style="white-space:nowrap;">' + (row.timestamp || '') + '</td>';
     html += '<td>' + (row.student_name || '—') + '</td>';
+    html += '<td>' + (row.line_display_name || '—') + '</td>';
     html += '<td>' + branchLabel + '</td>';
     html += '<td class="' + resClass + '">' + (row.result || '') + '</td>';
     html += '</tr>';

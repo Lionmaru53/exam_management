@@ -32,6 +32,10 @@ global.DriveApp = {
   getFolderById:  jest.fn(),
 };
 
+global.UrlFetchApp = {
+  fetch: jest.fn(),
+};
+
 global.PropertiesService = {
   getScriptProperties: jest.fn(() => ({
     getProperty: jest.fn(() => null),
@@ -50,3 +54,4 @@ require(path.join(SRC, 'admin_getData.js'));  // getAdminInitialData, getStudent
 require(path.join(SRC, 'admin_save_students.js'));
 require(path.join(SRC, 'admin_save_exams.js'));
 require(path.join(SRC, 'upload_handler.js'));
+require(path.join(SRC, 'main.js'));            // _verifyLineIdToken 等

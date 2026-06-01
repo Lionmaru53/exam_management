@@ -54,8 +54,25 @@ function doGet(e) {
 
   // 生徒アプリ：GitHub Pages で userId 取得後リダイレクトされてくる
   if (params.userId) {
+    // parentSS を先頭で一度だけ取得し、認証失敗・成功の両パスで共有する
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
+
+    // idToken がない、または検証失敗は認証エラー
+    if (!params.idToken || !_verifyLineIdToken(params.idToken, params.userId, params.channelId)) {
+      _writeLiffLog(
+        parentSS,
+        params.userId    || '',
+        'auth_failed',
+        '', '', '',
+        params.channelId   || '',
+        params.displayName || ''
+      );
+      return HtmlService.createHtmlOutput(
+        '<p style="font-family:sans-serif;padding:24px;text-align:center;">認証に失敗しました。LINEアプリから再度アクセスしてください。</p>'
+      ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
     try {
-      const data = getInitialData(params.userId);
+      const data = getInitialData(params.userId, params.channelId, params.displayName, parentSS);
       const tmpl = HtmlService.createTemplateFromFile('index_app');
       // </script> を壊す < > を split/join でエスケープ（regex を使わない）
       tmpl.appData    = JSON.stringify(data).split('<').join('\\u003c').split('>').join('\\u003e');
@@ -89,23 +106,51 @@ function doGet(e) {
   .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function doPost(e) {
+function doPost(_e) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ success: false, error: 'unknown action' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * LINE idToken を LINE Platform API で検証する。
+ * channelId がホワイトリスト（LINE_CHANNEL_IDS）に含まれる場合のみ検証を実行し、
+ * sub が expectedUserId と一致するか確認する。
+ * GAS Script Property に LINE_CHANNEL_IDS（JSON配列文字列）が設定されている必要がある。
+ */
+function _verifyLineIdToken(idToken, expectedUserId, channelId) {
+  if (!channelId) {
+    Logger.log('[_verifyLineIdToken] channelId が未指定');
+    return false;
+  }
+  const raw = PropertiesService.getScriptProperties().getProperty('LINE_CHANNEL_IDS');
+  if (!raw) {
+    Logger.log('[_verifyLineIdToken] LINE_CHANNEL_IDS が未設定');
+    return false;
+  }
+  let allowedIds;
   try {
-    const body   = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    const action = body.action;
-    let result;
-    if (action === 'uploadFile') {
-      result = _uploadFileToDrive(body.payload);
-    } else {
-      result = { success: false, error: 'unknown action' };
-    }
-    return ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    allowedIds = JSON.parse(raw);
+  } catch (_) {
+    Logger.log('[_verifyLineIdToken] LINE_CHANNEL_IDS のパースエラー');
+    return false;
+  }
+  if (!Array.isArray(allowedIds) || !allowedIds.includes(String(channelId))) {
+    Logger.log('[_verifyLineIdToken] channelId がホワイトリスト外: ' + channelId);
+    return false;
+  }
+  try {
+    const res = UrlFetchApp.fetch('https://api.line.me/oauth2/v2.1/verify', {
+      method: 'post',
+      payload: { id_token: idToken, client_id: String(channelId) },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() !== 200) return false;
+    const json = JSON.parse(res.getContentText());
+    return String(json.sub || '') === String(expectedUserId || '');
+  } catch (e) {
+    Logger.log('[_verifyLineIdToken] エラー: ' + e.message);
+    return false;
   }
 }
 
@@ -248,3 +293,7 @@ function jsonpOrJson(jsonStr, callback) {
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
+
+if (typeof module !== 'undefined') Object.assign(global, {
+  _verifyLineIdToken,
+});
