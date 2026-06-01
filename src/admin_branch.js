@@ -127,67 +127,94 @@ function updateBranch(payload) {
 }
 
 /**
- * 校舎の子 SS を新規作成し、必要なシートを初期化する。
- * branches シートの spreadsheet_id を自動更新する。
- * @param {string} cramId
+ * すべての子 SS にスキーマを適用する。スキーマ変更があった際に GAS エディタから手動実行する。
+ * - spreadsheet_id が空の校舎 → 子 SS を新規作成（親 SS と同じフォルダに配置）
+ * - spreadsheet_id が設定済みの校舎 → reconcileChildSchemas() でスキーマ最新化
+ * master 権限が必要。
+ * @returns {{ success: boolean, created: number, reconciled: number, failed: number, results: object[] }}
  */
-function setupBranchSS(cramId) {
-  const lock = LockService.getScriptLock();
+function setupBranchSS() {
   try {
-    lock.waitLock(15000);
     const ctx = getAdminContext();
     if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
 
-    const parentSS    = SpreadsheetApp.getActiveSpreadsheet();
+    const parentSS = SpreadsheetApp.getActiveSpreadsheet();
     _ensureBranchesSheet(parentSS);
     const branchSheet = parentSS.getSheetByName(BRANCHES_SHEET);
 
-    const rows   = getRowsData(branchSheet);
-    const branch = rows.find(r => String(r.cram_id || '').trim() === String(cramId).trim());
-    if (!branch) return { success: false, error: `cram_id "${cramId}" が見つかりません。先に「＋ 校舎を追加」で校舎を登録してください。` };
+    const rows = getRowsData(branchSheet);
+    const results = [];
+    let created = 0;
+    let reconciled = 0;
+    let failed = 0;
 
-    if (branch.spreadsheet_id && String(branch.spreadsheet_id).trim()) {
-      return { success: false, error: '既に子 SS が設定されています。上書きする場合は編集ボタンから spreadsheet_id を変更してください。' };
-    }
+    rows.forEach(function(branch) {
+      const cramId = String(branch.cram_id || '').trim();
+      if (!cramId) return;
 
-    // 子 SS を新規作成（親 SS と同じフォルダに配置）
-    const branchName   = String(branch.branch_name || cramId).trim();
-    const childSS      = SpreadsheetApp.create(`[子SS] ${cramId}_${branchName}`);
-    const childSSId    = childSS.getId();
-    const parentFolder = DriveApp.getFileById(parentSS.getId()).getParents().next();
-    DriveApp.getFileById(childSSId).moveTo(parentFolder);
-
-    // config シート（デフォルトシートを改名して使用）
-    const configSheet = childSS.getActiveSheet();
-    configSheet.setName('config');
-    configSheet.getRange(1, 1, 3, 2).setValues([
-      ['CRAM_ID',      cramId],
-      ['PARENT_SS_ID', parentSS.getId()],
-      ['BRANCH_NAME',  branchName]
-    ]);
-
-    // 業務データシートを作成
-    _createChildSheets(childSS);
-
-    // branches シートの spreadsheet_id を更新
-    const data      = branchSheet.getDataRange().getValues();
-    const headers   = data[0];
-    const cramIdCol = headers.indexOf('cram_id') + 1;
-    const ssIdCol   = headers.indexOf('spreadsheet_id') + 1;
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][cramIdCol - 1] || '').trim() === String(cramId).trim()) {
-        branchSheet.getRange(i + 1, ssIdCol).setValue(childSSId);
-        break;
+      try {
+        if (!branch.spreadsheet_id || !String(branch.spreadsheet_id).trim()) {
+          const result = _createBranchSS(parentSS, branchSheet, branch);
+          results.push(Object.assign({ cram_id: cramId, action: 'created' }, result));
+          writeAuditLog(ctx, 'setup_branch_ss', { cram_id: cramId, spreadsheet_id: result.spreadsheet_id }, 'success');
+          created++;
+        } else {
+          const result = reconcileChildSchemas(cramId);
+          results.push(Object.assign({ cram_id: cramId, action: 'reconciled' }, result));
+          reconciled++;
+        }
+      } catch (e) {
+        results.push({ cram_id: cramId, action: 'failed', error: e.message });
+        failed++;
+        Logger.log('[setupBranchSS] 失敗: ' + cramId + ' → ' + e.message);
       }
-    }
+    });
 
-    writeAuditLog(ctx, 'setup_branch_ss', { cram_id: cramId, spreadsheet_id: childSSId }, 'success');
-    return { success: true, spreadsheet_id: childSSId, url: childSS.getUrl(), sharedEmails: [] };
+    Logger.log('[setupBranchSS] 完了: 新規=' + created + ' reconcile=' + reconciled + ' 失敗=' + failed);
+    return { success: true, created, reconciled, failed, results };
   } catch (e) {
     return { success: false, error: e.message };
-  } finally {
-    lock.releaseLock();
   }
+}
+
+/**
+ * cramId に対応する子 SS を新規作成し、branches シートの spreadsheet_id を更新する。
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} parentSS
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} branchSheet
+ * @param {object} branch - branches シートの行オブジェクト
+ * @returns {{ success: boolean, spreadsheet_id: string, url: string }}
+ */
+function _createBranchSS(parentSS, branchSheet, branch) {
+  const cramId     = String(branch.cram_id).trim();
+  const branchName = String(branch.branch_name || cramId).trim();
+
+  const childSS      = SpreadsheetApp.create(`[子SS] ${cramId}_${branchName}`);
+  const childSSId    = childSS.getId();
+  const parentFolder = DriveApp.getFileById(parentSS.getId()).getParents().next();
+  DriveApp.getFileById(childSSId).moveTo(parentFolder);
+
+  const configSheet = childSS.getActiveSheet();
+  configSheet.setName('config');
+  configSheet.getRange(1, 1, 3, 2).setValues([
+    ['CRAM_ID',      cramId],
+    ['PARENT_SS_ID', parentSS.getId()],
+    ['BRANCH_NAME',  branchName],
+  ]);
+
+  _createChildSheets(childSS);
+
+  const data      = branchSheet.getDataRange().getValues();
+  const headers   = data[0];
+  const cramIdCol = headers.indexOf('cram_id') + 1;
+  const ssIdCol   = headers.indexOf('spreadsheet_id') + 1;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][cramIdCol - 1] || '').trim() === cramId) {
+      branchSheet.getRange(i + 1, ssIdCol).setValue(childSSId);
+      break;
+    }
+  }
+
+  return { success: true, spreadsheet_id: childSSId, url: childSS.getUrl() };
 }
 
 /**
@@ -260,84 +287,6 @@ function reconcileChildSchemas(cramId) {
 }
 
 /**
- * 子 SS のスキーマを現在の仕様（spreadsheet-schema.md）に一括移行する。
- * - exam_patterns: term_test_id 列を追加
- * - scores_data: raw_subject_name / genre_name をレガシー列として削除
- * - students_master: line_user_id があれば削除
- * - school_course_master: is_two_terms があれば削除
- * - exam_schedule シートはコードから未参照だが削除しない（ログで警告）
- * master 権限が必要。GAS エディタまたは管理画面から実行。
- * @param {string} cramId
- * @returns {{ success: boolean, results: object, warnings: string[] }}
- */
-function migrateToCurrentSchema(cramId) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-    const ctx = getAdminContext();
-    if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
-
-    const warnings = [];
-
-    // exam_schedule は廃止済みだがシート削除は手動対応
-    const childSS = getChildSS(cramId);
-    if (childSS.getSheetByName('exam_schedule')) {
-      warnings.push('exam_schedule シートが残っています。確認後、手動で削除してください。');
-      Logger.log('[migrateToCurrentSchema] WARNING: exam_schedule シートが残存しています。');
-    }
-
-    const reconcileResult = reconcileChildSchemas(cramId);
-    if (!reconcileResult.success) return reconcileResult;
-
-    writeAuditLog(ctx, 'migrate_to_current_schema', { cram_id: cramId }, 'success');
-    return { success: true, results: reconcileResult.results, warnings };
-  } catch (e) {
-    return { success: false, error: e.message };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/**
- * spreadsheet_id が設定済みのすべての子 SS に migrateToCurrentSchema を適用する。
- * master 権限が必要。GAS エディタから手動実行する。
- * @returns {{ success: boolean, total: number, succeeded: number, failed: number, details: object[] }}
- */
-function migrateAllChildSchemas() {
-  try {
-    const ctx = getAdminContext();
-    if (ctx.role !== 'master') return { success: false, error: '権限がありません' };
-
-    const sheet    = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BRANCHES_SHEET);
-    if (!sheet) return { success: false, error: 'branches シートが見つかりません' };
-
-    const branches = getRowsData(sheet).filter(r => String(r.spreadsheet_id || '').trim());
-    const details  = [];
-    let succeeded  = 0;
-    let failed     = 0;
-
-    branches.forEach(function(branch) {
-      const cramId = String(branch.cram_id || '').trim();
-      Logger.log('[migrateAllChildSchemas] 処理中: ' + cramId);
-      const result = migrateToCurrentSchema(cramId);
-      if (result.success) {
-        succeeded++;
-      } else {
-        failed++;
-        Logger.log('[migrateAllChildSchemas] 失敗: ' + cramId + ' → ' + result.error);
-      }
-      details.push({ cram_id: cramId, ...result });
-    });
-
-    writeAuditLog(ctx, 'migrate_all_child_schemas', { total: branches.length, succeeded, failed }, 'success');
-    Logger.log('[migrateAllChildSchemas] 完了: ' + succeeded + '/' + branches.length + ' 成功');
-    return { success: true, total: branches.length, succeeded, failed, details };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
  * cramId から対象子 SS を取得するヘルパー。
  * master は cramId を明示、branch_admin は adminContext.cram_id を使用。
  */
@@ -365,6 +314,6 @@ function _ensureBranchesSheet(ss) {
 if (typeof module !== 'undefined') Object.assign(global, {
   BRANCHES_SHEET, _CHILD_SHEET_DEFS,
   getChildSS, getBranches, addBranch, updateBranch, setupBranchSS,
-  _ensureBranchesSheet, _getTargetSS, _createChildSheets,
-  reconcileChildSchemas, migrateToCurrentSchema, migrateAllChildSchemas,
+  _ensureBranchesSheet, _getTargetSS, _createChildSheets, _createBranchSS,
+  reconcileChildSchemas,
 });

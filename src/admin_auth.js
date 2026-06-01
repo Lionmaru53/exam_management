@@ -146,9 +146,9 @@ function writeAuditLog(adminContext, action, detail, result) {
 }
 
 /**
- * admin_users / audit_log / liff_access_log / branches シートを親 SS に準備する。
- * 既存シートが存在する場合はスキーマを reconcile する（列の追加・削除・余剰列トリム）。
- * GAS エディタから手動実行する。
+ * 親 SS の全シート（admin_users / audit_log / liff_access_log / branches / マスター各種）を
+ * 期待スキーマに reconcile する。スキーマ変更があった際に GAS エディタから手動実行する。
+ * 既存シートが存在する場合は列の追加・削除・余剰列トリムを行い、なければ新規作成する。
  */
 function setupAdminSS() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();

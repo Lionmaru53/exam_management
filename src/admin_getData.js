@@ -711,11 +711,40 @@ function getAdminScores(targetCramId, termTestId, year) {
       // upload_history シートがない場合は無視
     }
 
+    // school_averages シートから当該 term_test_id の学校平均を取得
+    var schoolAverages = [];
+    try {
+      const avgSheet = childSS.getSheetByName('school_averages');
+      if (avgSheet && avgSheet.getLastRow() > 1) {
+        schoolAverages = getRowsData(avgSheet)
+          .filter(function(r) {
+            return String(r.term_test_id || '').trim() === termTestId
+              && (!yearFilter || String(r.year || '').trim() === yearFilter);
+          })
+          .map(function(r) {
+            return {
+              school_name:   String(r.school_name   || '').trim(),
+              school_course: String(r.school_course || '').trim(),
+              grade:         String(r.grade         || '').trim(),
+              sub_course:    String(r.sub_course    || '').trim(),
+              term_test_id:  String(r.term_test_id  || '').trim(),
+              year:          String(r.year          || '').trim(),
+              subject_id:    String(r.subject_id    || '').trim(),
+              grade_avg:     r.grade_avg != null && r.grade_avg !== '' ? Number(r.grade_avg) : null,
+              updated_at:    String(r.updated_at || ''),
+            };
+          });
+      }
+    } catch (_avgErr) {
+      // school_averages シートがない場合は無視
+    }
+
     return {
       success: true,
       scores,
       students,
       uploads,
+      schoolAverages,
       termTestId,
       year: yearFilter,
     };
@@ -874,410 +903,6 @@ function createAdminScore(payload) {
   } finally {
     lock.releaseLock();
   }
-}
-
-/**
- * 【使い捨てマイグレーション関数】
- * 本番の全校舎の scores_data に term_test_id 列を追加し、
- * exam_schedule との結合で値を埋める。
- * 実行後に確認が取れたら、この関数ごと削除する。
- */
-function migrateScoresAddTermTestId() {
-  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches');
-  if (!branchSheet) throw new Error('branches が見つかりません');
-
-  const branches = getRowsData(branchSheet).filter(b =>
-    b.is_active === true || String(b.is_active) === '1'
-  );
-  const results = [];
-
-  branches.forEach(function (branch) {
-    const cramId = String(branch.cram_id || '').trim();
-    if (!cramId) return;
-    try {
-      const ss          = getChildSS(cramId);
-      const scoresSheet = ss.getSheetByName('scores_data');
-      const schedSheet  = ss.getSheetByName('exam_schedule');
-      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
-
-      const data    = scoresSheet.getDataRange().getValues();
-      const headers = data[0].map(function (h) { return String(h).trim(); });
-
-      // term_test_id 列がなければ末尾に追加
-      let ttCol = headers.indexOf('term_test_id');
-      if (ttCol < 0) {
-        scoresSheet.getRange(1, headers.length + 1).setValue('term_test_id');
-        ttCol = headers.length;
-        headers.push('term_test_id');
-      }
-
-      // exam_schedule から examId → termTestId マップを構築
-      const examToTermTest = {};
-      if (schedSheet) {
-        getRowsData(schedSheet).forEach(function (r) {
-          const eid  = String(r.exam_id      || '').trim();
-          const ttid = String(r.term_test_id || '').trim();
-          if (eid && ttid) examToTermTest[eid] = ttid;
-        });
-      }
-
-      const examIdCol = headers.indexOf('exam_id');
-      let updated = 0;
-      for (let i = 1; i < data.length; i++) {
-        const existing = String(data[i][ttCol] || '').trim();
-        if (existing) continue; // すでに入力済みはスキップ
-        const eid  = examIdCol >= 0 ? String(data[i][examIdCol] || '').trim() : '';
-        const ttid = examToTermTest[eid];
-        if (ttid) {
-          scoresSheet.getRange(i + 1, ttCol + 1).setValue(ttid);
-          updated++;
-        }
-      }
-      results.push(cramId + ': ' + updated + '行更新');
-    } catch (e) {
-      results.push(cramId + ': ERROR ' + e.message);
-    }
-  });
-
-  Logger.log(results.join('\n'));
-  return results;
-}
-
-/**
- * 【使い捨てマイグレーション関数】
- * 本番の全校舎の scores_data に grade 列を追加し、
- * students_master の現在学年で埋める（在校生は正確、卒業生は近似値）。
- * 実行後に確認が取れたら、この関数ごと削除する。
- */
-function migrateScoresAddGrade() {
-  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches');
-  if (!branchSheet) throw new Error('branches が見つかりません');
-
-  const branches = getRowsData(branchSheet).filter(b =>
-    b.is_active === true || String(b.is_active) === '1'
-  );
-  const results = [];
-
-  branches.forEach(function (branch) {
-    const cramId = String(branch.cram_id || '').trim();
-    if (!cramId) return;
-    try {
-      const ss          = getChildSS(cramId);
-      const scoresSheet = ss.getSheetByName('scores_data');
-      const stuSheet    = ss.getSheetByName('students_master');
-      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
-
-      const data    = scoresSheet.getDataRange().getValues();
-      const headers = data[0].map(function (h) { return String(h).trim(); });
-
-      // grade 列がなければ末尾に追加
-      let grCol = headers.indexOf('grade');
-      if (grCol < 0) {
-        scoresSheet.getRange(1, headers.length + 1).setValue('grade');
-        grCol = headers.length;
-        headers.push('grade');
-      }
-
-      // students_master から studentId → grade マップを構築
-      const studentGradeMap = {};
-      if (stuSheet) {
-        const stuData    = stuSheet.getDataRange().getValues();
-        const stuHeaders = stuData[0].map(function (h) { return String(h).trim(); });
-        const stuSidCol  = stuHeaders.indexOf('student_id');
-        const stuGrCol   = stuHeaders.indexOf('grade');
-        if (stuSidCol >= 0 && stuGrCol >= 0) {
-          for (let i = 1; i < stuData.length; i++) {
-            const sid = String(stuData[i][stuSidCol] || '').trim();
-            if (sid) studentGradeMap[sid] = String(stuData[i][stuGrCol] || '').trim();
-          }
-        }
-      }
-
-      const sidCol = headers.indexOf('student_id');
-      let updated = 0;
-      for (let i = 1; i < data.length; i++) {
-        const existing = String(data[i][grCol] || '').trim();
-        if (existing) continue; // すでに入力済みはスキップ
-        const sid   = sidCol >= 0 ? String(data[i][sidCol] || '').trim() : '';
-        const grade = studentGradeMap[sid];
-        if (grade) {
-          scoresSheet.getRange(i + 1, grCol + 1).setValue(grade);
-          updated++;
-        }
-      }
-      results.push(cramId + ': ' + updated + '行更新');
-    } catch (e) {
-      results.push(cramId + ': ERROR ' + e.message);
-    }
-  });
-
-  Logger.log(results.join('\n'));
-  return results;
-}
-
-/**
- * 【使い捨てマイグレーション関数】
- * 本番の全校舎の scores_data に year 列を追加し、
- * update_at から学年暦年度を計算して埋める（既存データの近似値）。
- * 実行後に確認が取れたら、この関数ごと削除する。
- */
-function migrateScoresAddYear() {
-  function _academicYear(val) {
-    const d = val instanceof Date ? val : new Date(val);
-    if (isNaN(d)) return '';
-    return String(d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1);
-  }
-
-  const parentSS = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches');
-  if (!branchSheet) throw new Error('branches が見つかりません');
-
-  const branches = getRowsData(branchSheet).filter(function (b) {
-    return b.is_active === true || String(b.is_active) === '1';
-  });
-  const results = [];
-
-  branches.forEach(function (branch) {
-    const cramId = String(branch.cram_id || '').trim();
-    if (!cramId) return;
-    try {
-      const ss          = getChildSS(cramId);
-      const scoresSheet = ss.getSheetByName('scores_data');
-      if (!scoresSheet) { results.push(cramId + ': scores_data なし'); return; }
-
-      const data    = scoresSheet.getDataRange().getValues();
-      const headers = data[0].map(function (h) { return String(h).trim(); });
-
-      // year 列がなければ末尾に追加
-      let yearCol = headers.indexOf('year');
-      if (yearCol < 0) {
-        scoresSheet.getRange(1, headers.length + 1).setValue('year');
-        yearCol = headers.length;
-        headers.push('year');
-      }
-
-      const updateAtCol = headers.indexOf('update_at');
-      let updated = 0;
-      for (let i = 1; i < data.length; i++) {
-        const existing = String(data[i][yearCol] || '').trim();
-        if (existing) continue; // すでに入力済みはスキップ
-        const yr = updateAtCol >= 0 ? _academicYear(data[i][updateAtCol]) : '';
-        if (yr) {
-          scoresSheet.getRange(i + 1, yearCol + 1).setValue(yr);
-          updated++;
-        }
-      }
-      results.push(cramId + ': ' + updated + '行更新');
-    } catch (e) {
-      results.push(cramId + ': ERROR ' + e.message);
-    }
-  });
-
-  Logger.log(results.join('\n'));
-  return results;
-}
-
-/**
- * 全アクティブ校舎の child SS に対して school_course 名の揺らぎを解消するマイグレーション。
- * a. school_course_master: 正規化後が同じ行を重複削除（正規化名の行を残す）
- * b. exam_patterns: 正規化後のキーが重複する行を union merge（pattern_subjects を統合）し余分な行を削除
- * c. students_master: school_course 列を正規化名に一括更新
- * 実行後に確認が取れたら、この関数ごと削除する。
- */
-function migrateNormalizeCourseNames() {
-  const parentSS    = SpreadsheetApp.getActiveSpreadsheet();
-  const branchSheet = parentSS.getSheetByName('branches');
-  if (!branchSheet) { Logger.log('branches シートが見つかりません'); return; }
-
-  const branchRows = getRowsData(branchSheet).filter(function(b) {
-    return b.is_active === true || String(b.is_active) === '1' || String(b.is_active) === 'true';
-  });
-
-  var results = [];
-
-  branchRows.forEach(function(branch) {
-    var cramId = String(branch.cram_id || '').trim();
-    if (!cramId) return;
-    try {
-      var ss = getChildSS(cramId);
-
-      // ---- a. school_course_master ----
-      var scmSheet = ss.getSheetByName('school_course_master');
-      if (scmSheet) {
-        var scmData    = scmSheet.getDataRange().getValues();
-        var scmHeaders = scmData[0].map(function(h) { return String(h).trim(); });
-        var snCol      = scmHeaders.indexOf('school_name');
-        var ccCol      = scmHeaders.indexOf('school_course');
-        var seen       = {}; // "sn||normalizedCn" → rowIndex (1-based)
-        var toDelete   = []; // 1-based row indices (large first)
-        for (var i = 1; i < scmData.length; i++) {
-          var sn  = String(scmData[i][snCol]  || '').trim();
-          var cn  = String(scmData[i][ccCol]  || '').trim();
-          var ncn = _normalizeCourseName(cn);
-          var key = sn + '||' + ncn;
-          if (seen[key] !== undefined) {
-            // 重複: この行を削除候補にする（正規化名と同じ行は残す、異なる行を削除）
-            if (cn !== ncn) {
-              toDelete.push(i + 1);
-            } else {
-              // 先の行を削除
-              toDelete.push(seen[key]);
-              seen[key] = i + 1;
-            }
-          } else {
-            seen[key] = i + 1;
-            // 正規化が必要なら更新
-            if (cn !== ncn) {
-              scmSheet.getRange(i + 1, ccCol + 1).setValue(ncn);
-              results.push(cramId + ' [scm] updated: ' + cn + ' → ' + ncn);
-            }
-          }
-        }
-        toDelete.sort(function(a, b) { return b - a; });
-        toDelete.forEach(function(r) {
-          var delCn = String(scmSheet.getRange(r, ccCol + 1).getValue());
-          scmSheet.deleteRow(r);
-          results.push(cramId + ' [scm] deleted row ' + r + ' (' + delCn + ')');
-        });
-      }
-
-      // ---- b. exam_patterns ----
-      var epSheet = ss.getSheetByName('exam_patterns');
-      var psSheet = ss.getSheetByName('pattern_subjects');
-      if (epSheet && psSheet) {
-        var epData    = epSheet.getDataRange().getValues();
-        var epHeaders = epData[0].map(function(h) { return String(h).trim(); });
-        var pidCol    = epHeaders.indexOf('pattern_id');
-        var epSnCol   = epHeaders.indexOf('school_name');
-        var epCcCol   = epHeaders.indexOf('school_course');
-        var epGrCol   = epHeaders.indexOf('grade');
-        var epSubCol  = epHeaders.indexOf('sub_course');
-
-        var psData    = psSheet.getDataRange().getValues();
-        var psHeaders = psData[0].map(function(h) { return String(h).trim(); });
-        var psPidCol  = psHeaders.indexOf('pattern_id');
-        var psSidCol  = psHeaders.indexOf('subject_id');
-
-        // pattern_id → subjectIds マップを構築
-        var psMap = {};
-        for (var j = 1; j < psData.length; j++) {
-          var pid = String(psData[j][psPidCol] || '').trim();
-          var sid = String(psData[j][psSidCol] || '').trim();
-          if (!psMap[pid]) psMap[pid] = [];
-          if (sid && psMap[pid].indexOf(sid) < 0) psMap[pid].push(sid);
-        }
-
-        // epData をスキャン: 正規化キーで重複を検出
-        var epSeen      = {}; // key → { rowIdx, patternId }
-        var epToDelete  = []; // { rowIdx, patternId } 削除候補
-        for (var i = 1; i < epData.length; i++) {
-          var sn  = String(epData[i][epSnCol]  || '').trim();
-          var cn  = String(epData[i][epCcCol]  || '').trim();
-          var ncn = _normalizeCourseName(cn);
-          var gr  = String(epData[i][epGrCol]  || '').trim();
-          var sub = String(epData[i][epSubCol] || '').trim();
-          var pid = String(epData[i][pidCol]   || '').trim();
-          var key = sn + '||' + ncn + '||' + gr + '||' + sub;
-          if (epSeen[key] !== undefined) {
-            var keepPid  = epSeen[key].patternId;
-            var dropPid  = pid;
-            // union merge: drop の subjects を keep に追加
-            var dropSids = psMap[dropPid] || [];
-            if (!psMap[keepPid]) psMap[keepPid] = [];
-            dropSids.forEach(function(s) {
-              if (psMap[keepPid].indexOf(s) < 0) psMap[keepPid].push(s);
-            });
-            epToDelete.push({ rowIdx: i + 1, patternId: dropPid });
-            results.push(cramId + ' [ep] merged ' + dropPid + ' → ' + keepPid);
-          } else {
-            epSeen[key] = { rowIdx: i + 1, patternId: pid };
-            // 正規化が必要なら更新
-            if (cn !== ncn) {
-              epSheet.getRange(i + 1, epCcCol + 1).setValue(ncn);
-              results.push(cramId + ' [ep] updated: ' + cn + ' → ' + ncn);
-            }
-          }
-        }
-        // 削除（大きい行番号順）
-        epToDelete.sort(function(a, b) { return b.rowIdx - a.rowIdx; });
-        epToDelete.forEach(function(d) {
-          epSheet.deleteRow(d.rowIdx);
-          results.push(cramId + ' [ep] deleted row ' + d.rowIdx + ' (' + d.patternId + ')');
-        });
-
-        // pattern_subjects を再書き込み（全削除→再登録）
-        var allKeepPids = Object.keys(epSeen).map(function(k) { return epSeen[k].patternId; });
-        var deletePids  = epToDelete.map(function(d) { return d.patternId; });
-        if (deletePids.length > 0) {
-          // 削除された pattern_id の行を pattern_subjects から除去
-          var psData2    = psSheet.getDataRange().getValues();
-          var psHeaders2 = psData2[0].map(function(h) { return String(h).trim(); });
-          var pid2Col    = psHeaders2.indexOf('pattern_id');
-          var toDelPs    = [];
-          for (var j = 1; j < psData2.length; j++) {
-            if (deletePids.indexOf(String(psData2[j][pid2Col] || '').trim()) >= 0) {
-              toDelPs.push(j + 1);
-            }
-          }
-          toDelPs.sort(function(a, b) { return b - a; });
-          toDelPs.forEach(function(r) { psSheet.deleteRow(r); });
-          results.push(cramId + ' [ps] deleted ' + toDelPs.length + ' rows for merged patterns');
-
-          // keep pids の subjects を psMap から再登録
-          var psData3    = psSheet.getDataRange().getValues();
-          var psHeaders3 = psData3[0].map(function(h) { return String(h).trim(); });
-          var pid3Col    = psHeaders3.indexOf('pattern_id');
-          var sid3Col    = psHeaders3.indexOf('subject_id');
-          var existingPs = {};
-          for (var j = 1; j < psData3.length; j++) {
-            var p = String(psData3[j][pid3Col] || '').trim();
-            var s = String(psData3[j][sid3Col] || '').trim();
-            if (!existingPs[p]) existingPs[p] = new Set();
-            existingPs[p].add(s);
-          }
-          var newPsRows = [];
-          allKeepPids.forEach(function(kpid) {
-            var sids = psMap[kpid] || [];
-            sids.forEach(function(s) {
-              if (!existingPs[kpid] || !existingPs[kpid].has(s)) {
-                newPsRows.push([kpid, s]);
-              }
-            });
-          });
-          if (newPsRows.length > 0) {
-            psSheet.getRange(psSheet.getLastRow() + 1, 1, newPsRows.length, 2).setValues(newPsRows);
-            results.push(cramId + ' [ps] added ' + newPsRows.length + ' merged subject rows');
-          }
-        }
-      }
-
-      // ---- c. students_master ----
-      var stSheet = ss.getSheetByName('students_master');
-      if (stSheet) {
-        var stData    = stSheet.getDataRange().getValues();
-        var stHeaders = stData[0].map(function(h) { return String(h).trim(); });
-        var stCcCol   = stHeaders.indexOf('school_course');
-        var updCount  = 0;
-        for (var i = 1; i < stData.length; i++) {
-          var cn  = String(stData[i][stCcCol] || '').trim();
-          var ncn = _normalizeCourseName(cn);
-          if (cn !== ncn) {
-            stSheet.getRange(i + 1, stCcCol + 1).setValue(ncn);
-            updCount++;
-          }
-        }
-        if (updCount > 0) results.push(cramId + ' [st] updated ' + updCount + ' students');
-      }
-
-    } catch (e) {
-      results.push(cramId + ': ERROR ' + e.message);
-    }
-  });
-
-  Logger.log(results.join('\n'));
-  return results;
 }
 
 /**
@@ -1470,10 +1095,6 @@ if (typeof module !== 'undefined') Object.assign(global, {
   addSubject, updateSubject, deleteSubject,
   getAdminScores, updateAdminScore, createAdminScore, changeScoreSubject,
   getAdminAnnouncements, addAnnouncement, updateAnnouncement, deleteAnnouncement,
-  migrateScoresAddTermTestId,
-  migrateScoresAddGrade,
-  migrateScoresAddYear,
-  migrateNormalizeCourseNames,
   getSchoolCoursesFromSettingsSheet,
   _normalizeCourseName,
   _ensureSchoolCourseMasterSheet, upsertSchoolCourse, _autoCreateExamPatterns, _autoCreateAllPatterns,
