@@ -1,5 +1,16 @@
 const BRANCHES_SHEET = 'branches';
 
+/**
+ * スプレッドシートへの書き込み前にフォーミュラインジェクションを防ぐ。
+ * 先頭が = + - @ | で始まる文字列はシングルクォートを付加して数式化を阻止する。
+ * @param {*} val
+ * @returns {string}
+ */
+function _sanitizeCell(val) {
+  var s = String(val == null ? '' : val).trim();
+  return /^[=+\-@|]/.test(s) ? "'" + s : s;
+}
+
 // 子 SS の全シート定義（_createChildSheets / reconcileChildSchemas で共用）
 const _CHILD_SHEET_DEFS = [
   { name: 'school_course_master', headers: ['school_name', 'school_course'] },
@@ -78,7 +89,7 @@ function addBranch(payload) {
       return { success: false, error: `cram_id "${cramId}" は既に登録されています` };
     }
 
-    sheet.appendRow([cramId, payload.branch_name || '', payload.spreadsheet_id || '', true, new Date()]);
+    sheet.appendRow([cramId, _sanitizeCell(payload.branch_name), _sanitizeCell(payload.spreadsheet_id), true, new Date()]);
     writeAuditLog(ctx, 'add_branch', payload, 'success');
     return { success: true };
   } catch (e) {
@@ -315,5 +326,5 @@ if (typeof module !== 'undefined') Object.assign(global, {
   BRANCHES_SHEET, _CHILD_SHEET_DEFS,
   getChildSS, getBranches, addBranch, updateBranch, setupBranchSS,
   _ensureBranchesSheet, _getTargetSS, _createChildSheets, _createBranchSS,
-  reconcileChildSchemas,
+  reconcileChildSchemas, _sanitizeCell,
 });

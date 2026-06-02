@@ -69,7 +69,7 @@ window.renderScoreManager = function () {
       + '<select id="sc-year-sel" class="sc-sel" onchange="_scOnYearChange(this.value)">';
     availableYears.forEach(function (y) {
       var sel = y === _scSelectedYear ? ' selected' : '';
-      toolbarHtml += '<option value="' + _scEsc(y) + '"' + sel + '>' + _scEsc(y) + '年度</option>';
+      toolbarHtml += '<option value="' + _esc(y) + '"' + sel + '>' + _esc(y) + '年度</option>';
     });
     toolbarHtml += '</select>';
   }
@@ -79,7 +79,7 @@ window.renderScoreManager = function () {
     var tid   = String(tt.term_test_id || '').trim();
     var label = String(tt.test_name   || tid);
     var sel   = tid === _scSelectedTermTestId ? ' selected' : '';
-    toolbarHtml += '<option value="' + _scEsc(tid) + '"' + sel + '>' + _scEsc(label) + '</option>';
+    toolbarHtml += '<option value="' + _esc(tid) + '"' + sel + '>' + _esc(label) + '</option>';
   });
   toolbarHtml += '</select>';
   toolbarHtml += '<label class="sc-label">表示：</label>'
@@ -88,7 +88,7 @@ window.renderScoreManager = function () {
     + '<option value="class_rank"' + (_scDisplayMode === 'class_rank' ? ' selected' : '') + '>クラス順位</option>'
     + '<option value="grade_rank"' + (_scDisplayMode === 'grade_rank' ? ' selected' : '') + '>学年順位</option>'
     + '</select>';
-  toolbarHtml += '<input type="search" placeholder="氏名・読み・学校名で検索" value="' + _scEsc(_scSearchQuery) + '"'
+  toolbarHtml += '<input type="search" placeholder="氏名・読み・学校名で検索" value="' + _esc(_scSearchQuery) + '"'
     + ' oncompositionstart="_scComposing=true" oncompositionend="_scComposing=false"'
     + ' oninput="if(!_scComposing)_scOnSearch(this.value)" class="admin-input" style="width:220px;margin-left:4px;">';
   toolbarHtml += '</div>';
@@ -131,7 +131,7 @@ function _scFetchAndRender() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success) {
-        if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _scEsc((res && res.error) || '取得失敗') + '</p>';
+        if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _esc((res && res.error) || '取得失敗') + '</p>';
         return;
       }
       _scScoreData = res;
@@ -144,7 +144,7 @@ function _scFetchAndRender() {
       _scRerender();
     })
     .withFailureHandler(function (err) {
-      if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _scEsc(err && err.message ? err.message : String(err)) + '</p>';
+      if (area) area.innerHTML = '<p class="sc-error-msg">エラー: ' + _esc(err && err.message ? err.message : String(err)) + '</p>';
     })
     .getAdminScores(window.selectedCramId, _scSelectedTermTestId, _scSelectedYear);
 }
@@ -300,8 +300,8 @@ function _scRerender() {
   scLabelList.forEach(function (label) {
     var active = _scFilterSchoolCourses.indexOf(label) >= 0 ? ' sc-slicer-active' : '';
     slicerHtml += '<button class="sc-slicer-chip' + active + '"'
-      + ' onclick="_scToggleSchoolCourse(\'' + _scEscAttr(label) + '\')">'
-      + _scEsc(label) + '</button>';
+      + ' onclick="_scToggleSchoolCourse(\'' + _esc(label) + '\')">'
+      + _esc(label) + '</button>';
   });
   slicerHtml += '</div>';
 
@@ -311,8 +311,8 @@ function _scRerender() {
   gsLabelList.forEach(function (gs) {
     var active = _scFilterGradeSubs.indexOf(gs) >= 0 ? ' sc-slicer-active' : '';
     slicerHtml += '<button class="sc-slicer-chip' + active + '"'
-      + ' onclick="_scToggleGradeSub(\'' + _scEscAttr(gs) + '\')">'
-      + _scEsc(gs) + '</button>';
+      + ' onclick="_scToggleGradeSub(\'' + _esc(gs) + '\')">'
+      + _esc(gs) + '</button>';
   });
   slicerHtml += '</div>';
 
@@ -435,8 +435,8 @@ function _scRerender() {
     var sortKey     = 'score_' + subj.subject_id;
     html += '<th class="sc-th-sort' + orphanClass + '"'
           + ' style="background-color:' + headerBg + '; color:#fff;"'
-          + ' onclick="_scSetSort(\'' + _scEscAttr(sortKey) + '\')">'
-          + _scEsc(subj.displayName) + _scSortIcon(sortKey) + '</th>';
+          + ' onclick="_scSetSort(\'' + _esc(sortKey) + '\')">'
+          + _esc(subj.displayName) + _scSortIcon(sortKey) + '</th>';
   });
   html += '</tr></thead>';
 
@@ -452,10 +452,10 @@ function _scRerender() {
     if (groupStudents.length === 0) return;
     var first = groupStudents[0];
     html += '<tr class="sc-avg-row">';
-    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(_shortSchoolName(first.school_name) || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.school_course || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.grade         || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-avg-fixed">' + _scEsc(first.sub_course    || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _esc(_shortSchoolName(first.school_name) || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _esc(first.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _esc(first.grade         || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-avg-fixed">' + _esc(first.sub_course    || '') + '</td>';
     html += '<td class="sc-td-name sc-avg-label">' + groupStudents.length + '名 平均</td>';
     html += '<td class="sc-td-fixed sc-avg-fixed"></td>';
     unionSubjectList.forEach(function (subj) {
@@ -489,10 +489,10 @@ function _scRerender() {
     });
     if (!hasAny) return;
     html += '<tr class="sc-school-avg-row">';
-    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(_shortSchoolName(first.school_name) || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.school_course || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.grade         || '') + '</td>';
-    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _scEsc(first.sub_course    || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _esc(_shortSchoolName(first.school_name) || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _esc(first.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _esc(first.grade         || '') + '</td>';
+    html += '<td class="sc-td-fixed sc-school-avg-fixed">' + _esc(first.sub_course    || '') + '</td>';
     html += '<td class="sc-td-name sc-school-avg-label">学校平均</td>';
     html += '<td class="sc-td-fixed sc-school-avg-fixed"></td>';
     unionSubjectList.forEach(function(subj) {
@@ -523,12 +523,12 @@ function _scRerender() {
     var hasScore    = !!studentHasAnyScore[student.student_id];
     var hasPhoto    = !!_scUploadsMap[student.student_id];
     var rowClickable = hasScore || hasPhoto;
-    html += '<tr' + (rowClickable ? ' style="cursor:pointer;" onclick="_scOpenStudentModal(\'' + _scEscAttr(student.student_id) + '\')"' : '') + '>';
-    html += '<td class="sc-td-fixed">' + _scEsc(_shortSchoolName(student.school_name) || '') + '</td>';
-    html += '<td class="sc-td-fixed">' + _scEsc(student.school_course || '') + '</td>';
-    html += '<td class="sc-td-fixed">' + _scEsc(student.grade        || '') + '</td>';
-    html += '<td class="sc-td-fixed">' + _scEsc(student.sub_course   || '') + '</td>';
-    html += '<td class="sc-td-name">'  + _scEsc(student.name         || '') + '</td>';
+    html += '<tr' + (rowClickable ? ' style="cursor:pointer;" onclick="_scOpenStudentModal(\'' + _esc(student.student_id) + '\')"' : '') + '>';
+    html += '<td class="sc-td-fixed">' + _esc(_shortSchoolName(student.school_name) || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _esc(student.school_course || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _esc(student.grade        || '') + '</td>';
+    html += '<td class="sc-td-fixed">' + _esc(student.sub_course   || '') + '</td>';
+    html += '<td class="sc-td-name">'  + _esc(student.name         || '') + '</td>';
     html += '<td class="sc-td-fixed" style="text-align:center;color:#34c759;">'
           + (hasPhoto ? '✔' : '') + '</td>';
 
@@ -544,7 +544,7 @@ function _scRerender() {
                 + '<span class="sc-badge-absent">欠</span></td>';
         } else {
           html += '<td class="sc-cell sc-cell-filled" style="background-color:' + cellBg + '">'
-                + _scEsc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
+                + _esc(cellVal !== null && cellVal !== undefined && cellVal !== '' ? String(cellVal) : '—')
                 + '</td>';
         }
       } else if (hasScore || rowClickable) {
@@ -839,7 +839,7 @@ window._scOpenStudentModal = function(studentId) {
         prevGenre = genre;
         tableHtml += '<tr style="background:' + genreBg + ';">'
           + '<td colspan="5" style="padding:5px 8px;font-size:0.82em;font-weight:700;color:#fff;">'
-          + _scEsc(genre) + '</td></tr>';
+          + _esc(genre) + '</td></tr>';
       }
 
       // 科目変更ドロップダウン: 同ジャンルかつ生徒の学年に対応する科目のみ
@@ -851,25 +851,25 @@ window._scOpenStudentModal = function(studentId) {
           && (!sGrade || sGrade === studentGrade);
       });
       sameGenreSubjects.forEach(function(s) {
-        subjectOptions += '<option value="' + _scEsc(s.subject_id) + '">' + _scEsc(s.subject_name) + '</option>';
+        subjectOptions += '<option value="' + _esc(s.subject_id) + '">' + _esc(s.subject_name) + '</option>';
       });
 
       tableHtml += '<tr style="border-bottom:1px solid #f0f0f0;">'
         + '<td style="padding:6px 4px;">'
-        +   '<div style="font-size:0.82em;font-weight:600;margin-bottom:2px;">' + _scEsc(row.displayName) + '</div>'
+        +   '<div style="font-size:0.82em;font-weight:600;margin-bottom:2px;">' + _esc(row.displayName) + '</div>'
         +   '<select data-row="' + i + '" data-field="subjectId" onchange="_scModalRowChange(this)"'
         +   ' style="font-size:0.78em;width:100%;padding:2px;">'
         +   subjectOptions
         +   '</select>'
         + '</td>'
         + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="score"'
-        +   ' value="' + _scEsc(row.score) + '" min="0" max="2000"'
+        +   ' value="' + _esc(row.score) + '" min="0" max="2000"'
         +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
         + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="gradeRank"'
-        +   ' value="' + _scEsc(row.gradeRank) + '" min="1"'
+        +   ' value="' + _esc(row.gradeRank) + '" min="1"'
         +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
         + '<td style="padding:4px;"><input type="number" data-row="' + i + '" data-field="classRank"'
-        +   ' value="' + _scEsc(row.classRank) + '" min="1"'
+        +   ' value="' + _esc(row.classRank) + '" min="1"'
         +   ' style="width:64px;text-align:right;" onchange="_scModalRowChange(this)"></td>'
         + '<td style="padding:4px;text-align:center;"><input type="checkbox" data-row="' + i + '" data-field="notTaken"'
         +   (row.notTaken ? ' checked' : '') + ' onchange="_scModalRowChange(this)"></td>'
@@ -1031,24 +1031,24 @@ window._scOpenDetail = function (idx) {
   card.innerHTML = ''
     + '<h4 style="margin:0 0 8px;">' + (isNew ? '得点登録' : '得点詳細') + '</h4>'
     + '<p style="margin:0 0 16px; color:#555;">'
-    +   '<strong>' + _scEsc(cell.studentName) + '</strong>'
+    +   '<strong>' + _esc(cell.studentName) + '</strong>'
     +   ' <span style="color:#888;">/</span> '
-    +   _scEsc(cell.displayName)
+    +   _esc(cell.displayName)
     + '</p>'
     + '<div class="sc-form-group">'
     +   '<label class="sc-form-label">得点</label>'
     +   '<input type="number" id="sc-inp-score" class="sc-form-input" min="0" max="200"'
-    +   ' value="' + (cell.score !== null && cell.score !== undefined ? _scEsc(String(cell.score)) : '') + '">'
+    +   ' value="' + (cell.score !== null && cell.score !== undefined ? _esc(String(cell.score)) : '') + '">'
     + '</div>'
     + '<div class="sc-form-group">'
     +   '<label class="sc-form-label">学年順位</label>'
     +   '<input type="number" id="sc-inp-grade-rank" class="sc-form-input" min="1"'
-    +   ' value="' + (cell.gradeRank !== null && cell.gradeRank !== undefined ? _scEsc(String(cell.gradeRank)) : '') + '">'
+    +   ' value="' + (cell.gradeRank !== null && cell.gradeRank !== undefined ? _esc(String(cell.gradeRank)) : '') + '">'
     + '</div>'
     + '<div class="sc-form-group">'
     +   '<label class="sc-form-label">クラス順位</label>'
     +   '<input type="number" id="sc-inp-class-rank" class="sc-form-input" min="1"'
-    +   ' value="' + (cell.classRank !== null && cell.classRank !== undefined ? _scEsc(String(cell.classRank)) : '') + '">'
+    +   ' value="' + (cell.classRank !== null && cell.classRank !== undefined ? _esc(String(cell.classRank)) : '') + '">'
     + '</div>'
     + '<div class="sc-form-group" style="align-items:center;">'
     +   '<label class="sc-form-label">欠試</label>'
@@ -1131,24 +1131,6 @@ function _scGetGenreHeaderColor(genreName) {
 }
 
 // =====================================================================
-// 補助：HTML エスケープ
-// =====================================================================
-function _scEsc(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-// onclick 属性内のシングルクォート用（文字列引数をシングルクォートで括る場合）
-function _scEscAttr(str) {
-  return String(str || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'");
-}
-
-// =====================================================================
 // 未解決教科（その他）セクション
 // =====================================================================
 var _scUnresolvedGrade    = '';   // 選択中の学年フィルター
@@ -1203,7 +1185,7 @@ function _scRenderUnresolvedList(items) {
   var gradeSelHtml = '<select id="sc-unresolved-grade-sel" class="sc-sel" onchange="_scOnUnresolvedGradeChange(this.value)">'
     + '<option value="">全学年</option>';
   allGrades.forEach(function(g) {
-    gradeSelHtml += '<option value="' + _scEsc(g) + '"' + (grade === g ? ' selected' : '') + '>' + _scEsc(g) + '</option>';
+    gradeSelHtml += '<option value="' + _esc(g) + '"' + (grade === g ? ' selected' : '') + '>' + _esc(g) + '</option>';
   });
   gradeSelHtml += '</select>';
 
@@ -1250,10 +1232,10 @@ function _scRenderUnresolvedList(items) {
     html += '<tr>';
 
     // 入力名・件数・生徒
-    html += '<td><strong>' + _scEsc(item.display_name || item.raw_subject_name || '') + '</strong>';
-    if (itemGenreName) html += '<br><small style="color:#888;">' + _scEsc(itemGenreName) + '</small>';
+    html += '<td><strong>' + _esc(item.display_name || item.raw_subject_name || '') + '</strong>';
+    if (itemGenreName) html += '<br><small style="color:#888;">' + _esc(itemGenreName) + '</small>';
     html += '</td>';
-    html += '<td style="text-align:center;">' + _scEsc(String(item.count)) + '</td>';
+    html += '<td style="text-align:center;">' + _esc(String(item.count)) + '</td>';
     html += '<td style="font-size:0.85em;">' + studentTexts.map(_scEsc).join('<br>') + '</td>';
 
     // ① 新規登録
@@ -1261,7 +1243,7 @@ function _scRenderUnresolvedList(items) {
     if (item.temp_subject_id) {
       approveHtml = '<div class="sc-action-box sc-action-box-approve">'
         + '<p class="sc-action-desc">入力されたこの名称を<br>新しい科目として登録します</p>'
-        + '<button class="sc-btn-approve" onclick="_scApproveNewSubject(\'' + _scEscAttr(item.temp_subject_id) + '\')">このまま登録</button>'
+        + '<button class="sc-btn-approve" onclick="_scApproveNewSubject(\'' + _esc(item.temp_subject_id) + '\')">このまま登録</button>'
         + '</div>';
     } else {
       approveHtml = '<div class="sc-action-box sc-action-box-disabled"><p class="sc-action-desc">旧形式データのため<br>この操作は使用できません</p></div>';
@@ -1275,10 +1257,10 @@ function _scRenderUnresolvedList(items) {
       + '<select id="' + selectId + '" class="sc-sel">'
       + '<option value="">-- 科目を選ぶ --</option>';
     rowSubjects.forEach(function(s) {
-      mergeHtml += '<option value="' + _scEsc(s.subject_id) + '">' + _scEsc(s.subject_name) + '</option>';
+      mergeHtml += '<option value="' + _esc(s.subject_id) + '">' + _esc(s.subject_name) + '</option>';
     });
     mergeHtml += '</select>'
-      + '<button class="sc-btn-save" onclick="_scResolveOther(\'' + _scEscAttr(resolveIdentifier) + '\', \'' + _scEscAttr(selectId) + '\')">統合する</button>'
+      + '<button class="sc-btn-save" onclick="_scResolveOther(\'' + _esc(resolveIdentifier) + '\', \'' + _esc(selectId) + '\')">統合する</button>'
       + '</div></div>';
     html += '<td>' + mergeHtml + '</td>';
 

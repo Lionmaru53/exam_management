@@ -182,7 +182,13 @@
           } else {
             var content = document.getElementById('admin-content');
             var msg = (data && data.error) || 'データの取得に失敗しました。';
-            if (content) content.innerHTML = '<p style="padding:32px; color:#c00;">' + msg + '</p>';
+            if (content) {
+              var p = document.createElement('p');
+              p.style.cssText = 'padding:32px; color:#c00;';
+              p.textContent = msg;
+              content.innerHTML = '';
+              content.appendChild(p);
+            }
           }
           setLoading(false);
         })

@@ -279,14 +279,14 @@ function _showUploadPreview(file, dataURL, thumbnailB64) {
         + '<line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'
         + '<polyline points="10 9 9 9 8 9"/>'
         + '</svg>'
-        + '<span>' + _escHtml(file.name) + '</span>'
+        + '<span>' + _esc(file.name) + '</span>'
         + '</div>';
 
   var html = '<div class="upload-modal-overlay" id="upload-modal-overlay" onclick="_closeUploadModalOnBg(event)">'
     + '<div class="upload-modal">'
     + '<p class="upload-modal-title">アップロード確認</p>'
     + previewHtml
-    + '<p class="upload-modal-info">試験区分：' + _escHtml(testName) + '</p>'
+    + '<p class="upload-modal-info">試験区分：' + _esc(testName) + '</p>'
     + '<div class="upload-btn-row">'
     + '<button class="upload-btn-cancel" onclick="_closeUploadModal()">キャンセル</button>'
     + '<button class="upload-btn-do" id="upload-do-btn" onclick="_doUpload(this)">アップロードする</button>'
@@ -395,7 +395,7 @@ function _renderPhotosPage() {
 
   tabs.forEach(function(tab) {
     var ttId     = tab.term_test_id || '';
-    var name     = _escHtml(tab.test_name || '');
+    var name     = _esc(tab.test_name || '');
     var uf       = tab.uploadedFile;
     var bodyHtml;
 
@@ -404,8 +404,8 @@ function _renderPhotosPage() {
       if (uf.thumbnail_b64) {
         bodyHtml = '<img class="photo-card-thumb" src="data:image/jpeg;base64,' + uf.thumbnail_b64 + '" alt="サムネイル">'
           + '<div class="photo-card-footer">'
-          + '<span class="photo-card-date">' + _escHtml(dateStr) + '</span>'
-          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">再登録</button>'
+          + '<span class="photo-card-date">' + _esc(dateStr) + '</span>'
+          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _esc(ttId) + '\')">再登録</button>'
           + '</div>';
       } else {
         // PDF または thumbnail なし
@@ -418,12 +418,12 @@ function _renderPhotosPage() {
           + '<span>PDF登録済み</span>'
           + '</div>'
           + '<div class="photo-card-footer">'
-          + '<span class="photo-card-date">' + _escHtml(dateStr) + '</span>'
-          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">再登録</button>'
+          + '<span class="photo-card-date">' + _esc(dateStr) + '</span>'
+          + '<button class="photo-card-reupload" onclick="_pickCameraForTab(\'' + _esc(ttId) + '\')">再登録</button>'
           + '</div>';
       }
     } else {
-      bodyHtml = '<button class="photo-card-upload-btn" onclick="_pickCameraForTab(\'' + _escHtml(ttId) + '\')">'
+      bodyHtml = '<button class="photo-card-upload-btn" onclick="_pickCameraForTab(\'' + _esc(ttId) + '\')">'
         + '📷　画像をアップロード'
         + '</button>';
     }
@@ -482,11 +482,4 @@ function _getUploadTestName() {
   return tab ? (tab.test_name || '') : '';
 }
 
-function _escHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 </script>

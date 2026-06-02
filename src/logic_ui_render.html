@@ -209,17 +209,17 @@ function renderApp(data) {
 
         // ---- セクションヘッダー ----
         const genreHeaderBg = getGenreColor(genreName, 0.35);
-        listHtml += '<div class="ios-section" data-genre="' + _escHtml(genreName) + '">';
+        listHtml += '<div class="ios-section" data-genre="' + _esc(genreName) + '">';
         listHtml += '<div class="ios-section-header" style="background:' + genreHeaderBg + ';"'
-          + (_reorderMode ? '' : ' onclick="toggleGenreCollapse(\'' + _escHtml(genreName) + '\')"') + '>';
+          + (_reorderMode ? '' : ' onclick="toggleGenreCollapse(\'' + _esc(genreName) + '\')"') + '>';
         if (_reorderMode && !noKebab) {
           listHtml += '<span class="drag-handle"'
             + ' data-drag-type="genre"'
-            + ' data-drag-genre="' + _escHtml(genreName) + '"'
+            + ' data-drag-genre="' + _esc(genreName) + '"'
             + ' ontouchstart="onDragHandleTouch(event,this)">≡</span>';
         }
         listHtml += '<span class="ios-section-arrow">' + (isCollapsed ? '▶' : '▼') + '</span>';
-        listHtml += '<span class="ios-section-title">' + _escHtml(genreName) + '</span>';
+        listHtml += '<span class="ios-section-title">' + _esc(genreName) + '</span>';
         listHtml += '</div>'; // ios-section-header
 
         // ---- セクションボディ ----
@@ -241,8 +241,8 @@ function renderApp(data) {
           const disabledAttr = isNotTaken ? ' disabled style="opacity:0.4;"' : '';
 
           const subDisplayName = sid === 'OTHER'
-            ? _escHtml(sub.raw_subject_name || 'その他')
-            : _escHtml(sub.display_name || sub.subject_name || '');
+            ? _esc(sub.raw_subject_name || 'その他')
+            : _esc(sub.display_name || sub.subject_name || '');
           const cellBg = getGenreColor(genreName, 0.07);
 
           // この科目が単独編集中か
@@ -256,9 +256,9 @@ function renderApp(data) {
             var sel = '<select class="subj-replace-select" onchange="onSubjSelectChange(this)">';
             sel += '<option value="" disabled' + (!sid ? ' selected' : '') + '>-- 選択 --</option>';
             filteredSubs.forEach(function(s) {
-              sel += '<option value="' + _escHtml(s.subject_id) + '"'
+              sel += '<option value="' + _esc(s.subject_id) + '"'
                 + (s.subject_id === sid ? ' selected' : '') + '>'
-                + _escHtml(s.subject_name || s.subject_id) + '</option>';
+                + _esc(s.subject_name || s.subject_id) + '</option>';
             });
             sel += '<option value="OTHER">その他（名称を入力）</option>';
             sel += '</select>';
@@ -268,7 +268,7 @@ function renderApp(data) {
             listHtml += '<div class="ios-subject-edit-row">';
             listHtml += sel;
             listHtml += '<button class="subj-edit-save-btn" onclick="saveSubjectEdit(\''
-              + _escHtml(tabId) + '\',\'' + _escHtml(genreName) + '\',\'' + _escHtml(sid) + '\')">保存</button>';
+              + _esc(tabId) + '\',\'' + _esc(genreName) + '\',\'' + _esc(sid) + '\')">保存</button>';
             listHtml += '<button class="subj-edit-cancel-btn" onclick="cancelSubjectEdit()">×</button>';
             listHtml += '</div>';
             listHtml += '</div>';
@@ -276,28 +276,28 @@ function renderApp(data) {
           } else {
             // ---- 通常セル ----
             listHtml += '<div class="ios-cell' + (isExcluded ? ' excluded' : '') + '"'
-              + ' data-sid="' + _escHtml(sid) + '"'
-              + ' data-genre="' + _escHtml(genreName) + '"'
+              + ' data-sid="' + _esc(sid) + '"'
+              + ' data-genre="' + _esc(genreName) + '"'
               + ' style="background:' + cellBg + ';">';
             listHtml += '<div class="ios-cell-label-row">';
             if (_reorderMode && !noKebab && !isExcluded) {
               listHtml += '<span class="drag-handle"'
                 + ' data-drag-type="subject"'
-                + ' data-drag-genre="' + _escHtml(genreName) + '"'
-                + ' data-drag-sid="' + _escHtml(sid) + '"'
+                + ' data-drag-genre="' + _esc(genreName) + '"'
+                + ' data-drag-sid="' + _esc(sid) + '"'
                 + ' ontouchstart="onDragHandleTouch(event,this)">≡</span>';
             }
             listHtml += '<span class="ios-cell-label' + (isNotTaken ? ' ios-cell-label--muted' : '') + '">' + subDisplayName;
             if (sid === 'OTHER') {
-              listHtml += '<input type="hidden" id="rn_' + dk + '_OTHER" value="' + _escHtml(sub.raw_subject_name || '') + '">';
-              listHtml += '<input type="hidden" id="gn_' + dk + '_OTHER" value="' + _escHtml(sub.genre_name || '') + '">';
+              listHtml += '<input type="hidden" id="rn_' + dk + '_OTHER" value="' + _esc(sub.raw_subject_name || '') + '">';
+              listHtml += '<input type="hidden" id="gn_' + dk + '_OTHER" value="' + _esc(sub.genre_name || '') + '">';
             }
             listHtml += '</span>';
             if (!isExcluded && !noKebab && !_reorderMode) {
               listHtml += '<button class="ios-cell-pencil-btn"'
-                + ' data-tabid="' + _escHtml(tabId) + '"'
-                + ' data-genre="' + _escHtml(genreName) + '"'
-                + ' data-subjectid="' + _escHtml(sid) + '"'
+                + ' data-tabid="' + _esc(tabId) + '"'
+                + ' data-genre="' + _esc(genreName) + '"'
+                + ' data-subjectid="' + _esc(sid) + '"'
                 + ' onclick="startSubjectEdit(this)" title="科目を変更">' + _PENCIL_ICON_HTML + '<span class="pencil-btn-label">編集する</span></button>';
             }
             if (!isExcluded) {
@@ -357,8 +357,8 @@ function renderApp(data) {
             var sel = '<select class="subj-replace-select" onchange="onSubjSelectChange(this)">';
             sel += '<option value="" disabled selected>-- 科目を選択 --</option>';
             filteredSubs.forEach(function(s) {
-              sel += '<option value="' + _escHtml(s.subject_id) + '">'
-                + _escHtml(s.subject_name || s.subject_id) + '</option>';
+              sel += '<option value="' + _esc(s.subject_id) + '">'
+                + _esc(s.subject_name || s.subject_id) + '</option>';
             });
             sel += '<option value="OTHER">その他（名称を入力）</option>';
             sel += '</select>';
@@ -366,14 +366,14 @@ function renderApp(data) {
             listHtml += '<div class="ios-cell"><div class="ios-subject-edit-row">';
             listHtml += sel;
             listHtml += '<button class="subj-edit-save-btn" onclick="saveSubjectEdit(\''
-              + _escHtml(tabId) + '\',\'' + _escHtml(genreName) + '\',\'\')">追加</button>';
+              + _esc(tabId) + '\',\'' + _esc(genreName) + '\',\'\')">追加</button>';
             listHtml += '<button class="subj-edit-cancel-btn" onclick="cancelSubjectEdit()">×</button>';
             listHtml += '</div></div>';
           } else {
             listHtml += '<div class="ios-cell ios-cell-empty"><div class="ios-cell-label-row">';
             listHtml += '<button class="ios-cell-pencil-btn ios-cell-add-btn"'
-              + ' data-tabid="' + _escHtml(tabId) + '"'
-              + ' data-genre="' + _escHtml(genreName) + '"'
+              + ' data-tabid="' + _esc(tabId) + '"'
+              + ' data-genre="' + _esc(genreName) + '"'
               + ' data-subjectid=""'
               + ' onclick="startSubjectEdit(this)" title="科目を追加">' + _PENCIL_ICON_HTML + '<span class="ios-cell-empty-text">タップして科目を追加</span></button>';
             listHtml += '</div></div>';
@@ -430,10 +430,6 @@ function renderApp(data) {
 }
 
 // ---- 不具合報告 ----
-
-function _escHtml(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-}
 
 function _bugSubjectOptions() {
   var seen = new Set();
@@ -498,12 +494,12 @@ function _renderBugReportInPanel() {
     // 確認画面
     html += '<p class="bug-confirm-title">以下の内容で報告しますか？</p>';
     html += '<dl class="bug-confirm-dl">';
-    html += '<dt>種別</dt><dd>' + _escHtml(_bugConfirmData.reportType) + '</dd>';
+    html += '<dt>種別</dt><dd>' + _esc(_bugConfirmData.reportType) + '</dd>';
     if (_bugConfirmData.prefix) {
-      html += '<dt>内容</dt><dd>' + _escHtml(_bugConfirmData.prefix) + '</dd>';
+      html += '<dt>内容</dt><dd>' + _esc(_bugConfirmData.prefix) + '</dd>';
     }
     if (_bugConfirmData.rawDetail) {
-      html += '<dt>詳細</dt><dd>' + _escHtml(_bugConfirmData.rawDetail) + '</dd>';
+      html += '<dt>詳細</dt><dd>' + _esc(_bugConfirmData.rawDetail) + '</dd>';
     }
     html += '</dl>';
     html += '<div class="bug-confirm-btns">'
@@ -566,12 +562,12 @@ function _renderBugReportSection() {
       // ---- 確認画面 ----
       html += '<p class="bug-confirm-title">以下の内容で報告しますか？</p>';
       html += '<dl class="bug-confirm-dl">';
-      html += '<dt>種別</dt><dd>' + _escHtml(_bugConfirmData.reportType) + '</dd>';
+      html += '<dt>種別</dt><dd>' + _esc(_bugConfirmData.reportType) + '</dd>';
       if (_bugConfirmData.prefix) {
-        html += '<dt>内容</dt><dd>' + _escHtml(_bugConfirmData.prefix) + '</dd>';
+        html += '<dt>内容</dt><dd>' + _esc(_bugConfirmData.prefix) + '</dd>';
       }
       if (_bugConfirmData.rawDetail) {
-        html += '<dt>詳細</dt><dd>' + _escHtml(_bugConfirmData.rawDetail) + '</dd>';
+        html += '<dt>詳細</dt><dd>' + _esc(_bugConfirmData.rawDetail) + '</dd>';
       }
       html += '</dl>';
       html += '<div class="bug-confirm-btns">'
@@ -704,10 +700,6 @@ var _courseFlowSubCourse  = '';
 // 入力禁止文字（全角丸括弧・半角括弧・中点・読点・句点など）
 var _COURSE_BANNED_RE = /[（）()｛｝「」【】『』・。、，．！？　]/;
 
-function _escHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 function renderCourseInput(data) {
   _courseFlowData = data;
   const s       = data.student;
@@ -724,8 +716,8 @@ function renderCourseInput(data) {
 
   let radioItems = courses.map(c =>
     `<label class="course-radio-item">` +
-    `<input type="radio" name="course-radio" value="${_escHtml(c)}" onchange="_courseOtherToggle()">` +
-    `${_escHtml(c)}</label>`
+    `<input type="radio" name="course-radio" value="${_esc(c)}" onchange="_courseOtherToggle()">` +
+    `${_esc(c)}</label>`
   ).join('');
 
   radioItems +=
@@ -811,8 +803,8 @@ function _courseSubCourseSelect(subCourse) {
 function _courseConfirmStep() {
   const hasSubCourse = !!_courseFlowSubCourse;
   const confirmText  = hasSubCourse
-    ? `<strong>${_escHtml(_courseFlowCourse)}</strong> ／ <strong>${_escHtml(_courseFlowSubCourse)}</strong> で設定します。よろしいですか？`
-    : `<strong>${_escHtml(_courseFlowCourse)}</strong> で設定します。よろしいですか？`;
+    ? `<strong>${_esc(_courseFlowCourse)}</strong> ／ <strong>${_esc(_courseFlowSubCourse)}</strong> で設定します。よろしいですか？`
+    : `<strong>${_esc(_courseFlowCourse)}</strong> で設定します。よろしいですか？`;
   const backFn = hasSubCourse ? '_courseSubCourseStep()' : 'renderCourseInput(_courseFlowData)';
 
   document.getElementById('subject-list').innerHTML =
@@ -868,9 +860,9 @@ function _subCourseConfirm(subCourse) {
   document.getElementById('subject-list').innerHTML =
     `<div class="sub-course-select-wrap">` +
     `<p class="sub-course-select-title">確認</p>` +
-    `<p class="sub-course-select-desc"><strong>${_escHtml(subCourse)}</strong> で設定します。よろしいですか？</p>` +
+    `<p class="sub-course-select-desc"><strong>${_esc(subCourse)}</strong> で設定します。よろしいですか？</p>` +
     `<div class="sub-course-select-btns">` +
-    `<button class="sub-course-btn sub-course-btn-confirm" onclick="handleSubCourseSelect('${_escHtml(_subCourseData.lineUserId)}', '${_escHtml(subCourse)}')">確定</button>` +
+    `<button class="sub-course-btn sub-course-btn-confirm" onclick="handleSubCourseSelect('${_esc(_subCourseData.lineUserId)}', '${_esc(subCourse)}')">確定</button>` +
     `<button class="sub-course-btn sub-course-btn-back" onclick="renderSubCourseSelect(_subCourseData)">戻る</button>` +
     `</div></div>`;
 }
@@ -1271,24 +1263,24 @@ function _renderAnnouncementPanel(announcements) {
     var isUnread    = readIds.indexOf(ann.id) === -1;
     var isDismissed = _isDismissed(ann.id);
     var catClass    = 'ann-card--' + (ann.category || 'info');
-    var bodyHtml    = _escHtml(ann.body).replace(/\n/g, '<br>');
+    var bodyHtml    = _esc(ann.body).replace(/\n/g, '<br>');
     var dismissHtml = ann.category === 'important'
       ? '<label class="ann-dismiss-label" onclick="event.stopPropagation()">'
-        + '<input type="checkbox" onchange="onAnnDismissChange(\'' + _escHtml(ann.id) + '\',this.checked)"'
+        + '<input type="checkbox" onchange="onAnnDismissChange(\'' + _esc(ann.id) + '\',this.checked)"'
         + (isDismissed ? ' checked' : '') + '>'
         + '次回から表示しない</label>'
       : '';
     return '<div class="ann-card ' + catClass + (isUnread ? ' ann-card--unread' : '') + '"'
-      + ' id="ann-card-' + _escHtml(ann.id) + '"'
+      + ' id="ann-card-' + _esc(ann.id) + '"'
       + ' onclick="toggleAnnCard(this)">'
       + '<div class="ann-card-header">'
       + (isUnread ? '<span class="ann-unread-dot"></span>' : '')
       + '<span class="ann-card-category ' + catClass + '-label">' + _annCategoryLabel(ann.category) + '</span>'
       + '<span class="ann-card-chevron">▼</span>'
       + '</div>'
-      + '<p class="ann-card-title">' + _escHtml(ann.title) + '</p>'
+      + '<p class="ann-card-title">' + _esc(ann.title) + '</p>'
       + '<div class="ann-card-detail">'
-      + '<p class="ann-card-date">' + _escHtml(ann.published_at || '') + '</p>'
+      + '<p class="ann-card-date">' + _esc(ann.published_at || '') + '</p>'
       + '<p class="ann-card-body">' + bodyHtml + '</p>'
       + dismissHtml
       + '</div>'

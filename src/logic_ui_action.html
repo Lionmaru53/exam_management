@@ -279,6 +279,7 @@ function _cacheInput(el) {
   if (id.indexOf('s_') === 0)       { type = 'score';      prefixLen = 2; }
   else if (id.indexOf('gr_') === 0) { type = 'grade_rank'; prefixLen = 3; }
   else if (id.indexOf('cr_') === 0) { type = 'class_rank'; prefixLen = 3; }
+  else if (id.indexOf('ga_') === 0) { type = 'grade_avg';  prefixLen = 3; }
   else return;
   var key = id.slice(prefixLen);
   if (!_inputCache[key]) _inputCache[key] = {};

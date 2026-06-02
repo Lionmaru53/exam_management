@@ -19,4 +19,15 @@ function showMessage(text, type) {
     msgEl.classList.remove('show');
   }, 3500);
 }
+
+// ---- HTML エスケープ（全ページ共通） ----
+function _esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\n/g, '<br>');
+}
 </script>

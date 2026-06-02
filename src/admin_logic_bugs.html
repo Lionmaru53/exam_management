@@ -65,7 +65,7 @@ function _bgRerender() {
 
   filterDefs.forEach(function(f) {
     var active = _bgFilter === f.key;
-    html += '<button onclick="_bgSetFilter(\'' + _bgEsc(f.key) + '\')" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:' + (active ? '#333' : '#fff') + ';color:' + (active ? '#fff' : '#333') + ';cursor:pointer;">' + _bgEsc(f.label) + '</button>';
+    html += '<button onclick="_bgSetFilter(\'' + _esc(f.key) + '\')" style="padding:4px 12px;border-radius:4px;border:1px solid #ccc;background:' + (active ? '#333' : '#fff') + ';color:' + (active ? '#fff' : '#333') + ';cursor:pointer;">' + _esc(f.label) + '</button>';
   });
   html += '</div>';
 
@@ -88,20 +88,20 @@ function _bgRerender() {
       var isResolved = String(r.is_resolved) === '1';
       var rowStyle   = isResolved ? 'color:#999;' : '';
       html += '<tr style="border-bottom:1px solid #eee;' + rowStyle + '">';
-      html += '<td style="white-space:nowrap;">' + _bgEsc(r.timestamp || '') + '</td>';
-      html += '<td>' + _bgEsc(r.student_name || '—') + '</td>';
-      html += '<td>' + _bgEsc(r.school_name || '—') + '</td>';
-      html += '<td>' + _bgEsc(r.grade || '—') + '</td>';
-      html += '<td><span style="display:inline-block;padding:2px 8px;background:#fff3cd;border-radius:4px;font-size:0.85em;">' + _bgEsc(r.report_type || '') + '</span></td>';
-      html += '<td style="white-space:pre-wrap;max-width:360px;">' + _bgEsc(r.detail || '') + '</td>';
+      html += '<td style="white-space:nowrap;">' + _esc(r.timestamp || '') + '</td>';
+      html += '<td>' + _esc(r.student_name || '—') + '</td>';
+      html += '<td>' + _esc(r.school_name || '—') + '</td>';
+      html += '<td>' + _esc(r.grade || '—') + '</td>';
+      html += '<td><span style="display:inline-block;padding:2px 8px;background:#fff3cd;border-radius:4px;font-size:0.85em;">' + _esc(r.report_type || '') + '</span></td>';
+      html += '<td style="white-space:pre-wrap;max-width:360px;">' + _esc(r.detail || '') + '</td>';
       if (isResolved) {
         html += '<td style="white-space:nowrap;">'
           + '<span style="color:#28a745;font-size:0.85em;">✓ 解決済み</span> '
-          + '<button onclick="_bgToggleResolve(\'' + _bgEsc(r.report_id) + '\',false)" style="padding:2px 8px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.8em;">戻す</button>'
+          + '<button onclick="_bgToggleResolve(\'' + _esc(r.report_id) + '\',false)" style="padding:2px 8px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.8em;">戻す</button>'
           + '</td>';
       } else {
         html += '<td style="white-space:nowrap;">'
-          + '<button onclick="_bgToggleResolve(\'' + _bgEsc(r.report_id) + '\',true)" style="padding:2px 10px;background:#28a745;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">解決済みにする</button>'
+          + '<button onclick="_bgToggleResolve(\'' + _esc(r.report_id) + '\',true)" style="padding:2px 10px;background:#28a745;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em;">解決済みにする</button>'
           + '</td>';
       }
       html += '</tr>';
@@ -134,10 +134,6 @@ function _bgToggleResolve(reportId, resolved) {
       showMessage('エラー: ' + ((err && err.message) || String(err)), 'error');
     })
     .resolveBugReport(reportId, resolved);
-}
-
-function _bgEsc(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 window.renderBugReportManager = renderBugReportManager;

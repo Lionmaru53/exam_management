@@ -53,10 +53,6 @@ function _anTargetLabel(targetCramId) {
   return branch ? branch.branch_name + ' (' + targetCramId + ')' : targetCramId;
 }
 
-function _anEsc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 function _anCatOptions(selected) {
   return _AN_CATEGORIES.map(function(c) {
     return '<option value="' + c.value + '"' + (c.value === selected ? ' selected' : '') + '>' + c.label + '</option>';
@@ -66,8 +62,8 @@ function _anCatOptions(selected) {
 function _anBranchOptions(selected) {
   var opts = '<option value=""' + (!selected ? ' selected' : '') + '>全校舎</option>';
   opts += _anBranches.map(function(b) {
-    return '<option value="' + _anEsc(b.cram_id) + '"' + (b.cram_id === selected ? ' selected' : '') + '>'
-      + _anEsc(b.branch_name) + ' (' + _anEsc(b.cram_id) + ')</option>';
+    return '<option value="' + _esc(b.cram_id) + '"' + (b.cram_id === selected ? ' selected' : '') + '>'
+      + _esc(b.branch_name) + ' (' + _esc(b.cram_id) + ')</option>';
   }).join('');
   return opts;
 }
@@ -121,18 +117,18 @@ function _anRerender() {
         var bodyPreview = (ann.body || '').replace(/\n/g, ' ').slice(0, 60);
         if ((ann.body || '').length > 60) bodyPreview += '…';
         html += '<tr>'
-          + '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _anEsc(ann.title) + '">'
-          + _anEsc(ann.title) + '</td>'
-          + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:0.88em;" title="' + _anEsc(ann.body || '') + '">'
-          + _anEsc(bodyPreview) + '</td>'
+          + '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _esc(ann.title) + '">'
+          + _esc(ann.title) + '</td>'
+          + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;font-size:0.88em;" title="' + _esc(ann.body || '') + '">'
+          + _esc(bodyPreview) + '</td>'
           + '<td>' + _anCatLabel(ann.category) + '</td>'
-          + '<td>' + _anEsc(_anTargetLabel(ann.target_cram_id)) + '</td>'
-          + '<td>' + _anEsc(ann.published_at || '') + '</td>'
-          + '<td>' + _anEsc(ann.expires_at || '') + '</td>'
+          + '<td>' + _esc(_anTargetLabel(ann.target_cram_id)) + '</td>'
+          + '<td>' + _esc(ann.published_at || '') + '</td>'
+          + '<td>' + _esc(ann.expires_at || '') + '</td>'
           + '<td>' + statusBadge + '</td>'
           + '<td style="white-space:nowrap;">'
-          + '<button class="btn-save-admin" style="margin-right:4px;" data-id="' + _anEsc(ann.announcement_id) + '" onclick="_anStartEdit(this.dataset.id)">編集</button>'
-          + '<button class="btn-cancel-admin" data-id="' + _anEsc(ann.announcement_id) + '" onclick="_anDelete(this.dataset.id)">削除</button>'
+          + '<button class="btn-save-admin" style="margin-right:4px;" data-id="' + _esc(ann.announcement_id) + '" onclick="_anStartEdit(this.dataset.id)">編集</button>'
+          + '<button class="btn-cancel-admin" data-id="' + _esc(ann.announcement_id) + '" onclick="_anDelete(this.dataset.id)">削除</button>'
           + '</td>'
           + '</tr>';
       }
@@ -164,7 +160,7 @@ function _anFormHtml(mode, ann) {
 
   html += '<div style="grid-column:span 2;">';
   html += '<label>タイトル <span style="color:#ff3b30;">*</span><br>'
-    + '<input type="text" id="' + pfx + '_title" value="' + _anEsc(title) + '" class="admin-input" style="width:100%;" placeholder="例: システムメンテナンスのお知らせ" /></label>';
+    + '<input type="text" id="' + pfx + '_title" value="' + _esc(title) + '" class="admin-input" style="width:100%;" placeholder="例: システムメンテナンスのお知らせ" /></label>';
   html += '</div>';
 
   html += '<div>';
@@ -178,16 +174,16 @@ function _anFormHtml(mode, ann) {
   html += '</div>';
 
   html += '<div>';
-  html += '<label>公開日時<br><input type="datetime-local" id="' + pfx + '_published" value="' + _anEsc(publishedAt) + '" class="admin-input" style="width:100%;"></label>';
+  html += '<label>公開日時<br><input type="datetime-local" id="' + pfx + '_published" value="' + _esc(publishedAt) + '" class="admin-input" style="width:100%;"></label>';
   html += '</div>';
 
   html += '<div>';
   html += '<label>掲載終了日時 <span style="color:#aaa;font-size:0.85em;">（空欄＝無期限）</span><br>'
-    + '<input type="datetime-local" id="' + pfx + '_expires" value="' + _anEsc(expiresAt) + '" class="admin-input" style="width:100%;"></label>';
+    + '<input type="datetime-local" id="' + pfx + '_expires" value="' + _esc(expiresAt) + '" class="admin-input" style="width:100%;"></label>';
   html += '</div>';
 
   html += '<div style="grid-column:span 2;">';
-  html += '<label>本文<br><textarea id="' + pfx + '_body" rows="4" class="admin-input" style="width:100%;resize:vertical;" placeholder="本文を入力してください">' + _anEsc(body) + '</textarea></label>';
+  html += '<label>本文<br><textarea id="' + pfx + '_body" rows="4" class="admin-input" style="width:100%;resize:vertical;" placeholder="本文を入力してください">' + _esc(body) + '</textarea></label>';
   html += '</div>';
 
   html += '<div style="grid-column:span 2;">';
@@ -197,7 +193,7 @@ function _anFormHtml(mode, ann) {
 
   html += '</div>';
   html += '<div style="display:flex;gap:8px;margin-top:12px;">';
-  html += '<button class="btn-save-admin" data-editid="' + _anEsc(editId) + '" onclick="' + submitFn + '">' + (isAdd ? '登録する' : '更新する') + '</button>';
+  html += '<button class="btn-save-admin" data-editid="' + _esc(editId) + '" onclick="' + submitFn + '">' + (isAdd ? '登録する' : '更新する') + '</button>';
   html += '<button class="btn-cancel-admin" onclick="' + cancelFn + '">キャンセル</button>';
   html += '</div></div>';
   return html;

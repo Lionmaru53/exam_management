@@ -1,7 +1,7 @@
 /** アプリバージョン（機能変更時に更新） */
-const APP_VERSION = '0.1.4';
+const APP_VERSION = '0.1.5';
 /** GASデプロイ番号（clasp push → git tag v? と連動して更新） */
-const GAS_BUILD   = 'v84';
+const GAS_BUILD   = 'v85';
 
 /**
  * 生徒向けアプリ / 管理画面 の振り分け

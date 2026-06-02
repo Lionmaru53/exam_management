@@ -78,9 +78,9 @@ function _renderBranchList(branches) {
     if (_brEditId === branch.cram_id) {
       const idx = _brPush({ cram_id: branch.cram_id, is_active: isActive });
       html += '<tr class="tr-editing">'
-            + '<td class="td-mono">' + branch.cram_id + '</td>'
-            + '<td><input type="text" id="br_edit_name_' + idx + '" value="' + (branch.branch_name || '') + '" class="admin-input" /></td>'
-            + '<td><input type="text" id="br_edit_ss_' + idx + '" value="' + ssId + '" class="admin-input br-ss-input" placeholder="スプレッドシートID" /></td>'
+            + '<td class="td-mono">' + _esc(branch.cram_id) + '</td>'
+            + '<td><input type="text" id="br_edit_name_' + idx + '" value="' + _esc(branch.branch_name || '') + '" class="admin-input" /></td>'
+            + '<td><input type="text" id="br_edit_ss_' + idx + '" value="' + _esc(ssId) + '" class="admin-input br-ss-input" placeholder="スプレッドシートID" /></td>'
             + '<td>' + stateLabel + '</td>'
             + '<td>'
             + '<button class="btn-save-admin" onclick="_brSubmitEdit(' + idx + ')">保存</button>'
@@ -96,12 +96,12 @@ function _renderBranchList(branches) {
         ? '<button class="btn-cancel-admin" onclick="_brToggleActive(' + idx + ')">無効化</button>'
         : '<button class="btn-save-admin" onclick="_brToggleActive(' + idx + ')">有効化</button>';
       html += '<tr>'
-            + '<td class="td-mono">' + branch.cram_id + '</td>'
-            + '<td>' + (branch.branch_name || '—') + '</td>'
+            + '<td class="td-mono">' + _esc(branch.cram_id) + '</td>'
+            + '<td>' + _esc(branch.branch_name || '—') + '</td>'
             + '<td>' + ssDisplay + '</td>'
             + '<td>' + stateLabel + '</td>'
             + '<td>'
-            + '<button onclick="_brStartEdit(\'' + branch.cram_id + '\')" class="br-row-btn">編集</button>'
+            + '<button onclick="_brStartEdit(\'' + _esc(branch.cram_id) + '\')" class="br-row-btn">編集</button>'
             + setupBtn
             + toggleBtn
             + '</td>'

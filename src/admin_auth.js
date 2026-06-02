@@ -13,6 +13,17 @@ const AUDIT_LOG_SHEET   = 'audit_log';
 // admin_users シートの固定列。それ以外の列名は cram_id として扱う。
 const _ADMIN_FIXED_COLS = new Set(['admin_id', 'email', 'name', 'role', 'is_active']);
 
+/**
+ * スプレッドシートへの書き込み前にフォーミュラインジェクションを防ぐ。
+ * 先頭が = + - @ | で始まる文字列はシングルクォートを付加して数式化を阻止する。
+ * @param {*} val
+ * @returns {string}
+ */
+function _sanitizeCell(val) {
+  var s = String(val == null ? '' : val).trim();
+  return /^[=+\-@|]/.test(s) ? "'" + s : s;
+}
+
 function _getAdminSS() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('スプレッドシートにアクセスできません。');
@@ -101,7 +112,7 @@ function getAdminContext() {
   const rows  = getRowsData(sheet);
   const admin = rows.find(r =>
     String(r.email || '').trim().toLowerCase() === email.toLowerCase() &&
-    (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim() === 'true')
+    (r.is_active === true || String(r.is_active).trim() === '1' || String(r.is_active).trim().toLowerCase() === 'true')
   );
 
   if (!admin) throw new Error('アクセス権限がありません。管理者に連絡してください。');
@@ -257,7 +268,7 @@ function addAdminUser(payload) {
     }
 
     const adminId = 'A' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
-    sheet.appendRow([adminId, payload.email.trim(), String(payload.name || '').trim(), payload.role || 'branch_admin', true]);
+    sheet.appendRow([adminId, _sanitizeCell(payload.email), _sanitizeCell(payload.name), _sanitizeCell(payload.role) || 'branch_admin', true]);
     writeAuditLog(ctx, 'add_admin', { email: payload.email, name: payload.name, role: payload.role }, 'success');
     return { success: true };
   } catch (e) {
@@ -333,5 +344,5 @@ if (typeof module !== 'undefined') Object.assign(global, {
   ADMIN_USERS_SHEET, AUDIT_LOG_SHEET,
   getAdminContext, writeAuditLog, setupAdminSS,
   getAdminUsers, addAdminUser, deactivateAdminUser, updateAdminUser,
-  _reconcileSheetSchema, _logReconcile,
+  _reconcileSheetSchema, _logReconcile, _sanitizeCell,
 });

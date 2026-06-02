@@ -84,7 +84,7 @@ function _exBuildHtml(masterData) {
     var isActive = tid === _exActiveTab;
     html += '<button class="ex-tab' + (isActive ? ' ex-tab-active' : '') + '"'
           + ' onclick="_exSelectTab(\'' + tid + '\')">'
-          + _exEsc(label) + '</button>';
+          + _esc(label) + '</button>';
   });
   html += '</div>';
 
@@ -153,7 +153,7 @@ function _exBuildHtml(masterData) {
     var period = _exPeriodMap[key] || null;
 
     html += '<tr class="ex-gantt-row" id="ex-row-' + rowIdx + '">';
-    html += '<td class="ex-gantt-label ex-gantt-school-label">' + _exEsc(_shortSchoolName(school)) + '</td>';
+    html += '<td class="ex-gantt-label ex-gantt-school-label">' + _esc(_shortSchoolName(school)) + '</td>';
 
     dates.forEach(function(d) {
       var isFilled  = period && d >= period.startDate && d <= period.endDate;
@@ -227,10 +227,6 @@ function _exIsAdjacentMonth(dateStr) {
 function _exIsWeekend(dateStr) {
   var dow = new Date(dateStr).getDay();
   return dow === 0 || dow === 6;
-}
-
-function _exEsc(str) {
-  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ---- タブ切り替え・月ナビ ----
