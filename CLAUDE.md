@@ -23,8 +23,13 @@
 - [開発ロードマップ](.claude/roadmap.md)
 - [テスト戦略・手順](.claude/testing.md)
 - [やりたいことリスト（バックログ）](.claude/backlog.md)
-- [既知の Issue](.claude/issues.md)
 - [スプレッドシートスキーマ詳細](spreadsheet-schema.md)
+
+**Issue・バックログ管理**
+- バグ・不具合・機能要望はすべて [GitHub Issues](https://github.com/Lionmaru53/exam_management/issues) で管理する。
+- ラベル運用: `bug`（不具合）/ `enhancement`（機能追加・改善）/ `question`（調査・検討）
+- Issue を修正したコミットには `Fixes #番号` または `Closes #番号` を含め、自動クローズを活用する。
+- `.claude/issues.md` は廃止（過去の記録は git 履歴で参照可能）。
 
 ---
 
