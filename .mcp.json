@@ -5,7 +5,8 @@
       "command": "npx",
       "args": [
         "@playwright/mcp@latest",
-        "--user-data-dir", ".playwright-mcp/user-data"
+        "--user-data-dir",
+        ".playwright-mcp/user-data"
       ],
       "env": {}
     }
